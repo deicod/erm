@@ -43,8 +43,8 @@ func writeRegistry(root string, entities []Entity) error {
 		fmt.Fprintf(buf, "            },\n")
 		fmt.Fprintf(buf, "            Edges: []runtime.EdgeSpec{\n")
 		for _, edge := range ent.Edges {
-			fmt.Fprintf(buf, "                {Name: %q, Column: %q, RefName: %q, Through: %q, Target: %q, Kind: %s, Nullable: %t, Unique: %t, Annotations: %s},\n",
-				edge.Name, edgeColumn(edge), edge.RefName, edge.Through, edge.Target, edgeKindLiteral(edge.Kind), edge.Nullable, edge.Unique, mapLiteral(edge.Annotations))
+			fmt.Fprintf(buf, "                {Name: %q, Column: %q, RefName: %q, Through: %q, Target: %q, Kind: %s, Nullable: %t, Unique: %t, Annotations: %s, Inverse: %q},\n",
+				edge.Name, edgeColumn(edge), edge.RefName, edge.Through, edge.Target, edgeKindLiteral(edge.Kind), edge.Nullable, edge.Unique, mapLiteral(edge.Annotations), edge.InverseName)
 		}
 		fmt.Fprintf(buf, "            },\n")
 		fmt.Fprintf(buf, "            Indexes: []runtime.IndexSpec{\n")
