@@ -1,0 +1,12 @@
+module: "github.com/example/blog"
+database:
+  url: "postgres://postgres:postgres@localhost:5432/blog?sslmode=disable"
+oidc:
+  issuer: "https://auth.icod.de/realms/exyu"
+  audience: "web-spa"
+graphql:
+  path: "/graphql"
+extensions:
+  postgis: false
+  pgvector: false
+  timescaledb: false

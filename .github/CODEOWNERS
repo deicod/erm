@@ -1,0 +1,6 @@
+* @deicod/maintainers
+
+/internal/orm/ @deicod/orm
+/internal/graphql/ @deicod/graphql
+/internal/oidc/ @deicod/security
+/cmd/erm/ @deicod/cli
