@@ -1,4 +1,4 @@
-.PHONY: all build test lint gen
+.PHONY: all build test lint gen release
 
 all: build
 
@@ -13,3 +13,6 @@ lint:
 
 gen:
 	go run ./cmd/erm gen
+
+release:
+	goreleaser release --snapshot --clean
