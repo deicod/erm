@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/deicod/erm/internal/graphql"
+	"github.com/deicod/erm/internal/graphql/dataloaders"
 	"github.com/deicod/erm/internal/graphql/relay"
 	"github.com/deicod/erm/internal/orm/gen"
 )
@@ -27,9 +28,17 @@ func (r *queryResolver) Node(ctx context.Context, id string) (graphql.Node, erro
 	}
 	switch typ {
 	case "User":
-		record, err := r.ORM.Users().ByID(ctx, nativeID)
-		if err != nil {
-			return nil, err
+		var record *gen.User
+		if loaders := dataloaders.FromContext(ctx); loaders != nil && loaders.Users != nil {
+			record, err = loaders.Users.Load(ctx, nativeID)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			record, err = r.ORM.Users().ByID(ctx, nativeID)
+			if err != nil {
+				return nil, err
+			}
 		}
 		if record == nil {
 			return nil, nil
@@ -64,9 +73,13 @@ func (r *queryResolver) Users(ctx context.Context, first *int, after *string, la
 		return nil, err
 	}
 
+	loaders := dataloaders.FromContext(ctx)
 	edges := make([]*graphql.UserEdge, len(records))
 	for idx, record := range records {
 		cursor := encodeCursor(offset + idx)
+		if loaders != nil && loaders.Users != nil && record != nil {
+			loaders.Users.Prime(record.ID, record)
+		}
 		edges[idx] = &graphql.UserEdge{
 			Cursor: cursor,
 			Node:   toGraphQLUser(record),
