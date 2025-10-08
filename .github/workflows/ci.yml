@@ -1,1 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        run: |
+          fmt_out=$(gofmt -l .)
+          if [ -n "$fmt_out" ]; then
+            echo "$fmt_out" | sed 's/^/needs gofmt: /'
+            exit 1
+          fi
+
+      - name: Go build
+        run: go build ./...
+
+      - name: Go test
+        run: go test ./...
+
+      - name: Verify generator output
+        run: |
+          go run ./cmd/erm gen
+          git diff --exit-code
 
