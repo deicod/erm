@@ -1,0 +1,45 @@
+scalar Time
+
+interface Node { id: ID! }
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+directive @auth(roles: [String!]) on FIELD_DEFINITION
+
+type Query {
+  node(id: ID!): Node
+  health: String!
+}
+
+type Mutation {
+  _noop: Boolean
+}
+
+# BEGIN GENERATED
+type User implements Node {
+  id: ID!
+  createdAt: Time!
+  updatedAt: Time!
+}
+
+type UserEdge {
+  cursor: String!
+  node: User
+}
+
+type UserConnection {
+  edges: [UserEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+extend type Query {
+  users(first: Int, after: String, last: Int, before: String): UserConnection!
+}
+
+# END GENERATED

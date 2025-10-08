@@ -1,0 +1,13 @@
+# erm configuration
+module: ""
+database:
+  url: "postgres://user:pass@localhost:5432/app?sslmode=disable"
+oidc:
+  issuer: "https://auth.example.com/realms/app"
+  audience: "web-spa"
+graphql:
+  path: "/graphql"
+extensions:
+  postgis: true
+  pgvector: true
+  timescaledb: false
