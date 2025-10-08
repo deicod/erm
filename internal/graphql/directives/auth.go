@@ -5,37 +5,34 @@ import (
 	"fmt"
 
 	"github.com/vektah/gqlparser/v2/gqlerror"
+
+	"github.com/deicod/erm/internal/oidc"
 )
-
-type ClaimsKey struct{}
-
-type Claims struct {
-	Subject string
-	Email string
-	Username string
-	Roles []string
-}
-
-func FromContext(ctx context.Context) (Claims, bool) {
-	c, ok := ctx.Value(ClaimsKey{}).(Claims)
-	return c, ok
-}
 
 func RequireRoles(roles []string) func(ctx context.Context, obj interface{}, next func(ctx context.Context) (res interface{}, err error)) (interface{}, error) {
 	return func(ctx context.Context, obj interface{}, next func(ctx context.Context) (res interface{}, err error)) (interface{}, error) {
-		claims, ok := FromContext(ctx)
-		if !ok { return nil, gqlerror.Errorf("unauthorized") }
-		// naive role check
-		set := map[string]struct{}{}; for _, r := range claims.Roles { set[r] = struct{}{} }
-		for _, r := range roles { if _, ok := set[r]; !ok { return nil, gqlerror.Errorf("forbidden: missing role %s", r) } }
+		claims, ok := oidc.FromContext(ctx)
+		if !ok {
+			return nil, gqlerror.Errorf("unauthorized")
+		}
+		roleSet := make(map[string]struct{}, len(claims.Roles))
+		for _, r := range claims.Roles {
+			roleSet[r] = struct{}{}
+		}
+		for _, required := range roles {
+			if _, ok := roleSet[required]; !ok {
+				return nil, gqlerror.Errorf("forbidden: missing role %s", required)
+			}
+		}
 		return next(ctx)
 	}
 }
 
 func RequireAuth() func(ctx context.Context, obj interface{}, next func(ctx context.Context) (res interface{}, err error)) (interface{}, error) {
 	return func(ctx context.Context, obj interface{}, next func(ctx context.Context) (res interface{}, err error)) (interface{}, error) {
-		_, ok := FromContext(ctx)
-		if !ok { return nil, fmt.Errorf("unauthorized") }
+		if _, ok := oidc.FromContext(ctx); !ok {
+			return nil, fmt.Errorf("unauthorized")
+		}
 		return next(ctx)
 	}
 }
