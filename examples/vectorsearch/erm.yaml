@@ -1,0 +1,12 @@
+module: "github.com/example/vectorsearch"
+database:
+  url: "postgres://postgres@localhost:5432/vectorsearch?sslmode=disable"
+oidc:
+  issuer: "https://auth.icod.de/realms/vector"
+  audience: "vector-app"
+graphql:
+  path: "/graphql"
+extensions:
+  postgis: false
+  pgvector: true
+  timescaledb: false
