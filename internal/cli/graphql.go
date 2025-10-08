@@ -7,15 +7,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var gqlInitCmd = &cobra.Command{
-	Use:   "graphql init",
-	Short: "Add gqlgen config and bootstrap Relay schema",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := os.WriteFile("internal/graphql/gqlgen.yml", []byte(gqlgenYAML), 0o644); err != nil { return err }
-		if err := os.WriteFile("internal/graphql/schema.graphqls", []byte(schemaGraphQLS), 0o644); err != nil { return err }
-		fmt.Println("Initialized gqlgen configuration.")
-		return nil
-	},
+func newGraphQLInitCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "graphql init",
+		Short: "Add gqlgen config and bootstrap Relay schema",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := os.WriteFile("internal/graphql/gqlgen.yml", []byte(gqlgenYAML), 0o644); err != nil {
+				return err
+			}
+			if err := os.WriteFile("internal/graphql/schema.graphqls", []byte(schemaGraphQLS), 0o644); err != nil {
+				return err
+			}
+			fmt.Println("Initialized gqlgen configuration.")
+			return nil
+		},
+	}
+	return cmd
 }
 
 var gqlgenYAML = `schema:

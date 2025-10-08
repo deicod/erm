@@ -9,20 +9,29 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var newCmd = &cobra.Command{
-	Use:   "new <Entity>",
-	Short: "Scaffold a new entity schema",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		name := args[0]
-		if name == "" { return fmt.Errorf("entity name required") }
-		file := filepath.Join("schema", fmt.Sprintf("%s.schema.go", name))
-		if _, err := os.Stat(file); err == nil { return fmt.Errorf("file exists: %s", file) }
-		content := strings.ReplaceAll(schemaTemplate, "{{Entity}}", name)
-		if err := os.WriteFile(file, []byte(content), 0o644); err != nil { return err }
-		fmt.Println("Created", file)
-		return nil
-	},
+func newNewCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "new <Entity>",
+		Short: "Scaffold a new entity schema",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			if name == "" {
+				return fmt.Errorf("entity name required")
+			}
+			file := filepath.Join("schema", fmt.Sprintf("%s.schema.go", name))
+			if _, err := os.Stat(file); err == nil {
+				return fmt.Errorf("file exists: %s", file)
+			}
+			content := strings.ReplaceAll(schemaTemplate, "{{Entity}}", name)
+			if err := os.WriteFile(file, []byte(content), 0o644); err != nil {
+				return err
+			}
+			fmt.Println("Created", file)
+			return nil
+		},
+	}
+	return cmd
 }
 
 var schemaTemplate = `package schema
