@@ -5,14 +5,17 @@ type Schema struct{}
 type FieldType string
 
 const (
-	TypeUUID   FieldType = "uuid"
-	TypeString FieldType = "string"
-	TypeInt    FieldType = "int"
-	TypeFloat  FieldType = "float"
-	TypeBool   FieldType = "bool"
-	TypeBytes  FieldType = "bytes"
-	TypeTime   FieldType = "time"
-	TypeJSON   FieldType = "json"
+	TypeUUID      FieldType = "uuid"
+	TypeString    FieldType = "string"
+	TypeInt       FieldType = "int"
+	TypeFloat     FieldType = "float"
+	TypeBool      FieldType = "bool"
+	TypeBytes     FieldType = "bytes"
+	TypeTime      FieldType = "time"
+	TypeJSON      FieldType = "json"
+	TypeGeometry  FieldType = "geometry"
+	TypeGeography FieldType = "geography"
+	TypeVector    FieldType = "vector"
 )
 
 type Field struct {
@@ -38,6 +41,8 @@ func (f Field) NotEmpty() Field               { return f.annotate("notEmpty", tr
 func (f Field) DefaultNow() Field             { f.HasDefaultNow = true; return f }
 func (f Field) UpdateNow() Field              { f.HasUpdateNow = true; return f }
 func (f Field) WithDefault(expr string) Field { f.DefaultExpr = expr; return f }
+func (f Field) SRID(srid int) Field           { return f.annotate("srid", srid) }
+func (f Field) TimeSeries() Field             { return f.annotate("timeseries", true) }
 func (f Field) annotate(key string, val any) Field {
 	if f.Annotations == nil {
 		f.Annotations = map[string]any{}
@@ -113,6 +118,11 @@ func Bytes(name string) Field  { return Field{Name: name, Type: TypeBytes, GoTyp
 func Time(name string) Field   { return Field{Name: name, Type: TypeTime, GoType: "time.Time"} }
 func JSON(name string) Field {
 	return Field{Name: name, Type: TypeJSON, GoType: "json.RawMessage"}.annotate("format", "json")
+}
+func Geometry(name string) Field  { return Field{Name: name, Type: TypeGeometry, GoType: "[]byte"} }
+func Geography(name string) Field { return Field{Name: name, Type: TypeGeography, GoType: "[]byte"} }
+func Vector(name string, dim int) Field {
+	return Field{Name: name, Type: TypeVector, GoType: "[]float32"}.annotate("vector_dim", dim)
 }
 
 func ToOne(name, target string) Edge  { return Edge{Name: name, Target: target, Kind: EdgeToOne} }

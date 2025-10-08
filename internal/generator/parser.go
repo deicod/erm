@@ -420,6 +420,12 @@ func executeDSLFunc(name string, args []any) (any, error) {
 		return dsl.Time(argString(args, 0)), nil
 	case "JSON":
 		return dsl.JSON(argString(args, 0)), nil
+	case "Geometry":
+		return dsl.Geometry(argString(args, 0)), nil
+	case "Geography":
+		return dsl.Geography(argString(args, 0)), nil
+	case "Vector":
+		return dsl.Vector(argString(args, 0), argInt(args, 1)), nil
 	case "ToOne":
 		return dsl.ToOne(argString(args, 0), argString(args, 1)), nil
 	case "ToMany":
@@ -451,6 +457,10 @@ func executeFieldMethod(f dsl.Field, name string, args []any) (any, error) {
 		return f.UpdateNow(), nil
 	case "WithDefault":
 		return f.WithDefault(argString(args, 0)), nil
+	case "SRID":
+		return f.SRID(argInt(args, 0)), nil
+	case "TimeSeries":
+		return f.TimeSeries(), nil
 	default:
 		return nil, fmt.Errorf("unsupported field method %s", name)
 	}
@@ -502,4 +512,21 @@ func argString(args []any, idx int) string {
 		return s
 	}
 	return fmt.Sprint(args[idx])
+}
+
+func argInt(args []any, idx int) int {
+	if idx >= len(args) {
+		return 0
+	}
+	switch v := args[idx].(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case string:
+		i, _ := strconv.Atoi(v)
+		return i
+	default:
+		return 0
+	}
 }

@@ -180,6 +180,10 @@ func defaultGoType(ft dsl.FieldType) string {
 		return "time.Time"
 	case dsl.TypeJSON:
 		return "json.RawMessage"
+	case dsl.TypeGeometry, dsl.TypeGeography:
+		return "[]byte"
+	case dsl.TypeVector:
+		return "[]float32"
 	default:
 		return "string"
 	}
