@@ -33,30 +33,42 @@ func (noopSpan) End(error) {}
 
 // compositeTracer fans out spans to multiple tracers.
 type compositeTracer struct {
-	tracers []Tracer
+	primary Tracer
+	rest    []Tracer
 }
 
 func (c compositeTracer) Start(ctx context.Context, name string, attrs ...Attribute) (context.Context, Span) {
-	if len(c.tracers) == 0 {
-		return ctx, noopSpan{}
+	if c.primary == nil {
+		for i, tracer := range c.rest {
+			if tracer != nil {
+				c.primary = tracer
+				c.rest = append(append([]Tracer(nil), c.rest[:i]...), c.rest[i+1:]...)
+				break
+			}
+		}
+		if c.primary == nil {
+			return ctx, noopSpan{}
+		}
 	}
-	spans := make([]Span, 0, len(c.tracers))
-	ctxOut := ctx
-	for _, tracer := range c.tracers {
+
+	ctxPrimary, primarySpan := c.primary.Start(ctx, name, attrs...)
+	if primarySpan == nil {
+		primarySpan = noopSpan{}
+	}
+	spans := []Span{primarySpan}
+
+	for _, tracer := range c.rest {
 		if tracer == nil {
 			continue
 		}
-		var span Span
-		ctxOut, span = tracer.Start(ctxOut, name, attrs...)
+		_, span := tracer.Start(ctx, name, attrs...)
 		if span == nil {
 			span = noopSpan{}
 		}
 		spans = append(spans, span)
 	}
-	if len(spans) == 0 {
-		return ctxOut, noopSpan{}
-	}
-	return ctxOut, compositeSpan(spans)
+
+	return ctxPrimary, compositeSpan(spans)
 }
 
 type compositeSpan []Span
@@ -84,7 +96,7 @@ func WithTracer(primary Tracer, others ...Tracer) Tracer {
 	if len(tracers) == 1 {
 		return tracers[0]
 	}
-	return compositeTracer{tracers: tracers}
+	return compositeTracer{primary: tracers[0], rest: tracers[1:]}
 }
 
 // String attribute helper.
