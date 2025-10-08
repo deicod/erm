@@ -33,7 +33,8 @@ model:
   filename: internal/graphql/models_gen.go
 resolver:
   layout: follow-schema
-  dir: internal/graphql
+  dir: internal/graphql/resolvers
+  package: resolvers
 autobind:
   - github.com/deicod/erm/internal/orm/gen
 `
