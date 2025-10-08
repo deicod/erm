@@ -107,6 +107,7 @@ func loadEntities(root string) ([]Entity, error) {
 	for i := range out {
 		ensureDefaultField(&out[i])
 	}
+	synthesizeInverseEdges(out)
 	return out, nil
 }
 
@@ -478,8 +479,80 @@ func executeEdgeMethod(edge dsl.Edge, name string, args []any) (any, error) {
 		return edge.Optional(), nil
 	case "UniqueEdge":
 		return edge.UniqueEdge(), nil
+	case "Inverse":
+		return edge.Inverse(argString(args, 0)), nil
 	default:
 		return nil, fmt.Errorf("unsupported edge method %s", name)
+	}
+}
+
+func synthesizeInverseEdges(entities []Entity) {
+	index := make(map[string]int, len(entities))
+	for i := range entities {
+		index[entities[i].Name] = i
+	}
+	for i := range entities {
+		source := entities[i]
+		for _, edge := range source.Edges {
+			if edge.InverseName == "" {
+				continue
+			}
+			targetIdx, ok := index[edge.Target]
+			if !ok {
+				continue
+			}
+			if hasEdgeNamed(entities[targetIdx].Edges, edge.InverseName) {
+				continue
+			}
+			inverse := buildInverseEdge(source.Name, edge)
+			entities[targetIdx].Edges = append(entities[targetIdx].Edges, inverse)
+		}
+	}
+}
+
+func hasEdgeNamed(edges []dsl.Edge, name string) bool {
+	for _, edge := range edges {
+		if edge.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func buildInverseEdge(sourceName string, edge dsl.Edge) dsl.Edge {
+	inverse := dsl.Edge{
+		Name:        edge.InverseName,
+		Target:      sourceName,
+		Kind:        inverseEdgeKind(edge),
+		Nullable:    edge.Nullable,
+		Unique:      edge.Unique,
+		Through:     edge.Through,
+		InverseName: edge.Name,
+	}
+	switch edge.Kind {
+	case dsl.EdgeToOne:
+		inverse.RefName = edge.Column
+	case dsl.EdgeToMany:
+		inverse.Column = edge.RefName
+	case dsl.EdgeManyToMany:
+		// Through already copied above.
+	}
+	return inverse
+}
+
+func inverseEdgeKind(edge dsl.Edge) dsl.EdgeKind {
+	switch edge.Kind {
+	case dsl.EdgeToOne:
+		if edge.Unique {
+			return dsl.EdgeToOne
+		}
+		return dsl.EdgeToMany
+	case dsl.EdgeToMany:
+		return dsl.EdgeToOne
+	case dsl.EdgeManyToMany:
+		return dsl.EdgeManyToMany
+	default:
+		return edge.Kind
 	}
 }
 

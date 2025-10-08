@@ -37,8 +37,12 @@ func (User) Fields() []dsl.Field {
 func (User) Edges() []dsl.Edge {
     return []dsl.Edge{
         dsl.ToMany("posts", "Post").Ref("author_id"),
+        dsl.ToMany("comments", "Comment").Inverse("author"),
     }
 }
+
+// `Inverse("author")` synthesizes the complementary `Comment` -> `User` edge during codegen if it
+// isn't explicitly declared, keeping the registry graph bidirectional by default.
 
 func (User) Indexes() []dsl.Index {
     return []dsl.Index{

@@ -26,6 +26,7 @@ type EdgeSpec struct {
 	Nullable    bool
 	Unique      bool
 	Annotations map[string]any
+	Inverse     string
 }
 
 type IndexSpec struct {

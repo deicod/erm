@@ -69,6 +69,7 @@ type Edge struct {
 	Nullable    bool
 	Unique      bool
 	Annotations map[string]any
+	InverseName string
 }
 
 func (e Edge) Field(name string) Edge        { e.Column = name; return e }
@@ -76,6 +77,7 @@ func (e Edge) Ref(name string) Edge          { e.RefName = name; return e }
 func (e Edge) ThroughTable(name string) Edge { e.Through = name; return e }
 func (e Edge) Optional() Edge                { e.Nullable = true; return e }
 func (e Edge) UniqueEdge() Edge              { e.Unique = true; return e }
+func (e Edge) Inverse(name string) Edge      { e.InverseName = name; return e }
 func (e Edge) annotate(key string, val any) Edge {
 	if e.Annotations == nil {
 		e.Annotations = map[string]any{}
