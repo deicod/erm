@@ -1,6 +1,9 @@
 package generator
 
-import "unicode"
+import (
+	"strings"
+	"unicode"
+)
 
 func toSnakeCase(in string) string {
 	if in == "" {
@@ -25,5 +28,60 @@ func pluralize(name string) string {
 	if name == "" {
 		return name
 	}
-	return toSnakeCase(name) + "s"
+	word := toSnakeCase(name)
+	if word == "" {
+		return word
+	}
+
+	irregular := map[string]string{
+		"person": "people",
+		"man":    "men",
+		"woman":  "women",
+		"child":  "children",
+		"tooth":  "teeth",
+		"foot":   "feet",
+		"mouse":  "mice",
+		"goose":  "geese",
+	}
+	if plural, ok := irregular[word]; ok {
+		return plural
+	}
+
+	alreadyPlural := []string{"ies", "ses", "xes", "zes", "ches", "shes"}
+	for _, suffix := range alreadyPlural {
+		if strings.HasSuffix(word, suffix) {
+			return word
+		}
+	}
+
+	if strings.HasSuffix(word, "y") && len(word) > 1 {
+		prev := rune(word[len(word)-2])
+		if !strings.ContainsRune("aeiou", prev) {
+			return word[:len(word)-1] + "ies"
+		}
+	}
+
+	if strings.HasSuffix(word, "fe") {
+		return word[:len(word)-2] + "ves"
+	}
+	if strings.HasSuffix(word, "f") && len(word) > 1 && word[len(word)-2] != 'f' {
+		return word[:len(word)-1] + "ves"
+	}
+
+	if strings.HasSuffix(word, "ch") || strings.HasSuffix(word, "sh") || strings.HasSuffix(word, "x") || strings.HasSuffix(word, "z") {
+		return word + "es"
+	}
+
+	if strings.HasSuffix(word, "s") {
+		if strings.HasSuffix(word, "ss") || strings.HasSuffix(word, "us") || strings.HasSuffix(word, "is") {
+			return word + "es"
+		}
+		return word
+	}
+
+	if strings.HasSuffix(word, "o") && len(word) > 1 && !strings.ContainsRune("aeiou", rune(word[len(word)-2])) {
+		return word + "es"
+	}
+
+	return word + "s"
 }
