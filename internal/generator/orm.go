@@ -615,10 +615,7 @@ func emitAggregateMethod(buf *bytes.Buffer, ent Entity, agg dsl.Aggregate, field
 	if methodName == "" {
 		methodName = "Aggregate"
 	}
-	goType := agg.GoType
-	if goType == "" {
-		goType = "int"
-	}
+	goType := aggregateGoType(agg, fields)
 	column := aggregateColumn(agg, fields)
 	fmt.Fprintf(buf, "func (q *%sQuery) %s(ctx context.Context) (%s, error) {\n", ent.Name, methodName, goType)
 	fmt.Fprintf(buf, "    spec := runtime.AggregateSpec{\n")
@@ -836,6 +833,29 @@ func aggregateColumn(agg dsl.Aggregate, fields map[string]dsl.Field) string {
 			return fieldColumn(field)
 		}
 		return agg.Field
+	}
+}
+
+func aggregateGoType(agg dsl.Aggregate, fields map[string]dsl.Field) string {
+	if agg.GoType != "" {
+		return agg.GoType
+	}
+	switch agg.Field {
+	case "", "*":
+	default:
+		if field, ok := fields[strings.ToLower(agg.Field)]; ok {
+			return goTypeForField(field)
+		}
+	}
+	switch agg.Func {
+	case dsl.AggCount:
+		return "int"
+	case dsl.AggAvg, dsl.AggSum:
+		return "float64"
+	case dsl.AggMin, dsl.AggMax:
+		return "any"
+	default:
+		return "any"
 	}
 }
 
