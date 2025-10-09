@@ -1,459 +1,81 @@
-# Troubleshooting and Common Issues
-
-This guide covers common issues you may encounter when using the erm framework and provides solutions for each.
-
-## Installation Issues
-
-### CLI Installation Problems
-
-**Problem**: Can't install the `erm` CLI tool
-```bash
-go install github.com/deicod/erm/cmd/erm@latest
-# Error: "command not found" after installation
-```
-
-**Solution**: Ensure Go bin directory is in your PATH
-```bash
-# Add to your shell profile (.bashrc, .zshrc, etc.)
-export PATH=$PATH:$(go env GOPATH)/bin
-
-# Verify installation
-which erm
-erm version
-```
-
-### Module Initialization Issues
-
-**Problem**: Errors during `go mod tidy` after running `erm init`
-```bash
-go mod tidy
-# Error: module requires a version that doesn't exist
-```
-
-**Solution**: Ensure you're using the correct Go version (1.22+) and update dependencies:
-```bash
-go mod init github.com/yourname/yourproject
-go get github.com/deicod/erm@latest
-go mod tidy
-```
-
-## Schema Definition Issues
-
-### Invalid Schema Syntax
-
-**Problem**: Schema doesn't generate properly due to syntax errors
-```go
-// Incorrect - missing required imports
-type User struct {
-    dsl.Schema  // Error: dsl is undefined
-}
-```
-
-**Solution**: Ensure proper imports and structure
-```go
-package schema
-
-import "github.com/deicod/erm/internal/orm/dsl"
-
-type User struct{ dsl.Schema }
-
-func (User) Fields() []dsl.Field {
-    return []dsl.Field{
-        dsl.UUIDv7("id").Primary(),
-    }
-}
-
-func (User) Edges() []dsl.Edge { return nil }
-func (User) Indexes() []dsl.Index { return nil }
-```
-
-### Circular Dependencies
-
-**Problem**: Schemas reference each other causing circular import issues
-```go
-// This creates a circular dependency
-type User struct{ dsl.Schema }
-func (User) Edges() []dsl.Edge {
-    return []dsl.Edge{
-        dsl.To("profile", Profile.Type), // Profile references User
-    }
-}
-
-type Profile struct{ dsl.Schema }
-func (Profile) Edges() []dsl.Edge {
-    return []dsl.Edge{
-        dsl.From("user", User.Type), // User references Profile
-    }
-}
-```
-
-**Solution**: Ensure proper relationship definitions
-```go
-// This is valid - only one side needs the foreign key
-type User struct{ dsl.Schema }
-
-func (User) Edges() []dsl.Edge {
-    return []dsl.Edge{
-        dsl.To("profile", Profile.Type).ForeignKey("user_id"),
-    }
-}
-
-type Profile struct{ dsl.Schema }
-
-func (Profile) Edges() []dsl.Edge {
-    return []dsl.Edge{
-        dsl.From("user", User.Type).ForeignKey("user_id"),
-    }
-}
-```
-
-## Database Connection Issues
-
-### PostgreSQL Connection Problems
-
-**Problem**: Can't connect to PostgreSQL database
-```bash
-# Error: "dial tcp 127.0.0.1:5432: connect: connection refused"
-```
-
-**Solution**: Verify PostgreSQL is running and accessible
-```bash
-# Check if PostgreSQL is running
-sudo systemctl status postgresql  # Linux
-brew services info postgresql     # macOS
-
-# Test connection
-psql -h localhost -p 5432 -U postgres -d postgres
-
-# Verify erm.yaml configuration
-database:
-  host: "localhost"    # Ensure correct hostname
-  port: 5432           # Ensure correct port
-  user: "postgres"     # Ensure correct username
-  password: "password" # Ensure correct password
-  name: "myproject"    # Ensure database exists
-```
-
-### Database Permission Issues
-
-**Problem**: Database operations fail with permission errors
-```bash
-# Error: "permission denied for database"
-```
-
-**Solution**: Ensure the database user has proper permissions
-```sql
--- In PostgreSQL
-CREATE DATABASE myproject;
-GRANT ALL PRIVILEGES ON DATABASE myproject TO postgres;
-GRANT ALL PRIVILEGES ON SCHEMA public TO postgres;
-```
-
-## Code Generation Issues
-
-### Generation Fails
-
-**Problem**: `erm gen` command fails with errors
-```bash
-erm gen
-# Error: "failed to parse schema files"
-```
-
-**Solution**: 
-1. Verify all schema files are syntactically correct
-2. Run with verbose flag to see detailed errors
-3. Check that all necessary imports are present
-
-```bash
-erm gen --verbose
-```
-
-### Generated Code Conflicts
-
-**Problem**: Generated code conflicts with custom code
-```bash
-# Error about duplicate functions or types
-```
+# Troubleshooting
 
-**Solution**: 
-- Place custom code in non-generated files
-- Use hooks and interceptors for custom business logic
-- Don't modify generated files directly
-
-### Schema Changes Not Reflected
+Use this playbook to diagnose issues across the CLI, schema generation, GraphQL runtime, and infrastructure. Each section lists
+symptoms, root causes, and remediation steps.
 
-**Problem**: After updating schema, changes don't appear in generated code
-
-**Solution**: 
-1. Run `erm gen` after every schema change
-2. Verify the schema file syntax
-3. Check for any errors during generation
-
-## GraphQL API Issues
+---
 
-### Relay Specification Compliance
-
-**Problem**: GraphQL client reports non-compliance with Relay specification
-- Missing `node(id:)` resolver
-- Incorrect cursor format
-- Missing `PageInfo` fields
+## CLI Issues
 
-**Solution**: Ensure you're using the generated Relay-compliant API
-```bash
-# Verify GraphQL schema generation
-erm graphql init  # Reinitialize if needed
-erm gen           # Regenerate after schema changes
-```
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| `erm gen` exits with “no module found” | `go.mod` missing or `erm.yaml.module` mismatch | Run `go mod init` and update `erm.yaml` to match. |
+| `erm new` fails with permission error | Running outside repository or lacking write access | Execute inside repo root and check filesystem permissions. |
+| Generated files keep changing | Editor modifies imports or whitespace | Run `gofmt` on schema files; avoid manual edits to generated files. |
+| `erm graphql init` overwrites custom code | Modifications made inside generated files | Move custom logic to `_extension.go` files before re-running command. |
 
-### N+1 Query Problems
+---
 
-**Problem**: Inefficient queries causing performance issues
-```bash
-# Logs show multiple individual queries for related data
-```
+## Schema & Migration Errors
 
-**Solution**: Use dataloaders (built-in) and optimize resolver patterns
-```go
-// Instead of direct queries, use dataloaders
-func (r *Resolver) User(ctx context.Context, obj *Post) (*User, error) {
-    return r.Loaders.UserLoader.Load(ctx, obj.UserID)  // Uses dataloader
-}
-```
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| Migration fails with duplicate column | Field renamed without removing old column | Edit migration to drop old column or rename field using `.StorageKey`. |
+| `pq: relation already exists` during `erm gen` | Running migrations against database that already has tables | Point `ERM_DATABASE_URL` to a fresh database for generation checks or skip DB validation with `--no-db-check`. |
+| `edge not found` compilation error | Missing `Ref`/`Inverse` in edge definition | Ensure both sides of relationships are defined or use `ManyToMany`. |
+| Privacy compilation errors | Invalid expressions or typos in policy | Run `erm gen` to get precise error messages; verify viewer properties exist. |
 
-### Query Complexity Issues
+---
 
-**Problem**: Complex queries timing out or causing performance problems
+## GraphQL Runtime Problems
 
-**Solution**: 
-1. Configure query complexity limits in `erm.yaml`
-2. Use connection-based pagination
-3. Implement proper indexing
-4. Consider query optimization
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| `node(id:)` returns null | Node registry missing type or ID malformed | Check base64 format `<Type>:<uuidv7>` and ensure entity registered. |
+| Connections return empty edges | Pagination filters exclude results | Verify `after`/`before` cursors and orderings; inspect SQL via debug logging. |
+| `INTERNAL` errors without detail | Resolver panicked or unexpected DB error | Enable debug logs, wrap custom logic with error handling, inspect traces. |
+| Mutations silently fail | Privacy rules deny updates | Inspect policy evaluation logs; adjust `Policy()` or viewer roles. |
 
-## Authentication and Authorization Issues
+---
 
-### OIDC Configuration Problems
+## Authentication Problems
 
-**Problem**: Authentication fails or JWT validation errors
-```bash
-# Error: "oidc: JWT verification failed"
-```
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| `UNAUTHENTICATED` on every request | Missing/invalid `Authorization` header | Provide `Bearer <token>`; check token issuer/audience. |
+| Roles missing in context | Claims mapper not configured | Update `erm.yaml` `claims_mapper` or implement custom mapper. |
+| JWKS fetch timeout | OIDC issuer unreachable | Validate network access; configure `jwks_cache_ttl` and fallback to cached keys. |
+| Token accepted locally but rejected in prod | Clock skew or TLS issues | Sync clocks (NTP) and verify HTTPS certificates. |
 
-**Solution**: Verify OIDC configuration
-```yaml
-oidc:
-  issuer: "https://your-keycloak/realms/myrealm"  # Ensure correct issuer
-  client_id: "myapp"                              # Ensure correct client ID
-  jwks_url: "https://your-keycloak/realms/myrealm/protocol/openid-connect/certs"  # Ensure accessible
-```
+---
 
-### Claim Mapping Issues
+## Database & Infrastructure
 
-**Problem**: User roles or information not properly mapped
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| `connection refused` | Postgres not running or DSN incorrect | Start database, verify credentials, ensure network routes open. |
+| Slow migrations | Running with small `work_mem` or lacking indexes | Tune Postgres parameters and review migration SQL. |
+| Extension creation fails | Database role lacks `CREATE` privilege | Install extensions manually or run migrations as superuser. |
 
-**Solution**: 
-1. Verify the claims mapper configuration
-2. Check JWT token structure matches expected format
-3. Enable debug logging to see claim extraction
+---
 
-```yaml
-oidc:
-  claims_mapper: "keycloak"  # Or "auth0", "okta", etc.
-```
+## Observability & Logging
 
-### Authorization Bypass
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| Missing metrics at `/metrics` | Endpoint disabled or blocked | Check `observability.metrics.enabled` in `erm.yaml` and middleware chain. |
+| Traces not exported | OTLP endpoint not configured | Set `OTEL_EXPORTER_OTLP_ENDPOINT` and verify network connectivity. |
+| Logs show `<redacted>` unexpectedly | Field marked `.Sensitive()` | Remove `.Sensitive()` or expose via custom resolver when safe. |
 
-**Problem**: Privacy policies not being enforced
+---
 
-**Solution**: 
-1. Verify privacy policy syntax in schema
-2. Ensure OIDC context is properly injected
-3. Check that `@auth` directives are applied correctly
+## Debugging Tips
 
-## Migration Issues
+- Run `erm gen --verbose` to print file diffs and execution details.
+- Use `ERM_LOG_LEVEL=debug` to surface ORM queries and policy evaluations.
+- Enable SQL logging in Postgres (`log_statement=all`) temporarily when debugging migrations.
+- Capture GraphQL request/response payloads in tests using `testutil.RecordResponse`.
 
-### Migration Failures
+---
 
-**Problem**: Migrations fail to apply
-```bash
-erm migrate up
-# Error: "relation does not exist" or "duplicate key value violates unique constraint"
-```
-
-**Solution**: 
-1. Check migration order and dependencies
-2. Ensure database is in consistent state
-3. Manually fix migration state if needed
-
-```bash
-# Check migration status
-erm migrate status
-
-# Rollback if needed
-erm migrate down
-```
-
-### Schema Mismatch
-
-**Problem**: Generated code expects database schema that doesn't exist
-
-**Solution**: Ensure migrations are applied before starting application
-```bash
-erm migrate up
-# Then start your application
-```
-
-## Extension-Specific Issues
-
-### PostGIS Not Available
-
-**Problem**: Geometric field types fail during generation or runtime
-```bash
-# Error: "extension postgis does not exist"
-```
-
-**Solution**: Ensure PostGIS is installed in your PostgreSQL instance
-```sql
--- Connect to your database and run
-CREATE EXTENSION IF NOT EXISTS postgis;
-```
-
-### pgvector Errors
-
-**Problem**: Vector operations fail
-```bash
-# Error: "type vector does not exist"
-```
-
-**Solution**: Install pgvector extension
-```sql
--- In PostgreSQL
-CREATE EXTENSION IF NOT EXISTS vector;
-```
-
-### TimescaleDB Setup Issues
-
-**Problem**: TimescaleDB features not working
-```bash
-# Error: "extension timescaledb does not exist"
-```
-
-**Solution**: Install TimescaleDB extension
-```sql
--- In PostgreSQL
-CREATE EXTENSION IF NOT EXISTS timescaledb;
-```
-
-## Performance Issues
-
-### Slow Queries
-
-**Problem**: API requests are slow
-1. Check for N+1 queries
-2. Verify proper indexing
-3. Monitor database performance
-
-**Solutions**:
-- Enable query logging to identify slow queries
-- Add appropriate indexes
-- Use connection-based pagination
-- Implement caching where appropriate
-
-### High Memory Usage
-
-**Problem**: Application uses excessive memory
-- Large dataset queries loading too much data
-- Memory leaks in long-running operations
-
-**Solutions**:
-- Use pagination for large datasets
-- Implement streaming for large result sets
-- Monitor and optimize your code for memory usage
-
-## Debugging Strategies
-
-### Enable Verbose Logging
-
-For detailed debugging information:
-```bash
-# Set environment variable for detailed logging
-export ERM_DEBUG=true
-# Or in your erm.yaml
-logging:
-  level: debug
-  include_sql: true
-  include_oidc: true
-```
-
-### Check Generated Code
-
-Review generated code for any issues:
-- Look for template errors
-- Verify proper imports
-- Check for syntax errors
-
-### Use CLI Diagnostic Commands
-
-```bash
-# Check configuration
-erm doctor  # When available
-
-# Verbose generation
-erm gen --verbose
-
-# Dry run to preview changes
-erm gen --dry-run
-```
-
-### Database Debugging
-
-Enable PostgreSQL query logging:
-```sql
--- In PostgreSQL, enable logging
-SET log_statement = 'all';
-SET log_min_duration_statement = 0;
-```
-
-## Getting Help
-
-### When to File Issues
-
-File GitHub issues for:
-- Bugs in the framework
-- Unexpected behavior
-- Feature requests
-- Documentation needs
-
-### Useful Information for Issues
-
-When reporting issues, include:
-- erm version (`erm version`)
-- Go version (`go version`)
-- PostgreSQL version
-- Steps to reproduce
-- Expected vs. actual behavior
-- Error messages and logs
-- Relevant configuration files
-
-### Community Resources
-
-- Check existing issues before filing new ones
-- Provide pull requests for fixes when possible
-- Contribute to documentation improvements
-
-## Common Solutions Checklist
-
-Before opening an issue, verify:
-
-- [ ] Go version is 1.22+
-- [ ] PostgreSQL is running and accessible
-- [ ] Schema files are syntactically correct
-- [ ] You've run `erm gen` after schema changes
-- [ ] Migrations have been applied
-- [ ] Configuration files are properly formatted
-- [ ] Extensions are installed (PostGIS, pgvector, etc.)
-- [ ] OIDC configuration is correct
-- [ ] You're using the latest version of erm
-- [ ] Generated code hasn't been manually modified
-
-If issues persist after checking these items, provide detailed information about the problem when seeking help.
+If you encounter new issues, update this document and reference logs, stack traces, and remediation steps so the whole team benefits.

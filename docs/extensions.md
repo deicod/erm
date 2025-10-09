@@ -1,14 +1,39 @@
 # Extensions Support
 
-The erm framework provides first-class support for PostgreSQL extensions including PostGIS, pgvector, and TimescaleDB. These extensions are integrated into the schema DSL and generator to provide type-safe operations and proper database setup.
+erm embraces PostgreSQL extensions out of the box. The DSL exposes field constructors, mixins, and migration helpers that let
+you adopt specialized storage models without manual SQL. This guide covers the three built-in extension families and how to add
+your own.
 
-## PostGIS Support
+---
 
-PostGIS extends PostgreSQL with geographic objects, allowing location queries to be run in SQL. The erm framework provides type-safe integration for geometric data types and operations.
+## Enabling Extensions
 
-### Geometric Types
+Declare extensions in schema annotations or via mixins. The generator ensures migrations include `CREATE EXTENSION IF NOT EXISTS`.
 
-The framework includes special field types for geographic data:
+```go
+func (Location) Annotations() []dsl.Annotation {
+    return []dsl.Annotation{
+        dsl.Extension("postgis"),
+    }
+}
+```
+
+You can also enable extensions globally in `erm.yaml`:
+
+```yaml
+extensions:
+  postgis: true
+  pgvector: false
+  timescaledb: false
+```
+
+Run `erm gen` after toggling flags so migrations stay in sync. Extensions are idempotent; running migrations multiple times is safe.
+
+---
+
+## PostGIS
+
+Use the geometry/geography field helpers to store spatial data.
 
 ```go
 type Location struct{ dsl.Schema }
@@ -16,127 +41,106 @@ type Location struct{ dsl.Schema }
 func (Location) Fields() []dsl.Field {
     return []dsl.Field{
         dsl.UUIDv7("id").Primary(),
-        dsl.Point("coordinates"),           // 2D point: POINT
-        dsl.PointZ("coordinates_3d"),       // 3D point: POINTZ
-        dsl.LineString("path"),             // Line string: LINESTRING
-        dsl.Polygon("boundary"),            // Polygon: POLYGON
-        dsl.Geometry("shape"),              // Generic geometry
-        dsl.GeometryCollection("shapes"),   // Collection of geometries
-        dsl.MultiPoint("interest_points"),  // Multiple points
-        dsl.MultiLineString("roads"),       // Multiple line strings
-        dsl.MultiPolygon("districts"),      // Multiple polygons
-        dsl.Geography("area"),              // Geography type (WGS84)
+        dsl.Geometry("geom", 4326).
+            SRID(4326).
+            Type(dsl.GeometryPoint).
+            NotEmpty().
+            Comment("WGS84 point"),
+        dsl.String("label").Optional(),
     }
 }
 ```
 
-### PostGIS Functions
+### Generated Features
 
-The generated models include helpers for common PostGIS operations:
+- SQL migration includes `CREATE EXTENSION IF NOT EXISTS postgis;` and sets SRID metadata.
+- ORM builder exposes `SetGeom(point geom.Geometry)` with helper constructors in `internal/orm/pgxext/postgis`.
+- GraphQL exposes `GeoJSON` scalars for geometry fields.
+- Predicate helpers support spatial operators (`WhereGeomWithin`, `WhereGeomIntersects`).
 
-```go
-// Example operations made available through generated code
-location, err := client.Location.Query().Where(
-    dsl.Location.DistanceWithin("coordinates", point, 1000), // Within 1000m
-).First(ctx)
-
-locations, err := client.Location.Query().Where(
-    dsl.Location.Intersects("boundary", otherPolygon),
-).All(ctx)
-```
-
-### Spatial Indexes
-
-Spatial indexes can be defined for optimized geographic queries:
+### Example Query
 
 ```go
-func (Location) Indexes() []dsl.Index {
-    return []dsl.Index{
-        dsl.Index().Spatial().Fields("coordinates"),  // 2D spatial index
-        dsl.Index().Spatial().Fields("boundary"),     // Spatial index on polygon
-        dsl.Index().Gist().Fields("area"),            // GiST index for geography
-    }
-}
+client.Location.Query().
+    Where(location.GeomWithinRadius(lat, lng, 500)).
+    Order(location.ByDistance(lat, lng, orm.OrderAsc)).
+    All(ctx)
 ```
 
-### Migration Integration
+### Tips
 
-The framework ensures PostGIS extension is enabled in migrations:
+- Use `.Geography()` for distance calculations across long distances (uses spheroidal math).
+- Add indexes with `dsl.Index().Fields("geom").Using("gist")` to accelerate spatial queries.
+- Combine with `TimescaleDB` hypertables if storing time-series location updates.
 
-```sql
--- Generated migration ensures PostGIS is available
-CREATE EXTENSION IF NOT EXISTS postgis;
-```
+---
 
-## pgvector Support
+## pgvector
 
-pgvector enables efficient storage and similarity search of embedding vectors for AI/ML applications. The framework provides typed support for vector operations.
-
-### Vector Types
+Store machine learning embeddings using `dsl.Vector` fields.
 
 ```go
-type Embedding struct{ dsl.Schema }
+type Document struct{ dsl.Schema }
 
-func (Embedding) Fields() []dsl.Field {
+func (Document) Fields() []dsl.Field {
     return []dsl.Field{
         dsl.UUIDv7("id").Primary(),
-        dsl.Vector("embedding", 1536),      // Float vector with dimension 1536
-        dsl.Vector64("compressed", 64),     // 64-bit vector
-        dsl.VectorFloat16("quantized", 256), // Float16 vector (compressed)
-        dsl.SparseVector("sparse", 1000),   // Sparse vector
+        dsl.String("title").NotEmpty(),
+        dsl.Vector("embedding", 1536).
+            NotEmpty().
+            Comment("OpenAI text-embedding-3-large vector"),
     }
 }
 ```
 
-### Vector Operations
-
-The framework generates helpers for vector similarity searches:
+### Similarity Search
 
 ```go
-// Cosine similarity search
-similarEmbeddings, err := client.Embedding.Query().Where(
-    dsl.Embedding.CosineDistance("embedding", queryVector, 0.8),
-).OrderBy(dsl.Embedding.CosineDistanceTo("embedding", queryVector)).All(ctx)
+query := client.Document.Query().
+    Where(document.EmbeddingNearestNeighbor(vec, orm.WithDistanceColumn("similarity"))).
+    Limit(20)
 
-// Euclidean distance search
-nearbyEmbeddings, err := client.Embedding.Query().Where(
-    dsl.Embedding.EuclideanDistance("embedding", queryVector, 1.5),
-).All(ctx)
-
-// Inner product search
-relatedEmbeddings, err := client.Embedding.Query().Where(
-    dsl.Embedding.InnerProduct("embedding", queryVector, 0.5),
-).OrderBy(dsl.Embedding.InnerProductTo("embedding", queryVector)).All(ctx)
+results, err := query.All(ctx)
 ```
 
-### Vector Indexes
-
-Specialized indexes for efficient vector similarity search:
+GraphQL surfaces a `Vector` scalar that accepts/returns lists of floats. Use annotations to expose specialized queries:
 
 ```go
-func (Embedding) Indexes() []dsl.Index {
-    return []dsl.Index{
-        dsl.Index().Hnsw().Fields("embedding"),    // HNSW index for fast ANN search
-        dsl.Index().Ivfflat().Fields("embedding"), // IVFFlat index for balanced performance
-        dsl.Index().Ivfpq().Fields("embedding"),   // IVFPQ for memory-efficient search
+dsl.GraphQL("Document").
+    CustomQuery("searchDocuments", dsl.Query{
+        Args: []dsl.QueryArg{
+            dsl.VectorArg("embedding", 1536),
+            dsl.IntArg("limit").Default(10),
+        },
+        Resolver: `return client.Document.Query().Where(document.EmbeddingNearestNeighbor(args.Embedding, orm.WithDistanceColumn("similarity"))).Limit(args.Limit).All(ctx)`,
+    })
+```
+
+### Indexing
+
+- `.Index().Fields("embedding").Using("ivfflat").With(`lists = 100`)` – recommended for large datasets.
+- Tune `ANALYZE` and `SET enable_seqscan = off` for benchmark runs.
+
+---
+
+## TimescaleDB
+
+TimescaleDB powers time-series workloads. Enable it via annotation:
+
+```go
+func (Metric) Annotations() []dsl.Annotation {
+    return []dsl.Annotation{
+        dsl.Extension("timescaledb"),
+        dsl.Timescale(dsl.TimescaleOptions{
+            TimeColumn: "collected_at",
+            ChunkInterval: 24 * time.Hour,
+            Compressed: true,
+        }),
     }
 }
 ```
 
-### Migration Integration
-
-pgvector extension is automatically enabled:
-
-```sql
--- Generated migration ensures pgvector is available
-CREATE EXTENSION IF NOT EXISTS vector;
-```
-
-## TimescaleDB Support
-
-TimescaleDB is a time-series database built on PostgreSQL. The framework provides integration for hypertable creation and time-series operations.
-
-### Time-Series Schemas
+Define fields:
 
 ```go
 type Metric struct{ dsl.Schema }
@@ -144,196 +148,73 @@ type Metric struct{ dsl.Schema }
 func (Metric) Fields() []dsl.Field {
     return []dsl.Field{
         dsl.UUIDv7("id").Primary(),
-        dsl.Time("timestamp").Required(),  // Time column for partitioning
-        dsl.String("name").Required(),
-        dsl.Float("value"),
-        dsl.JSON("tags"),                  // JSON for flexible metadata
-        dsl.String("device_id").Required(), // Series identifier
-    }
-}
-
-// Define as hypertable
-func (Metric) Annotations() []dsl.Annotation {
-    return []dsl.Annotation{
-        dsl.Annotation{"timescaledb": map[string]interface{}{
-            "hypertable": true,
-            "time_column": "timestamp",
-            "partition_column": "device_id",
-            "chunk_time_interval": "1 day",
-        }},
+        dsl.Time("collected_at").NotEmpty(),
+        dsl.String("name").NotEmpty(),
+        dsl.Float("value").Required(),
+        dsl.JSON("labels").Optional(),
     }
 }
 ```
 
-### Hypertable Configuration
+### Generated Support
 
-Time-series specific schema annotations:
+- Migration converts the table to a hypertable via `SELECT create_hypertable(...)`.
+- Compression policies and retention policies map from annotation options.
+- ORM helpers expose `WhereCollectedAtBetween` and `AggregateByInterval` functions.
+- GraphQL adds bucketed aggregation queries when `dsl.Timescale().ExposeAggregation()` is set.
+
+### Sample Aggregation Resolver
 
 ```go
-func (Metric) Annotations() []dsl.Annotation {
-    return []dsl.Annotation{
-        dsl.Annotation{"timescaledb": map[string]interface{}{
-            "hypertable": true,                    // Create as hypertable
-            "time_column": "timestamp",            // Column to partition by time
-            "partition_column": "device_id",       // Optional: partition by series
-            "chunk_time_interval": "1 day",        // Time interval for chunks
-            "compress_segmentby": ["device_id"],   // Compression options
-            "compress_orderby": ["timestamp"],     // Compression order
-        }},
-    }
+func (r *metricResolver) Bucketed(ctx context.Context, obj *orm.Metric, args struct {
+    Interval time.Duration
+}) ([]*model.MetricBucket, error) {
+    return r.Client.Metric.Query().
+        Where(metric.NameEQ(obj.Name)).
+        Aggregate(metric.CollectedAtBucket(args.Interval), metric.ValueAvg()).
+        All(ctx)
 }
 ```
 
-### Time-Series Functions
+---
 
-Generated helpers for time-series operations:
+## Creating Custom Extensions
+
+If you rely on another PostgreSQL extension, create a mixin:
 
 ```go
-// Time-series aggregation
-metrics, err := client.Metric.Query().Where(
-    dsl.Metric.TimestampBetween(time.Now().Add(-24*time.Hour), time.Now()),
-).Aggregate(
-    dsl.Metric.Avg("value"),
-    dsl.Metric.TimeBucket("1 hour", "timestamp"),
-).All(ctx)
+type LTREE struct{ dsl.Mixin }
 
-// Gap-filling operations
-metrics, err := client.Metric.Query().Where(
-    dsl.Metric.TimestampBetween(startDate, endDate),
-).TimeSeries(
-    dsl.Metric.FillGaps("timestamp", "1 hour"),
-).All(ctx)
-```
+func (LTREE) Fields() []dsl.Field {
+    return []dsl.Field{dsl.String("path").Comment("ltree path")}
+}
 
-### Continuous Aggregations
-
-Support for materialized views of time-series data:
-
-```go
-func (Metric) Views() []dsl.View {
-    return []dsl.View{
-        dsl.View("hourly_metrics").TimeSeries(map[string]interface{}{
-            "query": `
-                SELECT 
-                    time_bucket('1 hour', timestamp) as bucket,
-                    avg(value) as avg_value,
-                    max(value) as max_value,
-                    device_id
-                FROM metrics 
-                GROUP BY bucket, device_id
-            `,
-            "refresh_interval": "5 minutes",
-        }),
-    }
+func (LTREE) Annotations() []dsl.Annotation {
+    return []dsl.Annotation{dsl.Extension("ltree")}
 }
 ```
 
-## Extension Installation
+Add the mixin to your schema and run `erm gen`. The migration will include `CREATE EXTENSION IF NOT EXISTS ltree;` automatically.
 
-### Automatic Installation
+---
 
-The framework can automatically install extensions:
+## Operational Considerations
 
-```go
-// In schema definition
-func (System) Annotations() []dsl.Annotation {
-    return []dsl.Annotation{
-        dsl.Annotation{"extensions": []string{
-            "postgis",
-            "vector", 
-            "timescaledb",
-        }},
-    }
-}
-```
+- Ensure your target database has the extension installed or that your user has permission to run `CREATE EXTENSION`.
+- In multi-tenant deployments, pre-install extensions during provisioning to avoid race conditions.
+- Include extension prerequisites in your infrastructure-as-code (Terraform, Helm) for deterministic environments.
 
-### Migration Scripts
+---
 
-Extensions are enabled in the generated migration files:
+## Troubleshooting
 
-```go
-// Example migration enabling extensions
-func (m *Migrations) Up_20250101_000001() error {
-    return m.Execute([]string{
-        "CREATE EXTENSION IF NOT EXISTS postgis;",
-        "CREATE EXTENSION IF NOT EXISTS vector;",
-        "CREATE EXTENSION IF NOT EXISTS timescaledb;",
-    })
-}
-```
+| Symptom | Resolution |
+|---------|------------|
+| Migration fails with “permission denied” | Run migrations using a role with `CREATE` privileges or pre-install the extension. |
+| GraphQL rejects vector input | Ensure the list length matches the dimension specified in `dsl.Vector`. |
+| PostGIS distance queries are slow | Create a `GIST`/`SP-GiST` index and confirm your SRID matches the input coordinates. |
+| Timescale hypertable not created | Verify the annotation includes the correct time column and that TimescaleDB is installed. |
 
-## Performance Considerations
+---
 
-### PostGIS
-- Use spatial indexes for geometric queries
-- Consider geography vs geometry types based on use case
-- Be mindful of coordinate system projections
-
-### pgvector
-- Choose appropriate index type based on query patterns
-- Consider vector dimensionality vs. performance tradeoffs
-- Use quantization for high-dimensional vectors
-
-### TimescaleDB
-- Properly size chunk time intervals for your data patterns
-- Use compression for historical data
-- Configure appropriate retention policies
-
-## Best Practices
-
-1. **Choose the right extension** for your use case:
-   - PostGIS for geographic applications
-   - pgvector for AI/ML embedding similarity
-   - TimescaleDB for time-series data
-
-2. **Proper indexing** for each extension type:
-   - Spatial indexes for PostGIS
-   - Vector indexes for pgvector
-   - Time-partitioned indexes for TimescaleDB
-
-3. **Dimensional planning** for vectors:
-   - Balance between accuracy and performance
-   - Consider quantization for storage efficiency
-
-4. **Migration safety**:
-   - Test extension installation in development
-   - Plan for extension updates
-   - Consider backup/restore procedures for extension-dependent data
-
-## Example: Combined Usage
-
-A schema that uses multiple extensions:
-
-```go
-type SensorReading struct{ dsl.Schema }
-
-func (SensorReading) Fields() []dsl.Field {
-    return []dsl.Field{
-        dsl.UUIDv7("id").Primary(),
-        dsl.Time("timestamp").Required(),           // TimescaleDB time column
-        dsl.Point("location"),                     // PostGIS location
-        dsl.Vector("sensor_signature", 128),       // pgvector for sensor pattern
-        dsl.Float("temperature"),
-        dsl.Float("humidity"),
-        dsl.String("sensor_id").Required(),
-    }
-}
-
-func (SensorReading) Annotations() []dsl.Annotation {
-    return []dsl.Annotation{
-        dsl.Annotation{"timescaledb": map[string]interface{}{
-            "hypertable": true,
-            "time_column": "timestamp",
-            "partition_column": "sensor_id",
-        }},
-    }
-}
-
-func (SensorReading) Indexes() []dsl.Index {
-    return []dsl.Index{
-        dsl.Index().Spatial().Fields("location"),     // PostGIS spatial index
-        dsl.Index().Hnsw().Fields("sensor_signature"), // pgvector index
-        dsl.Index().Fields("sensor_id", "timestamp"),  // Hypertable partition index
-    }
-}
-```
+Continue to [performance-observability.md](./performance-observability.md) to understand how extensions interact with monitoring.

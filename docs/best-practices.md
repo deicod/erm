@@ -1,240 +1,89 @@
 # Best Practices
 
-This document outlines best practices for using the erm framework effectively, covering schema design, performance optimization, security considerations, and maintainability.
+Follow these conventions to keep generated and handwritten code aligned, reduce merge conflicts, and make life easier for humans
+and AI collaborators alike.
 
-## Schema Design Best Practices
+---
 
-### Naming Conventions
-- Use PascalCase for entity names: `User`, `Post`, `Comment`
-- Use camelCase for field names: `firstName`, `createdAt`, `emailAddress`
-- Use descriptive names that clearly indicate purpose
-- Avoid abbreviations unless they are widely understood
+## Workflow Hygiene
 
-### ID Management
-- Always use UUID v7 for primary keys (default in erm)
-- Leverage the global object ID system for Relay compatibility
-- Don't expose internal database IDs directly to clients
+1. **Edit Schema First** – Always modify the DSL before touching generated files. Regenerate immediately after editing.
+2. **Small Commits** – Keep schema, migrations, and resolver changes in the same commit so reviewers can reason about the impact.
+3. **Run `erm gen` Before Commit** – Prevent CI failures by regenerating code locally.
+4. **Update Documentation** – When you introduce new patterns, update the docs under `docs/` and reference the change in PRs.
+5. **Include Tests** – Add or update tests (`internal/testutil`, GraphQL tests) whenever business logic changes.
 
-### Field Design
-- Specify appropriate sizes for string fields to optimize storage and queries
-- Use proper data types (Time for timestamps, Bool for boolean values)
-- Apply constraints where appropriate (Unique, Required)
-- Be intentional about nullable vs. required fields
+---
 
-```go
-// Good
-dsl.String("email").Size(255).Unique().Required()
-dsl.Time("created_at").DefaultNow()
+## Schema Design
 
-// Avoid unless necessary
-dsl.String("data").Required() // No size limit
-```
+- Use mixins for timestamps, soft deletes, and multi-tenancy to avoid duplication.
+- Prefer UUIDv7 primary keys for all entities; the generator handles ordering and pagination correctly.
+- Add comments to fields and edges—these surface in database comments, GraphQL descriptions, and generated code.
+- Keep privacy rules explicit. Start with restrictive defaults (`Deny`) and open up as needed.
+- Use annotations to shape GraphQL output instead of editing resolvers manually.
 
-### Relationship Design
-- Define both sides of relationships for clarity
-- Use proper foreign key constraints
-- Consider the impact of relationship depth on query performance
-- Use eager loading for frequently accessed relationships
+---
 
-```go
-// Good relationship definition
-type User struct{ dsl.Schema }
+## GraphQL Layer
 
-func (User) Edges() []dsl.Edge {
-    return []dsl.Edge{
-        dsl.ToMany("posts", "Post").Ref("author_id"),
-    }
-}
+- Use connection fields (`edges`, `pageInfo`) even for small lists to stay Relay-compliant.
+- Expose computed fields via annotations rather than editing generated files.
+- Keep resolver customizations in `_extension.go` files next to generated resolvers.
+- Validate new schema additions with the GraphQL client and update API docs when queries change.
 
-type Post struct{ dsl.Schema }
+---
 
-func (Post) Edges() []dsl.Edge {
-    return []dsl.Edge{
-        dsl.ToOne("author", "User").Field("author_id").Inverse("posts"),
-    }
-}
-```
+## CLI & Automation
 
-## Performance Best Practices
+- Add `//go:generate erm gen` to schema packages so `go generate ./...` keeps code fresh.
+- Integrate `erm gen --dry-run` into CI pipelines to detect drift early.
+- Run `erm doctor` once it exits preview to enforce migration ordering and configuration sanity.
 
-### Indexing Strategy
-- Create indexes for fields frequently used in WHERE clauses
-- Use composite indexes for multi-field queries
-- Index foreign keys used in joins
-- Add indexes for fields used in ORDER BY clauses
-- Monitor index usage and remove unused indexes
+---
 
-```go
-func (User) Indexes() []dsl.Index {
-    return []dsl.Index{
-        dsl.Index().Fields("email"),                    // For user lookup by email
-        dsl.Index().Fields("created_at").Desc(),        // For chronological queries
-        dsl.Index().Fields("status", "created_at"),     // For status-based queries with ordering
-    }
-}
-```
+## Database & Migrations
 
-### Pagination
-- Always use Relay-style pagination for list queries
-- Implement proper cursor-based pagination for large datasets
-- Avoid offset-based pagination for large result sets
-- Set reasonable default limits to prevent overly large responses
+- Review generated SQL before applying it. Adjust indexes and constraints if the default naming does not suit your domain.
+- Tag migrations with descriptive names using `erm gen --name` for easier auditing.
+- Apply migrations in a separate deployment step to detect failures before rolling out code.
+- Keep a clean migration history—avoid editing past migrations once applied.
 
-### Query Optimization
-- Use eager loading for predictable relationship access patterns
-- Leverage dataloaders to prevent N+1 queries
-- Fetch only the fields you need (GraphQL's selectivity is a feature)
-- Use connection-based queries instead of fetching entire collections
+---
 
-### Database Configuration
-- Configure appropriate connection pool sizes based on your application's needs
-- Set reasonable timeout values
-- Enable prepared statement caching
-- Monitor and tune PostgreSQL configuration for your workload
+## Security
 
-## Security Best Practices
+- Verify that `oidc` configuration in `erm.yaml` matches each environment (issuer, audience, scopes).
+- Store secrets (DSN, client IDs) in environment variables and reference them in `erm.yaml` using `${ENV_VAR}` syntax.
+- Audit custom claims mappers periodically to ensure roles and permissions align with organizational policy.
+- Use privacy rules to protect sensitive edges even when resolvers bypass GraphQL directives.
 
-### Authentication
-- Always validate OIDC tokens properly
-- Use HTTPS in production environments
-- Implement proper token refresh mechanisms
-- Log authentication failures for security monitoring
+---
 
-### Authorization
-- Use privacy policies for fine-grained access control
-- Validate user permissions at both API and database levels
-- Implement role-based access control where appropriate
-- Regularly audit access patterns and permissions
+## Observability
 
-```go
-func (User) Privacy() dsl.Privacy {
-    return dsl.Privacy{
-        Read:   "user.id == context.UserID || 'admin' in context.Roles",
-        Write:  "user.id == context.UserID",
-        Create: "'user_management' in context.Roles",
-        Delete: "'admin' in context.Roles",
-    }
-}
-```
+- Turn on tracing and metrics in staging environments before production to capture baselines.
+- Use log redaction features (`.Sensitive()`) to avoid leaking secrets in structured logs.
+- Monitor dataloader metrics (`erm_dataloader_batch_size`) to detect regressions when adding new edges.
 
-### Input Validation
-- Validate all inputs at the API boundary
-- Use GraphQL input types for structured validation
-- Implement proper sanitization for user-provided content
-- Set appropriate limits on input sizes
+---
 
-### Data Protection
-- Encrypt sensitive data at rest when necessary
-- Use proper data retention policies
-- Implement proper data export and deletion procedures
-- Audit data access patterns
+## Collaboration with AI Tools
 
-## Architecture Best Practices
+- Provide schema snippets when prompting AI assistants so they honor field names and annotations.
+- Ask AI to generate `_extension.go` files rather than editing generated files.
+- Encourage AI to update docs/tests alongside code changes—include references to sections in this portal within prompts.
 
-### Separation of Concerns
-- Keep business logic in hooks and interceptors
-- Use privacy policies for access control
-- Maintain clear boundaries between schema, business logic, and presentation layers
-- Organize code by domain instead of technical layer
+---
 
-### Configuration Management
-- Store configuration in environment variables for production
-- Use the erm.yaml file for application configuration
-- Separate configuration for different environments
-- Don't hardcode configuration values in the schema
+## Pull Request Checklist
 
-### Error Handling
-- Implement proper error handling in hooks and interceptors
-- Return appropriate error codes and messages
-- Log errors with sufficient context for debugging
-- Don't expose internal errors to clients
+Before requesting review:
 
-## Testing Best Practices
+- [ ] `erm gen` run with no pending changes.
+- [ ] SQL migrations reviewed and tested locally.
+- [ ] Tests added or updated (`go test ./...`).
+- [ ] Documentation updated (`docs/` or README notes).
+- [ ] Screenshots or GraphQL query examples attached when API changes.
 
-### Test Organization
-- Write tests for all business logic
-- Use integration tests to verify database operations
-- Test authentication and authorization flows
-- Include performance benchmarks for critical operations
-
-### Test Data Management
-- Use factories for creating consistent test data
-- Isolate test data between tests
-- Clean up test data after tests
-- Use transactions or savepoints for test data rollback
-
-## Development Workflow Best Practices
-
-### Version Control
-- Use feature branches for schema changes
-- Include migration files in schema change commits
-- Review generated code changes in pull requests
-- Use semantic versioning for releases
-
-### Code Generation
-- Regenerate code after schema changes
-- Commit generated code to version control
-- Test generated code changes thoroughly
-- Use `erm gen --dry-run` to preview changes
-
-### Schema Evolution
-- Make backward-compatible changes when possible
-- Plan migration strategies for breaking changes
-- Test schema changes thoroughly before applying to production
-- Document breaking changes clearly
-
-## Monitoring and Observability Best Practices
-
-### Metrics Collection
-- Monitor GraphQL query performance
-- Track error rates and types
-- Monitor database query performance
-- Track authentication and authorization metrics
-
-### Logging
-- Log significant business events
-- Include proper correlation IDs for request tracing
-- Log authentication and authorization decisions
-- Use structured logging for easier analysis
-
-### Health Checks
-- Implement comprehensive health checks for all services
-- Monitor database connectivity
-- Check external service dependencies
-- Include business logic health indicators
-
-## Extension-Specific Best Practices
-
-### PostGIS
-- Use appropriate geometric types for your use case
-- Create spatial indexes for geometric queries
-- Consider coordinate system implications
-- Validate geometric data before storage
-
-### pgvector
-- Choose the right index type for your query patterns
-- Consider the trade-off between dimensionality and performance
-- Use appropriate similarity metrics for your use case
-- Monitor vector index performance
-
-### TimescaleDB
-- Choose appropriate chunk sizes for your time-series patterns
-- Use compression for older historical data
-- Implement proper data retention policies
-- Monitor hypertable performance metrics
-
-## Maintenance Best Practices
-
-### Regular Tasks
-- Regularly update dependencies
-- Monitor and optimize database performance
-- Review and clean up old migrations
-- Update privacy policies as requirements change
-
-### Documentation
-- Keep schema documentation up to date
-- Document business logic and constraints
-- Maintain API documentation
-- Record important architectural decisions
-
-This document will evolve as best practices for using erm continue to emerge and mature.
+Following these practices keeps erm projects predictable and maintainable.

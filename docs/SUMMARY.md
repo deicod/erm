@@ -2,81 +2,52 @@
 
 ## Overview
 
-This comprehensive documentation suite covers the **erm** framework - a Go code generation tool that creates production-grade GraphQL backends with integrated ORM capabilities, following the Relay Server Specification and secured by OIDC.
+This documentation suite provides complete coverage for the **erm** framework—a Go-based GraphQL + ORM generator that delivers
+Relay-compliant APIs, Postgres migrations, OIDC security, and DX-focused tooling.
 
 ## Documentation Structure
 
-The documentation includes the following comprehensive guides:
-
 ### Core Concepts
-1. **[Overview](./overview.md)** - Introduction to erm and its core concepts
-2. **[Quickstart Guide](./quickstart.md)** - Step-by-step tutorial for your first project
-3. **[Schema Definition Guide](./schema-definition.md)** - Define your data models using the schema DSL
-4. **[GraphQL API](./graphql-api.md)** - Relay-compliant GraphQL API features and usage
+1. **[Overview](./overview.md)** – Architecture, request lifecycle, and configuration surfaces.
+2. **[Quickstart Guide](./quickstart.md)** – Bootstrap a project from schema to running server.
+3. **[Schema Definition Guide](./schema-definition.md)** – DSL reference with advanced patterns.
+4. **[GraphQL API](./graphql-api.md)** – Relay implementation details, resolvers, and extensions.
 
 ### Security and Integration
-5. **[Authentication and Authorization](./authentication.md)** - OIDC integration and access control
-6. **[Extensions Support](./extensions.md)** - PostGIS, pgvector, and TimescaleDB integration
+5. **[Authentication & Authorization](./authentication.md)** – OIDC middleware, claims mapping, and directives.
+6. **[Extensions Support](./extensions.md)** – PostGIS, pgvector, TimescaleDB, and custom extensions.
 
 ### Tools and Operations
-7. **[Command Line Interface (CLI)](./cli.md)** - Complete reference for the erm command-line tool
-8. **[Performance and Observability](./performance-observability.md)** - Optimizing and monitoring your application
-9. **[Testing](./testing.md)** - Comprehensive testing strategies and utilities
+7. **[CLI Reference](./cli.md)** – Command usage, workflows, and automation tips.
+8. **[Performance & Observability](./performance-observability.md)** – Metrics, tracing, tuning guidance.
+9. **[Testing](./testing.md)** – Unit, integration, GraphQL, and benchmark strategies.
 
-### Best Practices and Support
-10. **[Best Practices](./best-practices.md)** - Recommended approaches for using erm effectively
-11. **[Troubleshooting](./troubleshooting.md)** - Common issues and their solutions
+### Practices and Troubleshooting
+10. **[Best Practices](./best-practices.md)** – Conventions for schema, GraphQL, security, and collaboration.
+11. **[Troubleshooting](./troubleshooting.md)** – Symptom-based remediation across the stack.
+12. **[End-to-End Examples](./examples.md)** – Comprehensive feature walkthroughs you can adapt.
 
 ### Navigation
-12. **[README](./README.md)** - Main documentation index and entry point
+13. **[README](./README.md)** – Portal entry point and map of the guides.
 
-## Key Features Documented
+## Key Highlights
 
-### Schema Definition
-- Schema-as-code DSL similar to Facebook's ent
-- Support for various field types and constraints
-- Relationships and edge definitions
-- Indexes, views, mixins and annotations
-
-### GraphQL API
-- Full Relay specification compliance
-- Global object IDs
-- Connection-based pagination with cursors
-- Dataloader integration to prevent N+1 queries
-- Query optimization and performance features
-
-### Security
-- OIDC authentication with pluggable claim mappers
-- Keycloak integration (default)
-- Support for Auth0, Okta, and custom OIDC providers
-- Privacy policies for fine-grained access control
-
-### Extensions
-- PostGIS support for geographic data
-- pgvector for AI/ML embedding storage and similarity search
-- TimescaleDB for time-series data
-
-### Developer Experience
-- Intuitive CLI with init, new, gen, and graphql commands
-- Automatic code generation from schema definitions
-- Proper database migration handling
-- Comprehensive testing utilities
+- **Schema DSL** – Fields, edges, indexes, mixins, hooks, interceptors, privacy policies, and migrations.
+- **GraphQL Layer** – Global Node IDs, connections, dataloaders, custom queries/mutations, and testing utilities.
+- **Security** – OIDC discovery, JWKS caching, claims mapping, `@auth` directives, and privacy integration.
+- **Extensions** – Batteries-included support for PostGIS, pgvector, TimescaleDB, plus guidance for custom extensions.
+- **DX & Automation** – CLI workflows, `erm doctor`, documentation updates, AI collaboration tips.
 
 ## Project Status
 
-Based on the PRD and ROADMAP documentation found in the codebase, erm is currently in alpha stage with the following milestones planned:
-
-- **Milestone 0**: Repo bootstrap (completed)
-- **Milestone 1**: ORM core (in progress)
-- **Milestone 2**: GraphQL Relay (in progress)
-- **Milestone 3**: OIDC (in progress)
-- **Milestone 4**: Extensions & Performance (in progress)
-- **Milestone 5**: DX polish and v0.1.0 release (planned)
+Refer to [ROADMAP.md](../ROADMAP.md) for milestone tracking. Documentation updates accompany feature releases and highlight
+migration steps when behavior changes.
 
 ## Contributing
 
-For contribution guidelines, refer to the [CONTRIBUTING.md](../CONTRIBUTING.md) file in the root directory.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines. When updating docs, include runnable snippets and note CLI versions if
+behavior differs between releases.
 
 ## License
 
-The erm framework is released under the MIT License as described in the [LICENSE](../LICENSE) file.
+erm is released under the MIT License. See [LICENSE](../LICENSE) for details.

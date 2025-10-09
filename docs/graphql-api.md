@@ -1,296 +1,314 @@
 # GraphQL API
 
-The erm framework generates a fully Relay-compliant GraphQL API that follows the Relay Server Specification. This includes global object IDs, cursor-based pagination, connections/edges, and more.
+erm generates a complete, Relay-compliant GraphQL server using gqlgen. This document explains the schema topology, resolver
+implementation patterns, dataloader integration, and how to extend the generated API with custom operations.
 
-## Relay Specification Compliance
+---
 
-The generated GraphQL API implements the following Relay features:
+## Relay Compliance at a Glance
 
-### Global Object IDs
-- Each entity is assigned a globally unique ID following the format: `base64("<Type>:<uuidv7>")`
-- The `node(id:)` query resolver can fetch any entity by its global ID
-- Automatic encoding/decoding between UUID v7 and global object IDs
+- **Global Node IDs** – Every entity implements the `Node` interface. IDs are encoded as `base64("<Type>:<uuidv7>")`. Helpers
+  live in `internal/graphql/node` and the ORM automatically decodes/encodes IDs in builders.
+- **Connections & Edges** – Pagination follows the Relay spec using `first`, `last`, `after`, and `before`. Connections expose
+  `edges`, `pageInfo`, and `totalCount`.
+- **Mutations** – Generated CRUD mutations use input objects and payload objects that include `clientMutationId` for optimistic
+  UI patterns.
+- **Viewer Context** – Resolvers receive viewer context (from OIDC middleware) and pass it through to privacy rules before
+  hitting the database.
 
-### Connections and Pagination
-- Cursor-based pagination using `first`, `last`, `after`, `before` parameters
-- `Connection`, `Edge`, and `PageInfo` types for consistent pagination
-- Opaque cursors that don't expose internal database structure
+---
 
-## Generated GraphQL Types
+## Generated Schema Structure
 
-For each schema, the framework generates:
-
-1. **Object Type** - Represents the entity with all its fields
-2. **Input Types** - For mutations and filtering
-3. **Connection Type** - For paginated lists
-4. **Edge Type** - Represents a connection between two nodes
-5. **Filter Types** - For querying with conditions
-
-### Example Generated Types
-
-Given a User schema:
-
-```go
-type User struct{ dsl.Schema }
-
-func (User) Fields() []dsl.Field {
-    return []dsl.Field{
-        dsl.UUIDv7("id").Primary(),
-        dsl.String("name").Size(255),
-        dsl.String("email").Size(255).Unique(),
-        dsl.Time("created_at").DefaultNow(),
-    }
-}
-```
-
-The framework generates GraphQL types like:
+For each entity, erm produces GraphQL types in `internal/graphql/schema.graphqls` (or split across modules if you enable module
+mode). Using a `User` entity as an example:
 
 ```graphql
-type User {
-    id: ID!
-    name: String!
-    email: String!
-    createdAt: Time!
+type User implements Node {
+  id: ID!
+  email: String!
+  displayName: String
+  isAdmin: Boolean!
+  createdAt: Time!
+  updatedAt: Time!
+  posts(after: Cursor, first: Int, before: Cursor, last: Int, orderBy: PostOrder): PostConnection!
 }
 
 type UserEdge {
-    node: User
-    cursor: String!
+  node: User!
+  cursor: Cursor!
 }
 
 type UserConnection {
-    edges: [UserEdge!]!
-    pageInfo: PageInfo!
-    totalCount: Int!
+  totalCount: Int!
+  edges: [UserEdge!]!
+  pageInfo: PageInfo!
 }
 
 input UserFilter {
-    name: String
-    email: String
-    emailContains: String
-    createdAtAfter: Time
-    createdAtBefore: Time
+  email: String
+  emailContains: String
+  isAdmin: Boolean
+  createdAtAfter: Time
+  createdAtBefore: Time
+}
+
+input UserOrder {
+  direction: OrderDirection! = ASC
+  field: UserOrderField!
 }
 ```
 
-## Query Operations
+Filtering inputs mirror the ORM predicate helpers. The generator converts field modifiers (e.g., `.Unique()`, `.Enum()`) into
+GraphQL capabilities automatically.
 
-The framework generates several types of queries:
+---
 
-### Single Entity Queries
+## Root Operations
+
+### Node Lookup
+
 ```graphql
-# Fetch a single user by ID
-query {
-    user(id: "VXNlcjoxMjM0NTY3ODktMTIzNC0xMjM0LTEyMzQtMTIzNDU2Nzg5MDEy") {
+query NodeQuery($id: ID!) {
+  node(id: $id) {
+    id
+    ... on User {
+      email
+      displayName
+    }
+  }
+}
+```
+
+The `node` resolver dispatches to `FindNodeByID` generated in `internal/graphql/node/registry.go`. You can register additional
+node types (e.g., view projections) via annotations.
+
+### Entity Queries
+
+```graphql
+query Users($first: Int!, $after: Cursor) {
+  users(first: $first, after: $after, orderBy: { field: CREATED_AT, direction: DESC }) {
+    edges {
+      cursor
+      node {
         id
-        name
         email
+        posts(first: 5) {
+          totalCount
+        }
+      }
     }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    totalCount
+  }
 }
+```
 
-# Fetch by unique field
-query {
-    userByEmail(email: "example@example.com") {
+The generated resolver constructs an ORM query with the appropriate filters, orderings, and pagination parameters. Connection
+cursors are opaque (base64 encoded) and derived from primary key ordering to ensure deterministic pagination.
+
+### Unique Accessors
+
+For fields marked `.Unique()`, the generator exposes `userByEmail`, `workspaceBySlug`, etc. Example:
+
+```graphql
+query UserByEmail($email: String!) {
+  userByEmail(email: $email) {
+    id
+    email
+    displayName
+  }
+}
+```
+
+### Mutations
+
+Every entity gets `create<Entity>`, `update<Entity>`, and `delete<Entity>` mutations. They follow the Relay payload pattern:
+
+```graphql
+mutation CreatePost($input: CreatePostInput!) {
+  createPost(input: $input) {
+    post {
+      id
+      title
+      body
+      author {
         id
-        name
         email
+      }
     }
+    clientMutationId
+  }
 }
 ```
 
-### List Queries (Connections)
-```graphql
-# Fetch users with pagination
-query {
-    users(first: 10, after: "cursor") {
-        edges {
-            node {
-                id
-                name
-                email
-            }
-            cursor
-        }
-        pageInfo {
-            hasNextPage
-            hasPreviousPage
-            startCursor
-            endCursor
-        }
-        totalCount
-    }
-}
+`clientMutationId` is echoed back automatically to support optimistic updates. Partial updates use `Update<Entity>Input` where
+optional fields map to pointer types in Go, allowing you to distinguish between "null" and "not provided".
 
-# Fetch with filters
-query {
-    users(filter: { name: "John" }) {
-        edges {
-            node {
-                id
-                name
-                email
-            }
-        }
-        pageInfo {
-            hasNextPage
-            hasPreviousPage
-        }
-    }
-}
-```
+### Subscriptions (Optional)
 
-### Global Node Interface
-```graphql
-# Fetch any node by global ID
-query {
-    node(id: "VXNlcjoxMjM0NTY3ODktMTIzNC0xMjM0LTEyMzQtMTIzNDU2Nzg5MDEy") {
-        id
-        ... on User {
-            name
-            email
-        }
-    }
-}
-```
+If you enable subscriptions in `erm.yaml`, the generator adds stub definitions and resolver scaffolding. Wire them up using your
+preferred pub/sub implementation.
 
-## Mutation Operations
+---
 
-The framework generates Create, Update, and Delete mutations:
+## Resolver Implementation
 
-### Create Mutations
-```graphql
-mutation {
-    createUser(input: {
-        name: "John Doe"
-        email: "john@example.com"
-    }) {
-        user {
-            id
-            name
-            email
-        }
-    }
-}
-```
+Generated resolvers live in `internal/graphql/resolver`. Files ending in `_generated.go` should not be edited. For custom logic,
+create extension files (e.g., `user.resolvers_extension.go`).
 
-### Update Mutations
-```graphql
-mutation {
-    updateUser(id: "VXNlcjoxMjM0NTY3ODktMTIzNC0xMjM0LTEyMzQtMTIzNDU2Nzg5MDEy", input: {
-        name: "John Smith"
-    }) {
-        user {
-            id
-            name
-            email
-        }
-    }
-}
-```
+### Query Flow
 
-### Delete Mutations
-```graphql
-mutation {
-    deleteUser(id: "VXNlcjoxMjM0NTY3ODktMTIzNC0xMjM0LTEyMzQtMTIzNDU2Nzg5MDEy") {
-        success
-    }
-}
-```
-
-## Edge and Connection Queries
-
-For relationships defined in schemas, the framework generates edge queries:
-
-```graphql
-query {
-    user(id: "VXNlcjoxMjM0NTY3ODktMTIzNC0xMjM0LTEyMzQtMTIzNDU2Nzg5MDEy") {
-        id
-        name
-        posts(first: 5) {  # Assuming User has many Posts
-            edges {
-                node {
-                    id
-                    title
-                    content
-                }
-                cursor
-            }
-            pageInfo {
-                hasNextPage
-                hasPreviousPage
-            }
-        }
-    }
-}
-```
-
-## Filtering and Sorting
-
-Filtering is available on connection queries:
-
-```graphql
-query {
-    users(
-        first: 10
-        filter: {
-            name: "John"
-            emailContains: "@example.com"
-        }
-        orderBy: { field: "createdAt", direction: "DESC" }
-    ) {
-        edges {
-            node {
-                id
-                name
-                email
-                createdAt
-            }
-            cursor
-        }
-        pageInfo {
-            hasNextPage
-            hasPreviousPage
-        }
-    }
-}
-```
-
-## Dataloader Integration
-
-The generated code includes dataloader integration to prevent N+1 query problems:
-
-- Automatic batching of queries
-- Caching of results within a request context
-- Efficient resolution of relationships
-
-## Error Handling
-
-The GraphQL API follows GraphQL error handling conventions:
-
-- Validation errors with descriptive messages
-- Authorization errors when privacy policies are violated
-- Database constraint errors mapped to GraphQL errors
-
-## Performance Features
+1. **Argument Parsing** – gqlgen decodes incoming arguments into Go structs.
+2. **Privacy Check** – ORM policy/privay rules run before executing SQL.
+3. **Dataloader Registration** – To-many edges automatically register dataloaders defined in `internal/graphql/dataloader`.
+4. **ORM Execution** – Query builders fetch data via `pgx` with context propagation.
+5. **Response Mapping** – Entities convert to GraphQL models, applying field-level annotations (e.g., rename `display_name` →
+   `displayName`).
 
 ### Dataloaders
-- Batch related queries to prevent N+1 problems
-- Cache results within request context
 
-### Query Optimization
-- Automatic index creation based on schema relationships
-- Efficient query generation for complex joins
-- Connection-based pagination to avoid loading large datasets at once
+The `dataloader` package prevents N+1 queries by batching loads. Each edge has a loader with configurable batch size and
+caching strategy. Override settings via schema annotations:
 
-### Tracing
-- OpenTelemetry integration for observability
-- Query execution timing and performance metrics
+```go
+dsl.ToMany("posts", "Post").
+    Ref("author").
+    Dataloader(dsl.Loader{Batch: 200, Wait: 2 * time.Millisecond})
+```
 
-## Customization
+### Error Handling
 
-While the generated API covers most use cases, you can customize:
+- Validation errors bubble up as GraphQL errors with `BAD_USER_INPUT` codes.
+- Privacy denials use `PERMISSION_DENIED`.
+- Unexpected errors propagate as `INTERNAL` with sanitized messages. The observability package logs full error context.
 
-1. **Additional Resolvers** - Add custom queries/mutations in the GraphQL generator templates
-2. **Validation Logic** - Add custom validation in hooks or interceptors
-3. **Authorization Logic** - Implement custom privacy policies based on context
-4. **Query Complexity** - Configure query depth limits and complexity analysis
+Custom resolvers can wrap errors using helpers in `internal/graphql/errors`.
+
+---
+
+## Extending the Schema
+
+### Custom Fields
+
+Annotations allow you to expose computed fields without writing manual resolvers:
+
+```go
+func (User) Annotations() []dsl.Annotation {
+    return []dsl.Annotation{
+        dsl.GraphQL("User").
+            ComputedField("profileUrl", dsl.ComputedField{
+                GoType: "string",
+                Resolver: `return fmt.Sprintf("https://acme.io/users/%s", obj.ID)`,
+            }),
+    }
+}
+```
+
+The generator creates a resolver stub for `profileUrl` that you can customize.
+
+### Custom Mutations
+
+Defined via `dsl.Mutation` in the schema (see the schema guide). Generated payloads live in
+`internal/graphql/resolver/<entity>_mutation_extension.go` so you can author business logic there.
+
+### Query Helpers
+
+Add reusable filters in annotations:
+
+```go
+dsl.GraphQL("Post").
+    FilterPreset("published", `published_at IS NOT NULL`).
+    FilterPreset("draft", `published_at IS NULL`)
+```
+
+The CLI generates helper args so clients can call `posts(preset: PUBLISHED)`.
+
+---
+
+## Authorization Integration
+
+Resolvers respect the `@auth` directive generated from schema annotations. Example GraphQL snippet:
+
+```graphql
+type Workspace implements Node @auth(require: [ADMIN]) {
+  id: ID!
+  name: String!
+}
+```
+
+The directive references claims extracted by the OIDC middleware. In Go, you can fetch viewer info via
+`authz.ViewerFromContext(ctx)` and branch on roles or capabilities.
+
+---
+
+## File Layout Overview
+
+```
+internal/graphql/
+├── schema.graphqls              # Generated SDL (split when module mode enabled)
+├── resolver/
+│   ├── generated.go             # Boilerplate wiring – do not edit
+│   ├── user.resolvers.go        # Generated resolvers per entity
+│   ├── user.resolvers_extension.go  # Safe to edit
+│   └── ...
+├── dataloader/
+│   ├── registry.go              # Loader registration invoked per request
+│   └── user_loader.go           # Generated loader for edges
+├── node/
+│   └── registry.go              # Global Node fetch dispatch
+└── server/
+    └── server.go                # gqlgen HTTP server setup (Playground, CORS, logging, OIDC)
+```
+
+---
+
+## Testing the GraphQL Layer
+
+Use the generated test helpers in `internal/graphql/testutil`:
+
+```go
+func TestQueryUsers(t *testing.T) {
+    ctx := testutil.ContextWithViewer(t, testutil.Viewer{ID: uuid.MustParse("...")})
+    client := testutil.NewGraphQLClient(t)
+
+    resp := struct {
+        Users struct {
+            TotalCount int
+        }
+    }{}
+
+    testutil.Query(t, ctx, client, `query { users(first: 1) { totalCount } }`, nil, &resp)
+    require.Equal(t, 1, resp.Users.TotalCount)
+}
+```
+
+The testing guide dives deeper into integration tests, mock dataloaders, and snapshotting GraphQL responses.
+
+---
+
+## Playground & Tooling
+
+- `erm graphql init --playground` enables GraphQL Playground in development; disable it in production via `erm.yaml`.
+- `erm gen --dry-run` prints SDL diffs so you can review schema changes before committing.
+- Use GraphQL Inspector or Apollo Rover in CI to catch breaking schema changes; export SDL from `internal/graphql/schema.graphqls`.
+
+---
+
+## Troubleshooting
+
+| Issue | Resolution |
+|-------|------------|
+| `node(id:)` returns null | Ensure the ID is base64-encoded `<Type>:<uuidv7>` and that the Node registry includes the type. |
+| Duplicate edges in connection | Confirm dataloader caching is not disabled and review `.BatchSize()` annotations. |
+| Mutation denies access | Check entity `Policy()`/`Privacy()` definitions and `@auth` roles; inspect logs for policy evaluation. |
+| Playground missing custom headers | Update `internal/graphql/server/server.go` to inject defaults or configure your HTTP client. |
+
+For resolver-specific errors, turn on verbose logging (`ERM_LOG_LEVEL=debug`) to inspect ORM queries and dataloader batches.
+
+---
+
+With the GraphQL layer understood, proceed to [authentication.md](./authentication.md) to secure your API.
