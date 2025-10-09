@@ -21,10 +21,12 @@ type Mutation {
 }
 
 # BEGIN GENERATED
+scalar Timestamptz
+
 type User implements Node {
   id: ID!
-  createdAt: Time!
-  updatedAt: Time!
+  createdAt: Timestamptz!
+  updatedAt: Timestamptz!
 }
 
 type UserEdge {
@@ -38,8 +40,49 @@ type UserConnection {
   totalCount: Int!
 }
 
+input CreateUserInput {
+  clientMutationId: String
+  id: ID
+  createdAt: Timestamptz
+  updatedAt: Timestamptz
+}
+
+type CreateUserPayload {
+  clientMutationId: String
+  user: User
+}
+
+input UpdateUserInput {
+  clientMutationId: String
+  id: ID!
+  createdAt: Timestamptz
+  updatedAt: Timestamptz
+}
+
+type UpdateUserPayload {
+  clientMutationId: String
+  user: User
+}
+
+input DeleteUserInput {
+  clientMutationId: String
+  id: ID!
+}
+
+type DeleteUserPayload {
+  clientMutationId: String
+  deletedUserID: ID!
+}
+
 extend type Query {
+  user(id: ID!): User
   users(first: Int, after: String, last: Int, before: String): UserConnection!
+}
+
+extend type Mutation {
+  createUser(input: CreateUserInput!): CreateUserPayload!
+  updateUser(input: UpdateUserInput!): UpdateUserPayload!
+  deleteUser(input: DeleteUserInput!): DeleteUserPayload!
 }
 
 # END GENERATED

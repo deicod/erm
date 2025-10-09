@@ -11,7 +11,7 @@ import (
 
 // Loaders aggregates entity-specific dataloaders.
 type Loaders struct {
-	Users *EntityLoader[string, *gen.User]
+	entries map[string]any
 }
 
 // New constructs per-request dataloaders backed by the ORM client.
@@ -19,23 +19,32 @@ func New(orm *gen.Client, collector metrics.Collector) *Loaders {
 	if collector == nil {
 		collector = metrics.NoopCollector{}
 	}
+	loaders := &Loaders{entries: make(map[string]any)}
 	if orm == nil {
-		return &Loaders{}
+		return loaders
 	}
-	usersLoader := newEntityLoader("users", collector, func(ctx context.Context, keys []string) (map[string]*gen.User, error) {
-		results := make(map[string]*gen.User, len(keys))
-		for _, key := range keys {
-			record, err := orm.Users().ByID(ctx, key)
-			if err != nil {
-				return nil, err
-			}
-			if record != nil {
-				results[key] = record
-			}
-		}
-		return results, nil
-	})
-	return &Loaders{Users: usersLoader}
+	configureEntityLoaders(loaders, orm, collector)
+	return loaders
+}
+
+func (l *Loaders) register(name string, loader any) {
+	if l == nil {
+		return
+	}
+	if l.entries == nil {
+		l.entries = make(map[string]any)
+	}
+	l.entries[name] = loader
+}
+
+func (l *Loaders) get(name string) any {
+	if l == nil {
+		return nil
+	}
+	if l.entries == nil {
+		return nil
+	}
+	return l.entries[name]
 }
 
 // EntityLoader caches entities fetched by key with optional batching instrumentation.

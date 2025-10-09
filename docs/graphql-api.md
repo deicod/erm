@@ -26,36 +26,53 @@ mode). Using a `User` entity as an example:
 ```graphql
 type User implements Node {
   id: ID!
-  email: String!
-  displayName: String
-  isAdmin: Boolean!
-  createdAt: Time!
-  updatedAt: Time!
-  posts(after: Cursor, first: Int, before: Cursor, last: Int, orderBy: PostOrder): PostConnection!
+  createdAt: Timestamptz!
+  updatedAt: Timestamptz!
 }
 
 type UserEdge {
-  node: User!
-  cursor: Cursor!
+  cursor: String!
+  node: User
 }
 
 type UserConnection {
-  totalCount: Int!
   edges: [UserEdge!]!
   pageInfo: PageInfo!
+  totalCount: Int!
 }
 
-input UserFilter {
-  email: String
-  emailContains: String
-  isAdmin: Boolean
-  createdAtAfter: Time
-  createdAtBefore: Time
+input CreateUserInput {
+  clientMutationId: String
+  id: ID
+  createdAt: Timestamptz
+  updatedAt: Timestamptz
 }
 
-input UserOrder {
-  direction: OrderDirection! = ASC
-  field: UserOrderField!
+type CreateUserPayload {
+  clientMutationId: String
+  user: User
+}
+
+input UpdateUserInput {
+  clientMutationId: String
+  id: ID!
+  createdAt: Timestamptz
+  updatedAt: Timestamptz
+}
+
+type UpdateUserPayload {
+  clientMutationId: String
+  user: User
+}
+
+input DeleteUserInput {
+  clientMutationId: String
+  id: ID!
+}
+
+type DeleteUserPayload {
+  clientMutationId: String
+  deletedUserID: ID!
 }
 ```
 
@@ -73,8 +90,8 @@ query NodeQuery($id: ID!) {
   node(id: $id) {
     id
     ... on User {
-      email
-      displayName
+      createdAt
+      updatedAt
     }
   }
 }
@@ -86,16 +103,13 @@ node types (e.g., view projections) via annotations.
 ### Entity Queries
 
 ```graphql
-query Users($first: Int!, $after: Cursor) {
-  users(first: $first, after: $after, orderBy: { field: CREATED_AT, direction: DESC }) {
+query Users($first: Int!, $after: String) {
+  users(first: $first, after: $after) {
     edges {
       cursor
       node {
         id
-        email
-        posts(first: 5) {
-          totalCount
-        }
+        createdAt
       }
     }
     pageInfo {
@@ -112,14 +126,13 @@ cursors are opaque (base64 encoded) and derived from primary key ordering to ens
 
 ### Unique Accessors
 
-For fields marked `.Unique()`, the generator exposes `userByEmail`, `workspaceBySlug`, etc. Example:
+For fields marked `.Unique()`, the generator exposes accessors such as `workspaceBySlug` or `teamByHandle`. Example (assuming `Workspace.slug` is marked `Unique()`):
 
 ```graphql
-query UserByEmail($email: String!) {
-  userByEmail(email: $email) {
+query WorkspaceBySlug($slug: String!) {
+  workspaceBySlug(slug: $slug) {
     id
-    email
-    displayName
+    slug
   }
 }
 ```
@@ -129,16 +142,11 @@ query UserByEmail($email: String!) {
 Every entity gets `create<Entity>`, `update<Entity>`, and `delete<Entity>` mutations. They follow the Relay payload pattern:
 
 ```graphql
-mutation CreatePost($input: CreatePostInput!) {
-  createPost(input: $input) {
-    post {
+mutation CreateUser($input: CreateUserInput!) {
+  createUser(input: $input) {
+    user {
       id
-      title
-      body
-      author {
-        id
-        email
-      }
+      createdAt
     }
     clientMutationId
   }
@@ -146,7 +154,7 @@ mutation CreatePost($input: CreatePostInput!) {
 ```
 
 `clientMutationId` is echoed back automatically to support optimistic updates. Partial updates use `Update<Entity>Input` where
-optional fields map to pointer types in Go, allowing you to distinguish between "null" and "not provided".
+optional fields map to pointer types in Go, allowing you to distinguish between "null" and "not provided". The resolver stubs call directly into the ORM client so you inherit hooks, interceptors, and transactions without extra wiring.
 
 ### Subscriptions (Optional)
 
@@ -157,26 +165,27 @@ preferred pub/sub implementation.
 
 ## Resolver Implementation
 
-Generated resolvers live in `internal/graphql/resolver`. Files ending in `_generated.go` should not be edited. For custom logic,
-create extension files (e.g., `user.resolvers_extension.go`).
+Generated resolvers live in `internal/graphql/resolvers`. Files ending in `_gen.go` (`entities_gen.go`) should not be edited. For custom logic, create extension files (e.g., `user.resolvers_extension.go`) in the same package. The generated stubs already handle:
+
+* Decoding global IDs via the Relay helpers.
+* Falling back to the ORM client when a dataloader is unavailable.
+* Priming per-entity dataloaders after reads and writes.
 
 ### Query Flow
 
-1. **Argument Parsing** – gqlgen decodes incoming arguments into Go structs.
-2. **Privacy Check** – ORM policy/privay rules run before executing SQL.
-3. **Dataloader Registration** – To-many edges automatically register dataloaders defined in `internal/graphql/dataloader`.
+1. **Argument Parsing** – gqlgen decodes incoming arguments into Go structs (pointers for optional input fields so you can detect "not provided").
+2. **Privacy Check** – ORM policy/privacy rules run before executing SQL.
+3. **Dataloader Registration** – Entity list resolvers register dataloaders generated in `internal/graphql/dataloaders/entities_gen.go` to prevent N+1 patterns.
 4. **ORM Execution** – Query builders fetch data via `pgx` with context propagation.
-5. **Response Mapping** – Entities convert to GraphQL models, applying field-level annotations (e.g., rename `display_name` →
-   `displayName`).
+5. **Response Mapping** – Entities convert to GraphQL models using helper functions such as `toGraphQL<User>`. 
 
 ### Dataloaders
 
-The `dataloader` package prevents N+1 queries by batching loads. Each edge has a loader with configurable batch size and
-caching strategy. Override settings via schema annotations:
+The `dataloader` package prevents N+1 queries by batching loads. Each entity gets a generated loader in `internal/graphql/dataloaders/entities_gen.go`, and `Resolver.WithLoaders` wires them into the request context. Override settings via schema annotations:
 
 ```go
-dsl.ToMany("posts", "Post").
-    Ref("author").
+dsl.ToMany("sessions", "LoginSession").
+    Ref("user").
     Dataloader(dsl.Loader{Batch: 200, Wait: 2 * time.Millisecond})
 ```
 
@@ -213,19 +222,19 @@ The generator creates a resolver stub for `profileUrl` that you can customize.
 ### Custom Mutations
 
 Defined via `dsl.Mutation` in the schema (see the schema guide). Generated payloads live in
-`internal/graphql/resolver/<entity>_mutation_extension.go` so you can author business logic there.
+`internal/graphql/resolvers/<entity>_mutation_extension.go` so you can author business logic there.
 
 ### Query Helpers
 
 Add reusable filters in annotations:
 
 ```go
-dsl.GraphQL("Post").
-    FilterPreset("published", `published_at IS NOT NULL`).
-    FilterPreset("draft", `published_at IS NULL`)
+dsl.GraphQL("LoginSession").
+    FilterPreset("active", `revoked_at IS NULL`).
+    FilterPreset("revoked", `revoked_at IS NOT NULL`)
 ```
 
-The CLI generates helper args so clients can call `posts(preset: PUBLISHED)`.
+The CLI generates helper args so clients can call `loginSessions(preset: ACTIVE)`.
 
 ---
 
@@ -249,19 +258,18 @@ The directive references claims extracted by the OIDC middleware. In Go, you can
 
 ```
 internal/graphql/
-├── schema.graphqls              # Generated SDL (split when module mode enabled)
-├── resolver/
-│   ├── generated.go             # Boilerplate wiring – do not edit
-│   ├── user.resolvers.go        # Generated resolvers per entity
-│   ├── user.resolvers_extension.go  # Safe to edit
-│   └── ...
-├── dataloader/
-│   ├── registry.go              # Loader registration invoked per request
-│   └── user_loader.go           # Generated loader for edges
+├── schema.graphqls                  # Generated SDL (split when module mode enabled)
+├── resolvers/
+│   ├── entities_gen.go              # Generated CRUD + connection resolvers – do not edit
+│   ├── query.resolvers.go           # Hand-authored entry points (extend as needed)
+│   └── user.resolvers_extension.go  # Safe place for custom logic
+├── dataloaders/
+│   ├── entities_gen.go              # Generated batch loaders per entity
+│   └── loader.go                    # Request-scoped loader registration
 ├── node/
-│   └── registry.go              # Global Node fetch dispatch
+│   └── registry.go                  # Global Node fetch dispatch
 └── server/
-    └── server.go                # gqlgen HTTP server setup (Playground, CORS, logging, OIDC)
+    └── server.go                    # gqlgen HTTP server setup (Playground, CORS, logging, OIDC)
 ```
 
 ---
