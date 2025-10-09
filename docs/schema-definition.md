@@ -89,6 +89,63 @@ You can override only the methods you need—defaults handle the rest.
 
 ---
 
+## Modeling Complex Relationship Graphs
+
+Large products frequently require richer relationship graphs than a single `ToOne`/`ToMany` pair. The blog sample under
+[`examples/blog`](../examples/blog) now includes a **workspace editorial workflow** that demonstrates how to compose join tables,
+scoped predicates, and edge annotations without losing generator ergonomics.
+
+```go
+// examples/blog/schema/Workspace.schema.go
+func (Workspace) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToMany("memberships", "Membership").Ref("workspace"),
+        dsl.ToMany("posts", "Post").Ref("workspace"),
+    }
+}
+
+// examples/blog/schema/Membership.schema.go
+func (Membership) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToOne("workspace", "Workspace").Field("workspace_id"),
+        dsl.ToOne("user", "User").Field("user_id"),
+    }
+}
+
+// examples/blog/schema/Post.schema.go
+func (Post) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToOne("author", "User").Field("author_id").Inverse("posts"),
+        dsl.ToOne("workspace", "Workspace").Field("workspace_id"),
+        dsl.ToMany("comments", "Comment").Ref("post"),
+    }
+}
+
+// examples/blog/schema/Comment.schema.go
+func (Comment) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToOne("post", "Post").Field("post_id"),
+        dsl.ToOne("author", "User").Field("author_id"),
+        dsl.ToOne("parent", "Comment").Field("parent_id").Optional(),
+        dsl.ToMany("replies", "Comment").Ref("parent"),
+    }
+}
+```
+
+Key techniques illustrated by the scenario:
+
+1. **Join tables with explicit models** – `Membership` keeps per-workspace roles and audit timestamps. `dsl.Idx("membership_workspace_user_unique").On("workspace_id", "user_id").Unique()`
+   enforces uniqueness so a user cannot have duplicate memberships.
+2. **Scoped query composition** – `Post.Query()` constrains default predicates to the active workspace and exposes helper methods like
+   `.WhereWorkspaceIDEq()` to keep GraphQL resolvers tenant-aware without manual SQL.
+3. **Recursive relationships** – `Comment` demonstrates how self-referencing edges (`parent`/`replies`) combine with optional foreign keys to
+   power nested conversations while keeping query counts predictable.
+
+See the [blog walkthroughs](../examples/blog/README.md) for step-by-step validation, profiling, and error-handling flows that exercise
+these definitions end-to-end.
+
+---
+
 ## Field Types and Modifiers
 
 Fields describe table columns and GraphQL scalar exposure. Each field factory returns a fluent builder that supports modifiers,

@@ -93,6 +93,26 @@ Key layout guarantees that AI tooling relies on:
 
 ---
 
+## Deployment & Operations Lifecycle
+
+The editorial workspace scenario in [`examples/blog`](../examples/blog) walks through a full deployment cycle that mirrors production teams:
+
+1. **Plan** – Schema updates (`Workspace`, `Membership`, `Comment`) live in feature branches. Run `erm gen` to produce migrations and regenerate ORM/GraphQL
+   packages. The walkthrough captures `erm gen --diff` output to include in pull requests.
+2. **Validate** – Execute `go test ./examples/blog/...` locally to replay validation, profiling, and error-handling flows. These suites assert that tenant-aware
+   predicates remain intact and that dataloader instrumentation still batches requests as expected.
+3. **Deploy** – Use the generated Dockerfile in `cmd/server` (or your platform equivalent) and promote the container through staging. Apply migrations via your
+   preferred tool, referencing the workspace timeline migration scripts demonstrated in the walkthrough.
+4. **Observe** – Post-deploy, stream metrics and traces to your observability stack. The walkthrough links to a Grafana dashboard template and documents a
+   runbook for enabling `ERM_OBSERVABILITY_DEBUG` without restarting the service.
+5. **Iterate** – Feed findings back into the schema DSL (e.g., add indexes, adjust privacy policies) and document them in the playbook so future deployments stay
+   predictable.
+
+Following this lifecycle keeps generated code, infrastructure, and operational knowledge synchronized. Treat the blog example as a living reference that evolves
+alongside your production runbooks.
+
+---
+
 ## Configuration Surfaces
 
 All environment-specific values are centralized in `erm.yaml` and the generated `.env.example`. Highlights include:

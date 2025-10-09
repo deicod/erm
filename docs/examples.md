@@ -205,7 +205,24 @@ mutation CompleteTask($id: ID!) {
 
 ---
 
-## Example 2: Blog Query Builder
+## Example 2: Editorial Workspace Blog
+
+The `examples/blog` project now models a multi-tenant editorial workflow with workspaces, membership roles, threaded comments, and performance-conscious
+queries. Use it as a reference when designing complex relational graphs.
+
+- **[Schema tour](../examples/blog/README.md)** – Highlights the new `Workspace`, `Membership`, and `Comment` schemas plus the cross-entity indexes they require.
+- **[Validation walkthrough](../examples/blog/walkthroughs/validation.md)** – Shows how to exercise field validators, join-table uniqueness, and privacy policy
+  assertions using `go test` and the sandbox harness.
+- **[Performance profiling walkthrough](../examples/blog/walkthroughs/performance-profiling.md)** – Demonstrates query composition for workspace timelines,
+  collecting `EXPLAIN ANALYZE` output, pprof traces, and dataloader metrics.
+- **[Error handling walkthrough](../examples/blog/walkthroughs/error-handling.md)** – Provides a playbook for replaying production failures, capturing structured
+  logs, and verifying remediation steps before redeploying.
+
+Each walkthrough contains cut-and-paste commands so you can validate behavior end to end, from regeneration to observability dashboards.
+
+---
+
+## Example 3: Blog Query Builder
 
 The `examples/blog` workspace demonstrates how query descriptors translate into fluent helpers for list and aggregate queries.
 
@@ -274,7 +291,7 @@ func TestWorkspacePolicy(t *testing.T) {
 
 ---
 
-## Example 2: Analytics Pipeline with TimescaleDB & pgvector
+## Example 4: Analytics Pipeline with TimescaleDB & pgvector
 
 ### Goal
 
@@ -355,7 +372,7 @@ func TestEventSimilarity(t *testing.T) {
 
 ---
 
-## Example 3: Automation CLI Workflow
+## Example 5: Automation CLI Workflow
 
 1. Add `//go:generate erm gen` to `internal/orm/schema/doc.go`.
 2. Write a shell script:

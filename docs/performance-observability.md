@@ -105,6 +105,46 @@ func BenchmarkUserQuery(b *testing.B) {
 
 ---
 
+## Query Composition & Optimization Scenario
+
+The blog walkthrough adds a **workspace timeline** view that renders recent posts with nested comments. The generated ORM API lets you
+compose the query in one place while still controlling SQL shape:
+
+```go
+// examples/blog/walkthroughs/performance-profiling.md
+func loadTimeline(ctx context.Context, client *gen.Client, workspaceID string) ([]*gen.Post, error) {
+    return client.Posts().
+        Query().
+        WhereWorkspaceIDEq(workspaceID).
+        WithAuthor().
+        WithComments(func(q *gen.CommentQuery) {
+            q.WhereParentIDEq(parentID).
+                Limit(10).
+                WithReplies(func(rq *gen.CommentQuery) { rq.Limit(5) })
+        }).
+        OrderByCreatedAtDesc().
+        Limit(20).
+        All(ctx)
+}
+```
+
+In the example above, `parentID` can be set to an empty string to request top-level comments or to a specific comment ID when
+you want to expand a nested thread.
+
+### Optimize the Call Stack
+
+1. **Validate limits** – The `Post.Query()` definition in the sample enforces `WithDefaultLimit(20)` and `WithMaxLimit(200)` so an unexpected
+   GraphQL argument cannot request an unbounded timeline.
+2. **Profile dataloader batches** – Follow the profiling walkthrough's recipe (`ERM_OBSERVABILITY_DEBUG=1 go test ./examples/blog -run TestUserORMCRUDFlow`) to
+   confirm that comment replies are batch loaded and no `SELECT` statements repeat per node.
+3. **Capture planner output** – Run `EXPLAIN ANALYZE` for the generated SQL (see the walkthrough for commands) and store the plan alongside flamegraphs for
+   later regression analysis.
+
+The same workflow scales to other aggregates: push heavy predicates into the schema-level `Query()` specification, rely on eager-loading hooks to prefetch
+edges, and restrict `WithMaxLimit` or `WithPredicates` to guide resolver authors toward cache-friendly usage.
+
+---
+
 ## Observability Configuration in `erm.yaml`
 
 ```yaml

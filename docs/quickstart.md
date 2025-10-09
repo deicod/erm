@@ -110,6 +110,11 @@ func (Post) Edges() []dsl.Edge {
 }
 ```
 
+> **Next steps:** As your app grows beyond this starter schema, review the
+> [complex relationship playbook](./schema-definition.md#modeling-complex-relationship-graphs) and the
+> [editorial workspace walkthroughs](../examples/blog/README.md) for multi-tenant join tables, scoped query composition, and
+> production-grade validation patterns.
+
 ---
 
 ## 4. Generate Code
