@@ -48,6 +48,8 @@ type ForeignKeySnapshot struct {
 	TargetTable  string `json:"target_table"`
 	TargetColumn string `json:"target_column"`
 	Constraint   string `json:"constraint"`
+	OnDelete     string `json:"on_delete,omitempty"`
+	OnUpdate     string `json:"on_update,omitempty"`
 }
 
 func loadSchemaSnapshot(root string) (SchemaSnapshot, error) {
@@ -150,6 +152,8 @@ func buildSchemaSnapshot(entities []Entity, flags extensionFlags) SchemaSnapshot
 				TargetTable:  fk.TargetTable,
 				TargetColumn: fk.TargetColumn,
 				Constraint:   fk.ConstraintKey,
+				OnDelete:     string(fk.OnDelete),
+				OnUpdate:     string(fk.OnUpdate),
 			})
 		}
 		table.HypertableColumn = hypertableColumn
@@ -174,12 +178,16 @@ func buildSchemaSnapshot(entities []Entity, flags extensionFlags) SchemaSnapshot
 				TargetTable:  jt.Left.TargetTable,
 				TargetColumn: jt.Left.TargetColumn,
 				Constraint:   fkConstraintName(jt.Name, jt.Left.Column),
+				OnDelete:     string(jt.Left.OnDelete),
+				OnUpdate:     string(jt.Left.OnUpdate),
 			},
 			ForeignKeySnapshot{
 				Column:       jt.Right.Column,
 				TargetTable:  jt.Right.TargetTable,
 				TargetColumn: jt.Right.TargetColumn,
 				Constraint:   fkConstraintName(jt.Name, jt.Right.Column),
+				OnDelete:     string(jt.Right.OnDelete),
+				OnUpdate:     string(jt.Right.OnUpdate),
 			},
 		)
 		tables = append(tables, table)

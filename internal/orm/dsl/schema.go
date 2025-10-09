@@ -322,17 +322,44 @@ const (
 	EdgeManyToMany EdgeKind = "m2m"
 )
 
+type CascadeAction string
+
+const (
+	CascadeUnset      CascadeAction = ""
+	CascadeNoAction   CascadeAction = "NO ACTION"
+	CascadeRestrict   CascadeAction = "RESTRICT"
+	CascadeCascade    CascadeAction = "CASCADE"
+	CascadeSetNull    CascadeAction = "SET NULL"
+	CascadeSetDefault CascadeAction = "SET DEFAULT"
+)
+
+type EdgeCascade struct {
+	OnDelete CascadeAction
+	OnUpdate CascadeAction
+}
+
+type EdgeTarget struct {
+	Entity    string
+	Condition string
+}
+
+func PolymorphicTarget(entity, condition string) EdgeTarget {
+	return EdgeTarget{Entity: entity, Condition: condition}
+}
+
 type Edge struct {
-	Name        string
-	Column      string
-	RefName     string
-	Through     string
-	Target      string
-	Kind        EdgeKind
-	Nullable    bool
-	Unique      bool
-	Annotations map[string]any
-	InverseName string
+	Name               string
+	Column             string
+	RefName            string
+	Through            string
+	Target             string
+	Kind               EdgeKind
+	Nullable           bool
+	Unique             bool
+	Annotations        map[string]any
+	InverseName        string
+	PolymorphicTargets []EdgeTarget
+	Cascade            EdgeCascade
 }
 
 func (e Edge) Field(name string) Edge        { e.Column = name; return e }
@@ -348,6 +375,34 @@ func (e Edge) annotate(key string, val any) Edge {
 	e.Annotations[key] = val
 	return e
 }
+
+func (e Edge) Polymorphic(targets ...EdgeTarget) Edge {
+	if len(targets) == 0 {
+		return e
+	}
+	existing := append([]EdgeTarget(nil), e.PolymorphicTargets...)
+	e.PolymorphicTargets = append(existing, targets...)
+	return e
+}
+
+func (e Edge) OnDelete(action CascadeAction) Edge {
+	e.Cascade.OnDelete = action
+	return e
+}
+
+func (e Edge) OnUpdate(action CascadeAction) Edge {
+	e.Cascade.OnUpdate = action
+	return e
+}
+
+func (e Edge) OnDeleteCascade() Edge  { return e.OnDelete(CascadeCascade) }
+func (e Edge) OnDeleteSetNull() Edge  { return e.OnDelete(CascadeSetNull) }
+func (e Edge) OnDeleteRestrict() Edge { return e.OnDelete(CascadeRestrict) }
+func (e Edge) OnDeleteNoAction() Edge { return e.OnDelete(CascadeNoAction) }
+func (e Edge) OnUpdateCascade() Edge  { return e.OnUpdate(CascadeCascade) }
+func (e Edge) OnUpdateSetNull() Edge  { return e.OnUpdate(CascadeSetNull) }
+func (e Edge) OnUpdateRestrict() Edge { return e.OnUpdate(CascadeRestrict) }
+func (e Edge) OnUpdateNoAction() Edge { return e.OnUpdate(CascadeNoAction) }
 
 type Index struct {
 	Name             string

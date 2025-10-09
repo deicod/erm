@@ -370,10 +370,17 @@ func diffForeignKeys(prev, next []ForeignKeySnapshot, table string) (drops, adds
 	sort.Strings(addNames)
 	for _, name := range addNames {
 		fk := nextMap[name]
+		clause := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)", table, fk.Constraint, fk.Column, fk.TargetTable, fk.TargetColumn)
+		if fk.OnDelete != "" {
+			clause += fmt.Sprintf(" ON DELETE %s", fk.OnDelete)
+		}
+		if fk.OnUpdate != "" {
+			clause += fmt.Sprintf(" ON UPDATE %s", fk.OnUpdate)
+		}
 		adds = append(adds, Operation{
 			Kind:   OpAddForeignKey,
 			Target: fmt.Sprintf("%s.%s", table, name),
-			SQL:    fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s);", table, fk.Constraint, fk.Column, fk.TargetTable, fk.TargetColumn),
+			SQL:    clause + ";",
 		})
 	}
 
@@ -381,7 +388,7 @@ func diffForeignKeys(prev, next []ForeignKeySnapshot, table string) (drops, adds
 }
 
 func foreignKeyEqual(a, b ForeignKeySnapshot) bool {
-	return a.Column == b.Column && a.TargetTable == b.TargetTable && a.TargetColumn == b.TargetColumn && a.Constraint == b.Constraint
+	return a.Column == b.Column && a.TargetTable == b.TargetTable && a.TargetColumn == b.TargetColumn && a.Constraint == b.Constraint && a.OnDelete == b.OnDelete && a.OnUpdate == b.OnUpdate
 }
 
 func diffHypertable(prev, next TableSnapshot) []Operation {

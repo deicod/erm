@@ -178,6 +178,8 @@ type foreignKeySpec struct {
 	TargetTable   string
 	TargetColumn  string
 	ConstraintKey string
+	OnDelete      dsl.CascadeAction
+	OnUpdate      dsl.CascadeAction
 }
 
 type joinTableSpec struct {
@@ -191,6 +193,8 @@ type joinTableColumn struct {
 	TargetTable  string
 	TargetColumn string
 	SQLType      string
+	OnDelete     dsl.CascadeAction
+	OnUpdate     dsl.CascadeAction
 }
 
 func renderInitialMigration(entities []Entity, flags extensionFlags) string {
@@ -247,7 +251,7 @@ func renderInitialMigration(entities []Entity, flags extensionFlags) string {
 		buf.WriteString("\n);\n\n")
 
 		for _, fk := range ent.ForeignKeys {
-			deferredFKs = append(deferredFKs, fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s);", table, fk.ConstraintKey, fk.Column, fk.TargetTable, fk.TargetColumn))
+			deferredFKs = append(deferredFKs, foreignKeySQL(table, fk))
 		}
 
 		// Indexes
@@ -287,8 +291,8 @@ func renderInitialMigration(entities []Entity, flags extensionFlags) string {
 				fmt.Sprintf("    %s %s NOT NULL", jt.Left.Column, jt.Left.SQLType),
 				fmt.Sprintf("    %s %s NOT NULL", jt.Right.Column, jt.Right.SQLType),
 				fmt.Sprintf("    PRIMARY KEY (%s, %s)", jt.Left.Column, jt.Right.Column),
-				fmt.Sprintf("    CONSTRAINT fk_%s_%s FOREIGN KEY (%s) REFERENCES %s (%s)", jt.Name, jt.Left.Column, jt.Left.Column, jt.Left.TargetTable, jt.Left.TargetColumn),
-				fmt.Sprintf("    CONSTRAINT fk_%s_%s FOREIGN KEY (%s) REFERENCES %s (%s)", jt.Name, jt.Right.Column, jt.Right.Column, jt.Right.TargetTable, jt.Right.TargetColumn),
+				joinTableConstraint(jt.Name, jt.Left),
+				joinTableConstraint(jt.Name, jt.Right),
 			}
 			buf.WriteString(strings.Join(cols, ",\n"))
 			buf.WriteString("\n);\n\n")
@@ -380,6 +384,8 @@ func ensureToOneColumn(src *entityMigration, entityIndex map[string]*entityMigra
 			TargetTable:   pluralize(edge.Target),
 			TargetColumn:  fieldColumn(targetPrimary),
 			ConstraintKey: constraint,
+			OnDelete:      edge.Cascade.OnDelete,
+			OnUpdate:      edge.Cascade.OnUpdate,
 		})
 		src.fkIndex[column] = struct{}{}
 	}
@@ -415,6 +421,8 @@ func ensureToManyColumn(src *entityMigration, entityIndex map[string]*entityMigr
 			TargetTable:   pluralize(src.Entity.Name),
 			TargetColumn:  fieldColumn(srcPrimary),
 			ConstraintKey: constraint,
+			OnDelete:      edge.Cascade.OnDelete,
+			OnUpdate:      edge.Cascade.OnUpdate,
 		})
 		target.fkIndex[refColumn] = struct{}{}
 	}
@@ -447,12 +455,16 @@ func ensureJoinTable(joinTables map[string]joinTableSpec, source Entity, entityI
 			TargetTable:  pluralize(source.Name),
 			TargetColumn: fieldColumn(srcPrimary),
 			SQLType:      fieldSQLType(srcPrimary),
+			OnDelete:     edge.Cascade.OnDelete,
+			OnUpdate:     edge.Cascade.OnUpdate,
 		},
 		Right: joinTableColumn{
 			Column:       rightColumn,
 			TargetTable:  pluralize(edge.Target),
 			TargetColumn: fieldColumn(targetPrimary),
 			SQLType:      fieldSQLType(targetPrimary),
+			OnDelete:     edge.Cascade.OnDelete,
+			OnUpdate:     edge.Cascade.OnUpdate,
 		},
 	}
 }
@@ -479,6 +491,28 @@ func findPrimaryField(ent Entity) (dsl.Field, bool) {
 		return ent.Fields[0], true
 	}
 	return dsl.Field{}, false
+}
+
+func foreignKeySQL(table string, fk foreignKeySpec) string {
+	clause := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)", table, fk.ConstraintKey, fk.Column, fk.TargetTable, fk.TargetColumn)
+	if fk.OnDelete != "" {
+		clause += fmt.Sprintf(" ON DELETE %s", fk.OnDelete)
+	}
+	if fk.OnUpdate != "" {
+		clause += fmt.Sprintf(" ON UPDATE %s", fk.OnUpdate)
+	}
+	return clause + ";"
+}
+
+func joinTableConstraint(table string, col joinTableColumn) string {
+	clause := fmt.Sprintf("    CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)", fkConstraintName(table, col.Column), col.Column, col.TargetTable, col.TargetColumn)
+	if col.OnDelete != "" {
+		clause += fmt.Sprintf(" ON DELETE %s", col.OnDelete)
+	}
+	if col.OnUpdate != "" {
+		clause += fmt.Sprintf(" ON UPDATE %s", col.OnUpdate)
+	}
+	return clause
 }
 
 func fieldSQLType(field dsl.Field) string {

@@ -17,16 +17,39 @@ type FieldSpec struct {
 }
 
 type EdgeSpec struct {
-	Name        string
-	Column      string
-	RefName     string
-	Through     string
-	Target      string
-	Kind        dsl.EdgeKind
-	Nullable    bool
-	Unique      bool
-	Annotations map[string]any
-	Inverse     string
+	Name               string
+	Column             string
+	RefName            string
+	Through            string
+	Target             string
+	Kind               dsl.EdgeKind
+	Nullable           bool
+	Unique             bool
+	Annotations        map[string]any
+	Inverse            string
+	PolymorphicTargets []EdgeTargetSpec
+	Cascade            CascadeSpec
+}
+
+type CascadeAction string
+
+const (
+	CascadeUnset      CascadeAction = ""
+	CascadeNoAction   CascadeAction = "NO ACTION"
+	CascadeRestrict   CascadeAction = "RESTRICT"
+	CascadeCascade    CascadeAction = "CASCADE"
+	CascadeSetNull    CascadeAction = "SET NULL"
+	CascadeSetDefault CascadeAction = "SET DEFAULT"
+)
+
+type CascadeSpec struct {
+	OnDelete CascadeAction
+	OnUpdate CascadeAction
+}
+
+type EdgeTargetSpec struct {
+	Entity    string
+	Condition string
 }
 
 type IndexSpec struct {

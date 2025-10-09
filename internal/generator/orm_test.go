@@ -100,6 +100,42 @@ func TestWriteORMClients_EdgeHelpers(t *testing.T) {
 	}
 }
 
+func TestWriteRegistry_EdgeMetadata(t *testing.T) {
+	entities := []Entity{
+		{
+			Name:   "Workspace",
+			Fields: []dsl.Field{dsl.UUIDv7("id").Primary()},
+			Edges: []dsl.Edge{
+				dsl.ToMany("members", "User").Ref("workspace").OnDeleteCascade().OnUpdateRestrict().Polymorphic(
+					dsl.PolymorphicTarget("User", "role = 'admin'"),
+					dsl.PolymorphicTarget("User", "role = 'member'"),
+				),
+			},
+		},
+		{
+			Name:   "User",
+			Fields: []dsl.Field{dsl.UUIDv7("id").Primary(), dsl.UUIDv7("workspace_id").Optional()},
+			Edges: []dsl.Edge{
+				dsl.ToOne("workspace", "Workspace").Field("workspace_id").OnDeleteCascade().OnUpdateRestrict(),
+			},
+		},
+	}
+
+	root := t.TempDir()
+	if err := writeRegistry(root, entities); err != nil {
+		t.Fatalf("writeRegistry: %v", err)
+	}
+
+	path := filepath.Join(root, "internal", "orm", "gen", "registry_gen.go")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read registry: %v", err)
+	}
+	out := string(content)
+	mustContain(t, out, "PolymorphicTargets: []runtime.EdgeTargetSpec{{Entity: \"User\", Condition: \"role = 'admin'\"}, {Entity: \"User\", Condition: \"role = 'member'\"}}")
+	mustContain(t, out, "Cascade: runtime.CascadeSpec{OnDelete: runtime.CascadeCascade, OnUpdate: runtime.CascadeRestrict}")
+}
+
 func mustContain(t *testing.T, content, needle string) {
 	t.Helper()
 	if !strings.Contains(content, needle) {
