@@ -126,9 +126,9 @@ func diffTables(prev, next []TableSnapshot) []Operation {
 			return addNames[i] < addNames[j]
 		}
 		if a.IsJoinTable {
-			return true
+			return false
 		}
-		return false
+		return true
 	})
 	for _, name := range addNames {
 		ops = append(ops, createTableOps(nextMap[name])...)
