@@ -5,13 +5,22 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/deicod/erm/internal/observability/tracing"
 	"github.com/deicod/erm/internal/orm/runtime"
 )
 
-type DB struct{ Pool *pgxpool.Pool }
+// Pool exposes the subset of pgxpool behaviour required by generated clients.
+type Pool interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+	Close()
+}
+
+type DB struct{ Pool Pool }
 
 // Option configures pgx connections.
 type Option func(*pgxpool.Config)

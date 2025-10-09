@@ -63,6 +63,12 @@ func TestWriteORMClients_EdgeHelpers(t *testing.T) {
 	}
 
 	content := string(clientSrc)
+	mustContain(t, content, "const userInsertQuery = `INSERT INTO users")
+	mustContain(t, content, "const userSelectQuery = `SELECT id")
+	mustContain(t, content, "const userListQuery = `SELECT id")
+	mustContain(t, content, "const userUpdateQuery = `UPDATE users SET")
+	mustContain(t, content, "const userCountQuery = `SELECT COUNT(*) FROM users`")
+	mustContain(t, content, "const userDeleteQuery = `DELETE FROM users WHERE id = $1`")
 	mustContain(t, content, "const postAuthorRelationQuery = `SELECT id, name FROM users WHERE id IN (%s)`")
 	mustContain(t, content, "func (c *PostClient) LoadAuthor(")
 	mustContain(t, content, "const userPostsRelationQuery = `SELECT id, author_id, title FROM posts WHERE author_id IN (%s)`")
