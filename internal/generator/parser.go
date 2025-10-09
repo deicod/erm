@@ -504,7 +504,7 @@ func synthesizeInverseEdges(entities []Entity) {
 			if hasEdgeNamed(entities[targetIdx].Edges, edge.InverseName) {
 				continue
 			}
-			inverse := buildInverseEdge(source.Name, edge)
+			inverse := buildInverseEdge(source, edge)
 			entities[targetIdx].Edges = append(entities[targetIdx].Edges, inverse)
 		}
 	}
@@ -519,10 +519,10 @@ func hasEdgeNamed(edges []dsl.Edge, name string) bool {
 	return false
 }
 
-func buildInverseEdge(sourceName string, edge dsl.Edge) dsl.Edge {
+func buildInverseEdge(source Entity, edge dsl.Edge) dsl.Edge {
 	inverse := dsl.Edge{
 		Name:        edge.InverseName,
-		Target:      sourceName,
+		Target:      source.Name,
 		Kind:        inverseEdgeKind(edge),
 		Nullable:    edge.Nullable,
 		Unique:      edge.Unique,
@@ -531,9 +531,12 @@ func buildInverseEdge(sourceName string, edge dsl.Edge) dsl.Edge {
 	}
 	switch edge.Kind {
 	case dsl.EdgeToOne:
-		inverse.RefName = edge.Column
+		// Mirror the resolved column from the forward edge (explicit or derived).
+		inverse.RefName = edgeColumn(edge)
 	case dsl.EdgeToMany:
-		inverse.Column = edge.RefName
+		primary, _ := findPrimaryField(source)
+		// Reuse the forward edge reference resolution so explicit overrides win.
+		inverse.Column = edgeRefColumn(source, edge, primary)
 	case dsl.EdgeManyToMany:
 		// Through already copied above.
 	}
