@@ -222,7 +222,7 @@ Set up Keycloak (or your provider) and update `erm.yaml` `oidc` block. Restart t
 go test ./...
 ```
 
-Use `internal/testutil` to create targeted tests.
+Use `internal/testing` helpers (sandbox + GraphQL harness) to create targeted tests.
 
 ---
 
