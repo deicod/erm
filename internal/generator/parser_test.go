@@ -74,6 +74,9 @@ func (Pet) Indexes() []dsl.Index { return nil }
 	if owner.Column != "user_id" {
 		t.Fatalf("expected synthesized edge column 'user_id', got %q", owner.Column)
 	}
+	if owner.RefName != "user_id" {
+		t.Fatalf("expected synthesized edge ref name 'user_id', got %q", owner.RefName)
+	}
 }
 
 func TestLoadEntitiesSkipsExistingInverse(t *testing.T) {
