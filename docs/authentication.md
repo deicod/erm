@@ -1,221 +1,192 @@
-# Authentication and Authorization
+# Authentication & Authorization
 
-The erm framework provides a robust OIDC (OpenID Connect) authentication system with pluggable claim mapping, primarily optimized for Keycloak but supporting other OIDC providers like Auth0, Okta, and custom implementations.
+erm ships with first-class OIDC integration, JWT verification, and flexible claims mapping so you can secure your GraphQL API
+without writing boilerplate. This guide covers configuration, middleware flow, authorization directives, and common customizations.
 
-## Architecture
+---
 
-The authentication system is built around:
+## Overview
 
-1. **OIDC Middleware** - Verifies JWT tokens using JWKS (JSON Web Key Set)
-2. **Claim Mappers** - Pluggable interface for mapping provider-specific claims
-3. **GraphQL Directives** - `@auth` directive for securing resolvers
-4. **Privacy Policies** - Fine-grained access control in schema definitions
+- **OIDC Discovery** – The generated middleware fetches the provider configuration (JWKS URI, token endpoints) from the issuer
+  URL defined in `erm.yaml`.
+- **JWKS Cache** – Public keys are cached with configurable refresh intervals to minimize network latency.
+- **Claims Mapping** – A pluggable interface turns JWT claims into a `Viewer` struct with roles, permissions, and identity
+  fields.
+- **GraphQL Enforcement** – `@auth` directives and entity privacy rules enforce authorization before hitting the database.
 
-## Configuration
+---
 
-Authentication is configured primarily through the `erm.yaml` file:
+## Configuring OIDC
+
+Edit the `oidc` block in `erm.yaml`:
 
 ```yaml
 oidc:
-  issuer: "https://your-keycloak-domain/realms/your-realm"
-  client_id: "your-client-id"
-  jwks_url: "https://your-keycloak-domain/realms/your-realm/protocol/openid-connect/certs"
-  audience: ["your-audience"]  # Optional: validate token audience
-  claims_mapper: "keycloak"    # Available: keycloak, auth0, okta, custom
+  issuer: http://localhost:8080/realms/demo
+  audience: erm-api
+  required_scopes:
+    - openid
+    - profile
+  jwks_cache_ttl: 5m
+  claims_mapper: keycloak
 ```
 
-## OIDC Middleware
+Supported mappers: `keycloak` (default), `auth0`, `okta`, or custom implementations registered under `internal/oidc/mapper`.
 
-The OIDC middleware handles:
+After updating configuration, run `erm gen` so generated middleware picks up new defaults.
 
-- JWT signature verification using JWKS
-- Token expiration validation
-- Issuer validation against configured issuer URL
-- Audience validation (if configured)
-- Claims extraction and context injection
+---
 
-### Key Features
+## Middleware Flow
 
-- **RS256/ES256 Support**: Secure signature verification algorithms
-- **Automatic JWKS Refresh**: Periodic fetching of updated signing keys
-- **Issuer Validation**: Ensures tokens come from trusted issuers
-- **Context Injection**: Makes user information available in GraphQL resolvers
+1. **Token Extraction** – `internal/oidc/middleware.go` pulls the `Authorization: Bearer <token>` header.
+2. **Verification** – The token is validated using the provider’s JWKS. Signature, expiration, issuer, and audience checks run
+   automatically.
+3. **Claims Mapping** – The mapper converts raw claims into a `Viewer` struct (`ID`, `Email`, `Name`, `Roles`, `Permissions`).
+4. **Context Injection** – The viewer is stored in the request context; errors short-circuit with `UNAUTHENTICATED` GraphQL
+   responses.
+5. **Directive Enforcement** – GraphQL resolvers read viewer data to evaluate `@auth` directives and privacy rules.
 
-## Claim Mappers
+The middleware is inserted in `internal/graphql/server/server.go` during `erm graphql init`.
 
-The system uses a pluggable `ClaimsMapper` interface to handle provider-specific claim structures:
+---
 
-### Keycloak Claims Mapper (Default)
+## Custom Claims Mapping
 
-Keycloak-specific mapping extracts:
-- User ID from `sub` field
-- Roles from `realm_access.roles`
-- Email from `email` field
-- Name from `name` field
-- Preferred username from `preferred_username`
-
-### Other Providers
-
-The framework includes mappers for:
-- **Auth0**: Adapts to Auth0's claim structure
-- **Okta**: Adapts to Okta's claim structure  
-- **Custom**: Pluggable mapper interface for any OIDC provider
-
-### Implementing Custom Mappers
+Create a new mapper by implementing the `ClaimsMapper` interface:
 
 ```go
-type ClaimsMapper interface {
-    MapClaims(token *oidc.IDToken, rawClaims json.RawMessage) (*UserContext, error)
-}
+package mapper
 
-type CustomClaimsMapper struct{}
+type CustomMapper struct{}
 
-func (c *CustomClaimsMapper) MapClaims(token *oidc.IDToken, rawClaims json.RawMessage) (*UserContext, error) {
-    // Extract custom claims from rawClaims
-    // Map to UserContext struct
-    return &UserContext{
-        ID:    extractCustomID(rawClaims),
-        Roles: extractCustomRoles(rawClaims),
-        Email: extractCustomEmail(rawClaims),
+func (CustomMapper) Map(ctx context.Context, token *oidc.IDToken, claims map[string]interface{}) (authz.Viewer, error) {
+    roles := authz.RolesFromPath(claims, "app_roles")
+    return authz.Viewer{
+        ID:    claims["sub"].(string),
+        Email: claims["email"].(string),
+        Name:  claims["preferred_username"].(string),
+        Roles: roles,
     }, nil
 }
 ```
 
-## GraphQL @auth Directive
+Register the mapper in `internal/oidc/mapper/registry.go` and reference it in `erm.yaml`.
 
-The `@auth` directive can be applied to GraphQL fields, queries, or mutations to enforce authentication:
+### Mapping Tips
+
+- Normalize role names (e.g., uppercase) so comparisons in privacy rules remain consistent.
+- Populate `Permissions` when you need fine-grained capability checks beyond coarse roles.
+- Add audit logging within the mapper if you need to trace access decisions.
+
+---
+
+## Authorization in GraphQL
+
+Use annotations to declare access requirements:
+
+```go
+func (Workspace) Annotations() []dsl.Annotation {
+    return []dsl.Annotation{
+        dsl.Authz().Roles("ADMIN", "OWNER"),
+        dsl.GraphQL("Workspace").Description("A collaborative space for teams."),
+    }
+}
+```
+
+This generates a GraphQL directive:
 
 ```graphql
-type Mutation {
-    createUser(input: UserInput!): User! @auth
-    updateUser(id: ID!, input: UserInput!): User! @auth
-}
-
-type Query {
-    me: User! @auth
-    users: [User!]! @auth
+type Workspace implements Node @auth(require: [ADMIN, OWNER]) {
+  id: ID!
+  name: String!
 }
 ```
 
-## Context Injection
+Resolvers call `authz.Check(ctx, authz.RequireRoles("ADMIN", "OWNER"))`. Failures return `PERMISSION_DENIED` before ORM queries
+run.
 
-Authenticated user information is automatically injected into GraphQL context:
-
-```go
-// In resolver functions
-func (r *Resolver) Me(ctx context.Context) (*model.User, error) {
-    // Extract user context from GraphQL context
-    userCtx := context.UserFromContext(ctx)
-    
-    if userCtx == nil {
-        return nil, errors.New("unauthenticated")
-    }
-    
-    // Access user information
-    userID := userCtx.ID()
-    roles := userCtx.Roles()
-    
-    // Proceed with operation
-    return r.UserService.GetByID(ctx, userID)
-}
-```
-
-## Privacy Policies
-
-Fine-grained authorization can be implemented using privacy policies in schema definitions:
+### Field-Level Guards
 
 ```go
-func (User) Privacy() dsl.Privacy {
-    return dsl.Privacy{
-        Read:   "user.id == context.UserID || 'admin' in context.Roles",
-        Write:  "user.id == context.UserID",
-        Create: "'create_user' in context.Roles",
-        Delete: "'admin' in context.Roles",
+func (Invoice) Annotations() []dsl.Annotation {
+    return []dsl.Annotation{
+        dsl.GraphQL("Invoice").FieldAuth("amount", dsl.RequireRoles("FINANCE")),
     }
 }
 ```
 
-The privacy policies are evaluated in the GraphQL resolvers and database queries to ensure that users can only access data they're authorized to see.
+Field guards hide sensitive data while still allowing the node to resolve.
 
-## Keycloak Integration
+---
 
-The default Keycloak integration assumes the following setup:
+## Combining with Privacy Policies
 
-### Realm Setup
-- Realm with users and roles
-- Client configured with valid redirect URIs
-- Appropriate roles assigned to users
+Privacy rules complement `@auth` directives by running inside the ORM layer.
 
-### Role Mapping
-- Realm roles are mapped to permissions in privacy policies
-- `realm_access.roles` contains user roles
-- Supports hierarchical role structures
+```go
+func (Workspace) Policy() dsl.Policy {
+    return dsl.Policy{
+        Query: dsl.AllowIf("viewer.has_role('ADMIN') || viewer.has_role('OWNER')"),
+        Update: dsl.AllowIf("viewer.has_role('OWNER')"),
+    }
+}
+```
 
-### Token Configuration
-- RS256 signed tokens (recommended)
-- Appropriate audience configuration
-- Token expiration (default 5 minutes for access tokens)
+If a resolver bypasses GraphQL directives (e.g., via dataloaders), privacy still protects the data.
 
-## Security Best Practices
+---
 
-### Token Handling
-- Use HTTPS in production
-- Validate token audience when possible
-- Implement proper token refresh strategies
-- Monitor for token replay attacks
+## Handling Machine-to-Machine Tokens
 
-### Role and Permission Design
-- Follow principle of least privilege
-- Use roles for coarse-grained access control
-- Use privacy policies for fine-grained access control
-- Regularly audit permissions and roles
+For service accounts without user context, configure an additional mapper that extracts capabilities from JWT claims:
 
-### JWKS Caching
-- Configure appropriate cache TTL (typically 5-15 minutes)
-- Monitor JWKS refresh failures
-- Implement fallback strategies for JWKS unavailability
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Token Verification Failures**:
-   - Verify JWKS endpoint is accessible
-   - Check issuer URL matches token issuer
-   - Confirm supported signature algorithm
-
-2. **Claim Mapping Issues**:
-   - Verify claims mapper configuration
-   - Check provider-specific claim structure
-   - Enable debug logging for claim extraction
-
-3. **Authorization Problems**:
-   - Review privacy policy logic
-   - Verify role assignments in OIDC provider
-   - Check context injection in resolvers
-
-### Debugging Tips
-
-Enable detailed logging for OIDC operations:
 ```yaml
-logging:
-  level: debug
-  include_oidc: true
+oidc:
+  service_mappers:
+    - name: ci
+      match_claim: { field: client_id, equals: erm-ci }
+      roles: [SYSTEM]
 ```
 
-Check the GraphQL context in resolvers to verify user information is properly injected.
+The middleware chooses the mapper based on matching claims, allowing you to grant CI pipelines limited access.
 
-## Testing
+---
 
-The framework provides utilities for testing authenticated operations:
+## Local Development with Keycloak
 
-```go
-// Create test context with authenticated user
-ctx := context.WithUser(context.Background(), &UserContext{
-    ID:    "test-user-id",
-    Roles: []string{"admin"},
-    Email: "test@example.com",
-})
-```
+1. Run Keycloak via Docker (see `examples/docker-compose/keycloak.yml`).
+2. Configure realm, client, and user as described in the README.
+3. Update `erm.yaml` with the local issuer URL (`http://localhost:8080/realms/erm`).
+4. Start the GraphQL server; the middleware will download JWKS automatically.
 
-Mock OIDC providers can be used for integration testing without external dependencies.
+Use `scripts/get-token.sh` to fetch a test access token for GraphQL Playground requests.
+
+---
+
+## Refresh and Revocation
+
+- Tokens are verified on every request; if you need revocation, configure short-lived access tokens and rely on refresh tokens in
+  your client application.
+- JWKS keys rotate automatically—set `jwks_cache_ttl` to a low value (e.g., 1m) in environments with frequent rotations.
+
+---
+
+## Troubleshooting Authentication
+
+| Symptom | Resolution |
+|---------|------------|
+| `401 Unauthorized` on every request | Confirm the `Authorization` header includes `Bearer`. Check that issuer/audience in
+  `erm.yaml` matches the token. |
+| Tokens accepted locally but rejected in production | Ensure clocks are synchronized. Consider enabling `leeway` in the middleware
+  configuration for small clock skews. |
+| Roles missing in resolvers | Verify the mapper extracts them correctly. Add `ERM_LOG_LEVEL=debug` to inspect mapped viewers. |
+| Privacy rules always deny | Check that the viewer context is present. If you skip middleware (e.g., for admin scripts), inject a
+  viewer manually using `authz.WithViewer(ctx, viewer)`. |
+
+---
+
+## Next Steps
+
+- Continue to [extensions.md](./extensions.md) to leverage PostgreSQL extensions.
+- Review [performance-observability.md](./performance-observability.md) to monitor authentication latency and cache stats.

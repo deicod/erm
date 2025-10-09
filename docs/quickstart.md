@@ -1,174 +1,235 @@
 # Quickstart Guide
 
-This guide will help you get started with erm by creating a new project and generating your first GraphQL API.
+This hands-on tutorial walks you through bootstrapping a new erm project, defining a schema, generating code, and running the
+GraphQL API. Follow along to get a working service in minutes.
+
+---
 
 ## Prerequisites
 
-- Go 1.22+ installed
-- PostgreSQL server running (for full functionality)
+- Go 1.22+
+- PostgreSQL 14+
+- (Optional) Node.js for GraphQL tooling
+- An OIDC provider (Keycloak recommended for local development)
 
-## Installation
+Ensure `go`, `psql`, and `erm` binaries are on your `PATH`.
 
-First, install the erm CLI tool:
+---
 
-```bash
-go install github.com/deicod/erm/cmd/erm@latest
-```
-
-## Creating Your First Project
-
-### 1. Initialize a New Project
+## 1. Initialize the Project
 
 ```bash
-mkdir myproject && cd myproject
-go mod init github.com/yourname/myproject
+mkdir blog && cd blog
+go mod init github.com/example/blog
 go mod tidy
-erm init
+erm init --module github.com/example/blog --oidc-issuer http://localhost:8080/realms/erm
 ```
 
-The `erm init` command will create the basic project structure with configuration files and a default schema.
+`erm init` creates:
 
-### 2. Define Your First Schema
+- `erm.yaml` with module path, database defaults, and OIDC configuration
+- `cmd/server` GraphQL entrypoint
+- `internal/orm/schema` with sample schema mixins
+- `internal/graphql` resolver scaffolding
+- `.env.example` and Makefile targets (`gen`, `test`, `serve`)
 
-Create a new schema definition using the `erm new` command:
+---
+
+## 2. Configure the Database
+
+Update `erm.yaml`:
+
+```yaml
+database:
+  url: postgres://postgres:postgres@localhost:5432/blog?sslmode=disable
+```
+
+Create the database:
+
+```bash
+createdb blog
+```
+
+---
+
+## 3. Define Schemas
+
+Generate entity skeletons:
 
 ```bash
 erm new User
+erm new Post
 ```
 
-This creates a schema file in the `schema/` directory. You can edit this file to add fields, edges, and other schema elements:
+Edit `internal/orm/schema/user.go`:
 
 ```go
 package schema
 
-import "github.com/deicod/erm/internal/orm/dsl"
+import "github.com/erm-project/erm/internal/orm/dsl"
 
 type User struct{ dsl.Schema }
 
 func (User) Fields() []dsl.Field {
     return []dsl.Field{
         dsl.UUIDv7("id").Primary(),
-        dsl.String("name").Optional(),
-        dsl.String("email").Unique().NotEmpty(),
-        dsl.Time("created_at").DefaultNow(),
-        dsl.Time("updated_at").UpdateNow(),
+        dsl.String("email").NotEmpty().Unique(),
+        dsl.String("display_name").Optional(),
     }
 }
 
 func (User) Edges() []dsl.Edge {
     return []dsl.Edge{
-        dsl.ToMany("posts", "Post").Ref("author_id"),
-    }
-}
-
-func (User) Indexes() []dsl.Index {
-    return []dsl.Index{
-        dsl.Idx("idx_users_email").On("email").Unique(),
+        dsl.ToMany("posts", "Post").Ref("author"),
     }
 }
 ```
 
-### 3. Generate Code
+Edit `internal/orm/schema/post.go`:
 
-Generate the ORM models, GraphQL resolvers, and other code:
+```go
+package schema
+
+import "github.com/erm-project/erm/internal/orm/dsl"
+
+type Post struct{ dsl.Schema }
+
+func (Post) Fields() []dsl.Field {
+    return []dsl.Field{
+        dsl.UUIDv7("id").Primary(),
+        dsl.String("title").NotEmpty(),
+        dsl.String("body").Optional(),
+        dsl.Time("published_at").Optional().Nillable(),
+    }
+}
+
+func (Post) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToOne("author", "User").Required().Field("author_id").Comment("Author of the post"),
+    }
+}
+```
+
+---
+
+## 4. Generate Code
 
 ```bash
 erm gen
 ```
 
-This command scans your schema files and generates all necessary backend code including:
-- ORM models with full CRUD operations
-- Relationship helpers that populate `Edges` fields and mark which associations are loaded
-- Database migration files
-- GraphQL types and resolvers
-- Relay-compliant connections and pagination
+Outputs:
 
-### 4. Initialize GraphQL
+- ORM packages in `internal/orm/user` and `internal/orm/post`
+- GraphQL schema/resolvers in `internal/graphql`
+- SQL migrations under `migrations/`
 
-Set up the GraphQL server:
+Review migrations:
 
 ```bash
-erm graphql init
+ls migrations
+cat migrations/20240101010101_create_users.sql
+cat migrations/20240101010102_create_posts.sql
 ```
 
-This creates the necessary GraphQL configuration and server setup files.
-
-## Running Your Application
-
-After code generation, you can build and run your application:
+Apply migrations:
 
 ```bash
-go mod tidy  # Ensure all dependencies are resolved
-go run main.go
+psql blog < migrations/20240101010101_create_users.sql
+psql blog < migrations/20240101010102_create_posts.sql
 ```
 
-Your GraphQL API will be available at the configured endpoint (typically `http://localhost:8080/graphql`) where you can access GraphQL Playground to explore and test your API.
+Or use your migration tool of choice.
 
-## Connecting to PostgreSQL
+---
 
-Your generated application will connect to PostgreSQL using the configuration in `erm.yaml`. Update this file with your database connection details:
+## 5. Seed Data (Optional)
 
-```yaml
-database:
-  host: localhost
-  port: 5432
-  user: postgres
-  password: yourpassword
-  name: myproject
-  ssl_mode: disable
-```
-
-## Exploring Generated Features
-
-Your generated application includes:
-
-- **Relay-compliant API**: Global Node IDs, connections with cursors, PageInfo
-- **CRUD Operations**: Create, read, update, delete operations for all entities
-- **Relationship Helpers**: Eager-load related entities with generated `Load<Name>` methods and inspect the populated `Edges` struct on each model
-- **Type Safety**: Generated Go types matching your schema definitions
-- **Migrations**: Versioned database migration files
-- **Authentication**: OIDC middleware with Keycloak integration
-
-### Loading Relationships
-
-After generating the ORM package you can traverse relationships in both directions without hand-written SQL:
+Create a seed script `internal/seed/seed.go`:
 
 ```go
-client := gen.NewClient(db)
+package seed
 
-users, err := client.Users().List(ctx, 10, 0)
-if err != nil {
-    log.Fatal(err)
-}
-
-if err := client.Users().LoadPosts(ctx, users...); err != nil {
-    log.Fatal(err)
-}
-
-for _, u := range users {
-    if !u.EdgeLoaded("posts") {
-        continue
+func Run(ctx context.Context, client *orm.Client) error {
+    user, err := client.User.Create().SetEmail("hello@example.com").Save(ctx)
+    if err != nil {
+        return err
     }
-    for _, post := range u.Edges.Posts {
-        fmt.Printf("%s wrote %s\n", u.Email, post.Title)
-    }
+    _, err = client.Post.Create().
+        SetTitle("Hello erm").
+        SetAuthor(user).
+        Save(ctx)
+    return err
 }
 ```
 
-The same helpers exist for inverse edges: calling `client.Posts().LoadAuthor(ctx, posts...)` batches the foreign-key lookup and attaches each author to `post.Edges.Author`.
+Call it from `cmd/server/main.go` in dev mode.
 
-## Next Steps
+---
 
-- [Schema Definition Guide](./schema-definition.md) - Learn how to define complex schemas with relationships
-- [GraphQL API Usage](./graphql-api.md) - Explore the generated GraphQL API features
-- [OIDC Authentication](./authentication.md) - Configure authentication and authorization
-- [Extensions Guide](./extensions.md) - Use PostGIS, pgvector, and TimescaleDB features
+## 6. Run the GraphQL Server
 
-## Troubleshooting
+```bash
+go run ./cmd/server
+```
 
-If you encounter issues:
+Open [http://localhost:8080/graphql](http://localhost:8080/graphql) (Playground enabled if `--playground` flag used during
+`erm graphql init`).
 
-1. Verify your Go version meets the requirements (1.22+)
-2. Ensure PostgreSQL is running and accessible
-3. Check that all dependencies are properly installed with `go mod tidy`
-4. Run `erm doctor` for diagnostic information (when available)
+Execute a query:
+
+```graphql
+query {
+  users(first: 10) {
+    edges {
+      node {
+        id
+        email
+        posts(first: 5) {
+          edges { node { title } }
+        }
+      }
+    }
+  }
+}
+```
+
+Create a post:
+
+```graphql
+mutation {
+  createPost(input: { title: "GraphQL with erm", authorId: "<UserID>" }) {
+    post {
+      id
+      title
+    }
+  }
+}
+```
+
+---
+
+## 7. Add Authentication
+
+Set up Keycloak (or your provider) and update `erm.yaml` `oidc` block. Restart the server to pick up configuration. Use
+`scripts/get-token.sh` to fetch tokens for Playground.
+
+---
+
+## 8. Run Tests
+
+```bash
+go test ./...
+```
+
+Use `internal/testutil` to create targeted tests.
+
+---
+
+## 9. Next Steps
+
+- Explore [schema-definition.md](./schema-definition.md) for advanced DSL patterns.
+- Configure tracing and metrics per [performance-observability.md](./performance-observability.md).
+- Add more entities and rerun `erm gen` as your domain evolves.
+
+Happy shipping!

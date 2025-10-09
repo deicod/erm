@@ -1,408 +1,194 @@
 # Command Line Interface (CLI)
 
-The `erm` command-line interface provides a complete toolkit for scaffolding, generating, and managing erm-based projects. It implements an opinionated workflow that enables fast development and consistent project structure.
+The `erm` CLI is the orchestrator for every workflow—bootstrapping new services, generating code, applying migrations,
+auto-configuring GraphQL, and verifying project health. This reference covers each command, the files it touches, and the
+practical examples you can adapt to your team’s workflow.
+
+---
 
 ## Installation
 
-### Installing the CLI
+```bash
+go install github.com/erm-project/erm/cmd/erm@latest
+```
+
+You can also run the CLI directly from source:
 
 ```bash
-# Install the latest version
-go install github.com/deicod/erm/cmd/erm@latest
-
-# Or install a specific version
-go install github.com/deicod/erm/cmd/erm@v0.1.0
+go run ./cmd/erm <command>
 ```
 
-### Verifying Installation
+The CLI reads configuration from `erm.yaml` located at the project root. Commands emit actionable logs that describe what changed
+and which files you may edit next.
+
+---
+
+## Global Options
+
+All commands support a consistent set of flags:
+
+| Flag | Description |
+|------|-------------|
+| `--config <path>` | Override the default `erm.yaml` location. |
+| `--dry-run` | Print the actions that would be taken without writing files. |
+| `--verbose` | Emit detailed logs, including resolved paths and diff summaries. |
+| `--no-color` | Disable ANSI colors for CI pipelines. |
+
+Environment variables:
+
+- `ERM_ENV` – Switch between `development`, `staging`, or `production` contexts defined in `erm.yaml`.
+- `ERM_DATABASE_URL` – Override the Postgres DSN for generation-time checks (useful in CI).
+- `ERM_OIDC_ISSUER` – Override issuer discovery URL without editing configuration files.
+
+---
+
+## Command Reference
+
+### `erm init`
+
+Bootstraps a new service or re-initializes configuration in an existing repository.
 
 ```bash
-erm version
-erm help
+erm init --module github.com/acme/payment --oidc-issuer http://localhost:8080/realms/demo
 ```
 
-## Commands
+Actions performed:
 
-### `erm init` - Initialize Project
+- Creates `erm.yaml` populated with module path, database defaults, and OIDC issuer.
+- Generates base folders: `cmd/server`, `internal/graphql`, `internal/orm/schema`, `docs/`, `migrations/`.
+- Writes starter mixins (`time`, `soft delete`), GraphQL resolver stubs, and `.env.example` with connection strings.
+- Adds Makefile targets for `gen`, `lint`, `test`, and `migrate`.
 
-Creates the basic project structure and configuration files:
+### `erm new <Entity>`
+
+Generates a new schema skeleton under `internal/orm/schema/<entity>.go`.
 
 ```bash
-erm init
+erm new Invoice --table invoices --description "Customer invoices with line items"
 ```
 
-This command:
-- Creates project directory structure
-- Generates `erm.yaml` configuration
-- Sets up initial schema directory
-- Creates basic database and GraphQL configuration
-- Initializes the project's `go.mod` dependencies
+The generated file includes TODO comments for fields, edges, indexes, annotations, hooks, interceptors, and privacy policies.
+Use `.Mixins()` to embed reusable behaviors like `AuditMixin` or `SoftDeleteMixin`.
 
-#### Options
-- `--name string` - Project name (defaults to current directory name)
-- `--db-type postgres` - Database type (currently only Postgres supported)
-- `--with-graphql` - Initialize with GraphQL support
-- `--with-oidc` - Include OIDC configuration
+### `erm gen`
 
-#### Example
-```bash
-erm init --name myapp --with-graphql --with-oidc
-```
-
-### `erm new <Entity>` - Create New Schema
-
-Creates a new schema definition file:
+Runs the full generation pipeline.
 
 ```bash
-erm new User
+erm gen --dry-run       # Inspect changes without touching the filesystem
+erm gen --force         # Regenerate even if no changes were detected (useful after library upgrades)
 ```
 
-This creates a `User.schema.go` file in the `schema/` directory with a basic structure.
+Generation outputs:
 
-#### Options
-- `--with-mixin name` - Include a specific mixin in the schema
-- `--with-view name` - Add a default view to the schema
-- `--with-hook type` - Add a specific type of hook
+- ORM packages under `internal/orm/<entity>` with fluent builders, query types, and `Edges` structs.
+- GraphQL schema (`internal/graphql/schema.graphqls`), gqlgen config (`gqlgen.yml`), resolver implementations, and dataloader
+  registration.
+- Migration files under `migrations/<timestamp>_<name>.sql`, including extension management and comment DDL.
+- Updated documentation comments that help AI tooling understand generated code.
 
-#### Example
-```bash
-erm new Post --with-mixin AuditMixin
-```
+`erm gen` is idempotent; you can run it repeatedly without creating inconsistent diffs.
 
-### `erm gen` - Generate Code
+### `erm graphql init`
 
-Generates all code based on schema definitions:
-
-```bash
-erm gen
-```
-
-This command:
-- Scans all `.schema.go` files in the schema directory
-- Generates ORM models and queries
-- Creates GraphQL types, resolvers, and schema
-- Generates database migration files
-- Creates privacy policies and hooks
-- Updates dependency files if needed
-
-#### Options
-- `--dry-run` - Show what would be generated without making changes
-- `--force` - Overwrite existing generated files
-- `--verbose` - Show detailed generation process
-- `--watch` - Watch for schema changes and regenerate automatically
-
-#### Example
-```bash
-erm gen --verbose
-```
-
-### `erm graphql init` - Initialize GraphQL
-
-Sets up GraphQL server and configuration:
+Configures gqlgen and GraphQL server scaffolding.
 
 ```bash
-erm graphql init
+erm graphql init --playground --listen :8080
 ```
 
-This command:
-- Creates GraphQL server files
-- Configures gqlgen
-- Sets up relay-specific types and connections
-- Creates GraphQL playground configuration
-- Sets up dataloader integration
+Outputs include:
 
-#### Options
-- `--server-file string` - Specify server file location
-- `--schema-file string` - Specify schema file location
-- `--resolvers-dir string` - Specify resolvers directory
+- `internal/graphql/server/server.go` – HTTP server with middleware chain (OIDC auth, tracing, logging).
+- `internal/graphql/resolver/resolver.go` – Resolver root that delegates to generated ORM builders.
+- `internal/graphql/node/registry.go` – Global Node lookup with base64 `<Type>:<uuidv7>` encoding helpers.
+- `cmd/server/main.go` – Entry point that wires gqlgen handlers, dataloaders, and health endpoints.
 
-### `erm migrate` - Handle Migrations
+### `erm doctor` *(experimental)*
 
-Manages database migrations:
+Performs project health checks. This command is under active development but the scaffold ships today so you can wire it into CI.
+Current diagnostics include:
 
-```bash
-# Create a new migration
-erm migrate create add_users_table
+- Detecting schema files that have changed without a corresponding `erm gen` run.
+- Validating that migration timestamps are monotonically increasing.
+- Checking that `erm.yaml` matches the module path in `go.mod`.
+- Verifying that GraphQL schema definitions match resolver implementations.
 
-# Apply pending migrations
-erm migrate up
+Run it locally before committing, or add it to GitHub Actions once the `doctor` command graduates from preview.
 
-# Rollback last migration
-erm migrate down
-
-# Show migration status
-erm migrate status
-```
-
-#### Options
-- `--env string` - Environment to use (dev, staging, prod)
-- `--dry-run` - Show what would be executed without making changes
-- `--version int` - Specific version to migrate to
-
-### `erm serve` - Start Development Server
-
-Starts the application server with hot reloading:
-
-```bash
-erm serve
-```
-
-#### Options
-- `--port int` - Port to run the server on (default: 8080)
-- `--host string` - Host to bind to (default: localhost)
-- `--watch` - Watch for file changes and restart server
-- `--env string` - Environment to run in
-
-#### Example
-```bash
-erm serve --port 3000 --env development
-```
-
-### `erm doctor` - Diagnostic Tool
-
-Provides diagnostic information (when available):
-
-```bash
-erm doctor
-```
-
-Checks:
-- Go version compatibility
-- Database connectivity
-- Configuration validity
-- Generated code consistency
-
-### `erm version` - Show Version
-
-Displays the current version:
-
-```bash
-erm version
-```
-
-### `erm completion` - Shell Completion
-
-Generates shell completion scripts:
-
-```bash
-# For bash
-erm completion bash > /etc/bash_completion.d/erm
-
-# For zsh
-erm completion zsh > /usr/local/share/zsh/site-functions/_erm
-```
-
-## Configuration File (erm.yaml)
-
-The CLI uses an `erm.yaml` configuration file in the project root. This file defines project settings and can be modified to customize behavior.
-
-### Example Configuration
-
-```yaml
-# Project configuration
-project:
-  name: "myapp"
-  version: "0.1.0"
-  description: "A sample erm application"
-
-# Database configuration
-database:
-  host: "localhost"
-  port: 5432
-  user: "postgres"
-  password: "password"
-  name: "myapp"
-  ssl_mode: "disable"
-  max_connections: 20
-
-# GraphQL configuration
-graphql:
-  endpoint: "/graphql"
-  playground: true
-  introspection: true
-  complexity:
-    max_depth: 10
-    max_complexity: 1000
-
-# OIDC configuration
-oidc:
-  issuer: "https://your-keycloak/realms/myrealm"
-  client_id: "myapp"
-  jwks_url: "https://your-keycloak/realms/myrealm/protocol/openid-connect/certs"
-  claims_mapper: "keycloak"
-
-# Code generation options
-generation:
-  output_dir: "./internal/generated"
-  templates_dir: "./internal/templates"
-  package_name: "generated"
-  features:
-    - "relay"
-    - "dataloader"
-    - "privacy"
-    - "hooks"
-    - "interceptors"
-
-# Extensions
-extensions:
-  enabled:
-    - "postgis"
-    - "pgvector"
-    - "timescaledb"
-```
-
-## Project Structure
-
-The CLI creates and maintains the following project structure:
-
-```
-myproject/
-├── go.mod
-├── go.sum
-├── erm.yaml              # Configuration
-├── main.go               # Application entry point
-├── schema/               # Schema definition files
-│   ├── User.schema.go
-│   └── Post.schema.go
-├── internal/
-│   ├── generated/        # Generated code
-│   │   ├── models/
-│   │   ├── graphql/
-│   │   └── db/
-│   ├── handlers/         # Custom handlers
-│   └── middleware/       # Custom middleware
-├── migrations/           # Database migration files
-├── cmd/
-│   └── server/           # Server command
-└── docs/                 # Documentation
-```
+---
 
 ## Workflow Examples
 
-### Full Development Workflow
-
-1. **Initialize the project**
-   ```bash
-   erm init --name myproject --with-graphql --with-oidc
-   cd myproject
-   ```
-
-2. **Define your schema**
-   ```bash
-   erm new User
-   erm new Post
-   # Edit the generated schema files to add fields and relationships
-   ```
-
-3. **Generate code**
-   ```bash
-   erm gen
-   ```
-
-4. **Set up GraphQL**
-   ```bash
-   erm graphql init
-   ```
-
-5. **Create and run migrations**
-   ```bash
-   erm migrate create initial_schema
-   erm migrate up
-   ```
-
-6. **Start development server**
-   ```bash
-   erm serve
-   ```
-
-### Adding New Features
-
-1. **Create new schema**
-   ```bash
-   erm new Comment
-   # Edit Comment.schema.go
-   ```
-
-2. **Regenerate code**
-   ```bash
-   erm gen
-   ```
-
-3. **Create migration and apply**
-   ```bash
-   erm migrate create add_comments_table
-   erm migrate up
-   ```
-
-## Advanced Usage
-
-### Environment-Specific Configuration
-
-Use different configurations for different environments:
+### 1. Creating a Feature Slice
 
 ```bash
-erm serve --env production
+erm new Comment
+# Edit internal/orm/schema/comment.go to add fields/edges
+erm gen
+# Edit internal/graphql/resolver/comment.resolvers.go for custom logic
+make test
 ```
 
-The CLI looks for `erm.prod.yaml`, `erm.dev.yaml`, etc., for environment-specific settings.
+After `erm gen`, inspect the generated migration to confirm indexes and foreign keys match expectations. Update the
+`docs/` portal with any domain-specific considerations.
 
-### Custom Templates
-
-The CLI supports custom code generation templates:
-
-```yaml
-generation:
-  templates_dir: "./custom-templates"
-  template_overrides:
-    - "graphql_resolver"
-    - "model_methods"
-```
-
-### Batch Operations
-
-Perform multiple operations in sequence:
+### 2. Enabling pgvector for Recommendations
 
 ```bash
-erm new User && erm new Post && erm gen && erm migrate create initial_schema
+erm new Recommendation
+# Add dsl.Vector("embedding", 1536) in Fields()
+# Annotate schema with dsl.EnableExtension("vector")
+erm gen
 ```
 
-## Troubleshooting
+The generator adds `CREATE EXTENSION IF NOT EXISTS vector;` to the migration and emits helper methods for similarity search.
+Consult [extensions.md](./extensions.md#pgvector) for usage patterns and query examples.
 
-### Common Issues
-
-1. **Permission Denied when Installing**:
-   ```bash
-   # Ensure Go bin directory is in PATH
-   export PATH=$PATH:$(go env GOPATH)/bin
-   ```
-
-2. **Schema Parsing Errors**:
-   - Check that schema files follow the DSL format
-   - Ensure proper imports: `"github.com/deicod/erm/internal/orm/dsl"`
-   - Verify syntax with `go fmt` and `go vet`
-
-3. **Database Connection Issues**:
-   - Verify `erm.yaml` database configuration
-   - Ensure PostgreSQL is running
-   - Check network connectivity to database
-
-4. **Code Generation Failures**:
-   - Run with `--verbose` to see detailed error messages
-   - Verify schema syntax and completeness
-   - Check file permissions in output directories
-
-### Diagnostic Commands
+### 3. Upgrading Schema with Privacy Constraints
 
 ```bash
-# Verbose generation to see details
-erm gen --verbose
-
-# Dry run to preview changes
-erm gen --dry-run
-
-# Check configuration
-erm doctor
-
-# Get help for specific commands
-erm <command> --help
+# Add privacy rules to the schema
+func (User) Privacy() dsl.Privacy {
+    return dsl.Privacy{
+        Read:   "viewer.id == node.id || viewer.is_admin",
+        Update: "viewer.id == node.id",
+        Delete: "viewer.is_admin",
+    }
+}
+erm gen
 ```
+
+Generated resolvers automatically enforce these policies before hitting the database. The GraphQL guide includes examples of how
+the rules translate into runtime checks.
+
+---
+
+## Integrating with Tooling
+
+- **Go Generate:** Add `//go:generate erm gen` directives to schema packages so `go generate ./...` keeps code fresh.
+- **CI Pipelines:** Run `erm gen --dry-run` to detect drift and `erm doctor` to enforce health checks before merging.
+- **Migrations:** Wire `erm gen` into your migration workflow; apply SQL files using `migrate`, `goose`, or the tool of your
+  choice. The generated SQL includes comments describing the originating schema field for traceability.
+
+---
+
+## Troubleshooting CLI Issues
+
+| Symptom | Resolution |
+|---------|------------|
+| CLI reports “no module found” | Ensure `go.mod` exists and `erm.yaml.module` matches `module` declaration. |
+| `erm gen` fails with Postgres error | The CLI validates migrations using the configured DSN. Check connectivity and ensure the
+  target database allows the extension/migration being applied. |
+| Files regenerate on every run | Confirm your editor preserves Go formatting in schema files and that you are not introducing
+  nondeterministic timestamps in annotations. |
+| `erm graphql init` overwrites manual changes | Custom business logic should live in files marked `// Code generated` – keep custom
+  code in `_extension.go` files or resolver stubs outside generated blocks. |
+
+---
+
+## Next Steps
+
+- Continue to the [Schema Definition Guide](./schema-definition.md) to master the DSL.
+- Review [Performance & Observability](./performance-observability.md) to tune the runtime immediately after scaffolding.
+- Run `erm doctor` (preview) regularly to stay ahead of configuration drift.
