@@ -48,20 +48,22 @@ type User struct{ dsl.Schema }
 func (User) Fields() []dsl.Field {
     return []dsl.Field{
         dsl.UUIDv7("id").Primary(),
-        dsl.String("name").Size(255),
-        dsl.String("email").Size(255).Unique(),
+        dsl.String("name").Optional(),
+        dsl.String("email").Unique().NotEmpty(),
         dsl.Time("created_at").DefaultNow(),
         dsl.Time("updated_at").UpdateNow(),
     }
 }
 
-func (User) Edges() []dsl.Edge { 
-    return nil 
+func (User) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToMany("posts", "Post").Ref("author_id"),
+    }
 }
 
-func (User) Indexes() []dsl.Index { 
+func (User) Indexes() []dsl.Index {
     return []dsl.Index{
-        dsl.Index().Fields("email"), // Add index on email field
+        dsl.Idx("idx_users_email").On("email").Unique(),
     }
 }
 ```
@@ -76,6 +78,7 @@ erm gen
 
 This command scans your schema files and generates all necessary backend code including:
 - ORM models with full CRUD operations
+- Relationship helpers that populate `Edges` fields and mark which associations are loaded
 - Database migration files
 - GraphQL types and resolvers
 - Relay-compliant connections and pagination
@@ -121,9 +124,38 @@ Your generated application includes:
 
 - **Relay-compliant API**: Global Node IDs, connections with cursors, PageInfo
 - **CRUD Operations**: Create, read, update, delete operations for all entities
+- **Relationship Helpers**: Eager-load related entities with generated `Load<Name>` methods and inspect the populated `Edges` struct on each model
 - **Type Safety**: Generated Go types matching your schema definitions
 - **Migrations**: Versioned database migration files
 - **Authentication**: OIDC middleware with Keycloak integration
+
+### Loading Relationships
+
+After generating the ORM package you can traverse relationships in both directions without hand-written SQL:
+
+```go
+client := gen.NewClient(db)
+
+users, err := client.Users().List(ctx, 10, 0)
+if err != nil {
+    log.Fatal(err)
+}
+
+if err := client.Users().LoadPosts(ctx, users...); err != nil {
+    log.Fatal(err)
+}
+
+for _, u := range users {
+    if !u.EdgeLoaded("posts") {
+        continue
+    }
+    for _, post := range u.Edges.Posts {
+        fmt.Printf("%s wrote %s\n", u.Email, post.Title)
+    }
+}
+```
+
+The same helpers exist for inverse edges: calling `client.Posts().LoadAuthor(ctx, posts...)` batches the foreign-key lookup and attaches each author to `post.Edges.Author`.
 
 ## Next Steps
 

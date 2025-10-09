@@ -85,7 +85,15 @@ func writeModels(root string, entities []Entity) error {
 			}
 			fmt.Fprintf(buf, "    %s %s `db:\"%s\" json:\"%s\"`\n", exportName(field.Name), goType, fieldColumn(field), jsonName(field.Name))
 		}
+		if len(ent.Edges) > 0 {
+			fmt.Fprintf(buf, "    Edges *%sEdges `json:\"edges,omitempty\"`\n", ent.Name)
+		}
 		fmt.Fprintf(buf, "}\n\n")
+
+		if len(ent.Edges) > 0 {
+			emitEdgesStruct(buf, ent)
+			emitEdgeAccessors(buf, ent)
+		}
 	}
 
 	path := filepath.Join(root, "internal", "orm", "gen", "models_gen.go")
@@ -225,6 +233,7 @@ func writeClients(root string, entities []Entity) error {
 
 	needsTime := false
 	needsID := false
+	hasEdges := false
 	for _, ent := range entities {
 		for _, field := range ent.Fields {
 			if field.HasDefaultNow || field.HasUpdateNow {
@@ -234,9 +243,15 @@ func writeClients(root string, entities []Entity) error {
 				needsID = true
 			}
 		}
+		if len(ent.Edges) > 0 {
+			hasEdges = true
+		}
 	}
 
 	imports := []string{"context", "errors"}
+	if hasEdges {
+		imports = append(imports, "fmt", "strings")
+	}
 	if needsTime {
 		imports = append(imports, "time")
 	}
@@ -260,18 +275,27 @@ func writeClients(root string, entities []Entity) error {
 	fmt.Fprintf(buf, "type Client struct {\n    db *pg.DB\n}\n\n")
 	fmt.Fprintf(buf, "func NewClient(db *pg.DB) *Client {\n    return &Client{db: db}\n}\n\n")
 
+	entityIndex := make(map[string]Entity, len(entities))
+	for _, ent := range entities {
+		entityIndex[ent.Name] = ent
+	}
+
 	for _, ent := range entities {
 		fmt.Fprintf(buf, "func (c *Client) %s() *%sClient {\n    return &%sClient{db: c.db}\n}\n\n", exportName(pluralize(ent.Name)), ent.Name, ent.Name)
 	}
 
 	for _, ent := range entities {
-		emitEntityClients(buf, ent)
+		emitEntityClients(buf, ent, entityIndex)
+	}
+
+	if hasEdges {
+		emitRelationshipHelpers(buf)
 	}
 
 	return writeGoFile(path, buf.Bytes())
 }
 
-func emitEntityClients(buf *bytes.Buffer, ent Entity) {
+func emitEntityClients(buf *bytes.Buffer, ent Entity, entityIndex map[string]Entity) {
 	name := ent.Name
 	lower := strings.ToLower(name)
 	columns := entityColumns(ent)
@@ -310,6 +334,7 @@ func emitEntityClients(buf *bytes.Buffer, ent Entity) {
 		emitUpdateMethod(buf, ent)
 	}
 	emitDeleteMethod(buf, ent)
+	emitEdgeLoaders(buf, ent, entityIndex)
 }
 
 func emitCreateMethod(buf *bytes.Buffer, ent Entity) {
@@ -449,6 +474,248 @@ func emitDeleteMethod(buf *bytes.Buffer, ent Entity) {
 	fmt.Fprintf(buf, "func (c *%sClient) Delete(ctx context.Context, id string) error {\n", ent.Name)
 	fmt.Fprintf(buf, "    _, err := c.db.Pool.Exec(ctx, %sDeleteQuery, id)\n", strings.ToLower(ent.Name))
 	fmt.Fprintf(buf, "    return err\n}\n\n")
+}
+
+func emitEdgeLoaders(buf *bytes.Buffer, ent Entity, entityIndex map[string]Entity) {
+	if len(ent.Edges) == 0 {
+		return
+	}
+	for _, edge := range ent.Edges {
+		switch edge.Kind {
+		case dsl.EdgeToOne:
+			emitToOneLoader(buf, ent, edge, entityIndex)
+		case dsl.EdgeToMany:
+			emitToManyLoader(buf, ent, edge, entityIndex)
+		case dsl.EdgeManyToMany:
+			emitManyToManyLoader(buf, ent, edge, entityIndex)
+		}
+	}
+}
+
+func emitToOneLoader(buf *bytes.Buffer, source Entity, edge dsl.Edge, entityIndex map[string]Entity) {
+	target, ok := entityIndex[edge.Target]
+	if !ok {
+		return
+	}
+	targetPrimary := primaryField(target)
+	fkField, found := fieldByColumn(source, edgeColumn(edge))
+	if !found {
+		return
+	}
+	keyType := goTypeForField(fkField)
+	targetKeyField := exportName(targetPrimary.Name)
+	fkFieldName := exportName(fkField.Name)
+	columns := entityColumns(target)
+	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s IN (%%s)", strings.Join(columns, ", "), pluralize(edge.Target), fieldColumn(targetPrimary))
+	constName := fmt.Sprintf("%s%sRelationQuery", strings.ToLower(source.Name), exportName(edge.Name))
+	fmt.Fprintf(buf, "const %s = `%s`\n", constName, query)
+
+	fmt.Fprintf(buf, "func (c *%sClient) Load%s(ctx context.Context, parents ...*%s) error {\n", source.Name, exportName(edge.Name), source.Name)
+	fmt.Fprintf(buf, "    if len(parents) == 0 {\n        return nil\n    }\n")
+	fmt.Fprintf(buf, "    type keyType = %s\n", keyType)
+	fmt.Fprintf(buf, "    keys := make([]keyType, 0, len(parents))\n")
+	fmt.Fprintf(buf, "    seen := make(map[keyType]struct{}, len(parents))\n")
+	fmt.Fprintf(buf, "    for _, parent := range parents {\n        if parent == nil {\n            continue\n        }\n        edges := ensure%sEdges(parent)\n        edges.markLoaded(%q)\n        fk := parent.%s\n        if isZero(fk) {\n            edges.%s = nil\n            continue\n        }\n        if _, ok := seen[fk]; !ok {\n            seen[fk] = struct{}{}\n            keys = append(keys, fk)\n        }\n    }\n", source.Name, edge.Name, fkFieldName, exportName(edge.Name))
+	fmt.Fprintf(buf, "    if len(keys) == 0 {\n        return nil\n    }\n")
+	fmt.Fprintf(buf, "    sql, args := buildInQuery(%s, keys)\n", constName)
+	fmt.Fprintf(buf, "    rows, err := c.db.Pool.Query(ctx, sql, args...)\n    if err != nil {\n        return err\n    }\n    defer rows.Close()\n")
+	fmt.Fprintf(buf, "    related := make(map[keyType]*%s, len(keys))\n", edge.Target)
+	fmt.Fprintf(buf, "    for rows.Next() {\n        item := new(%s)\n        if err := rows.Scan(%s); err != nil {\n            return err\n        }\n        key := item.%s\n        related[key] = item\n    }\n", edge.Target, scanArgs(target), targetKeyField)
+	fmt.Fprintf(buf, "    if err := rows.Err(); err != nil {\n        return err\n    }\n")
+	fmt.Fprintf(buf, "    for _, parent := range parents {\n        if parent == nil {\n            continue\n        }\n        fk := parent.%s\n        edges := ensure%sEdges(parent)\n        if isZero(fk) {\n            edges.%s = nil\n            continue\n        }\n        if item, ok := related[fk]; ok {\n            edges.%s = item\n        } else {\n            edges.%s = nil\n        }\n    }\n", fkFieldName, source.Name, exportName(edge.Name), exportName(edge.Name), exportName(edge.Name))
+	fmt.Fprintf(buf, "    return nil\n}\n\n")
+}
+
+func emitToManyLoader(buf *bytes.Buffer, source Entity, edge dsl.Edge, entityIndex map[string]Entity) {
+	target, ok := entityIndex[edge.Target]
+	if !ok {
+		return
+	}
+	sourcePrimary := primaryField(source)
+	targetRefColumn := edgeRefColumn(source, edge, sourcePrimary)
+	if targetRefColumn == "" {
+		return
+	}
+	refField, found := fieldByColumn(target, targetRefColumn)
+	if !found {
+		return
+	}
+	keyType := goTypeForField(sourcePrimary)
+	sourceKeyName := exportName(sourcePrimary.Name)
+	refFieldName := exportName(refField.Name)
+	columns := entityColumns(target)
+	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s IN (%%s)", strings.Join(columns, ", "), pluralize(edge.Target), targetRefColumn)
+	constName := fmt.Sprintf("%s%sRelationQuery", strings.ToLower(source.Name), exportName(edge.Name))
+	fmt.Fprintf(buf, "const %s = `%s`\n", constName, query)
+
+	fmt.Fprintf(buf, "func (c *%sClient) Load%s(ctx context.Context, parents ...*%s) error {\n", source.Name, exportName(edge.Name), source.Name)
+	fmt.Fprintf(buf, "    if len(parents) == 0 {\n        return nil\n    }\n")
+	fmt.Fprintf(buf, "    type keyType = %s\n", keyType)
+	fmt.Fprintf(buf, "    keys := make([]keyType, 0, len(parents))\n")
+	fmt.Fprintf(buf, "    seen := make(map[keyType]struct{}, len(parents))\n")
+	fmt.Fprintf(buf, "    buckets := make(map[keyType][]*%s, len(parents))\n", source.Name)
+	fmt.Fprintf(buf, "    for _, parent := range parents {\n        if parent == nil {\n            continue\n        }\n        key := parent.%s\n        if isZero(key) {\n            edges := ensure%sEdges(parent)\n            if edges.%s == nil {\n                edges.%s = []*%s{}\n            }\n            edges.markLoaded(%q)\n            continue\n        }\n        if _, ok := seen[key]; !ok {\n            seen[key] = struct{}{}\n            keys = append(keys, key)\n        }\n        buckets[key] = append(buckets[key], parent)\n    }\n", sourceKeyName, source.Name, exportName(edge.Name), exportName(edge.Name), edge.Target, edge.Name)
+	fmt.Fprintf(buf, "    if len(keys) == 0 {\n        for _, parent := range parents {\n            if parent == nil {\n                continue\n            }\n            edges := ensure%sEdges(parent)\n            if edges.%s == nil {\n                edges.%s = []*%s{}\n            }\n            edges.markLoaded(%q)\n        }\n        return nil\n    }\n", source.Name, exportName(edge.Name), exportName(edge.Name), edge.Target, edge.Name)
+	fmt.Fprintf(buf, "    sql, args := buildInQuery(%s, keys)\n", constName)
+	fmt.Fprintf(buf, "    rows, err := c.db.Pool.Query(ctx, sql, args...)\n    if err != nil {\n        return err\n    }\n    defer rows.Close()\n")
+	fmt.Fprintf(buf, "    for rows.Next() {\n        item := new(%s)\n        if err := rows.Scan(%s); err != nil {\n            return err\n        }\n        owner := item.%s\n        parents, ok := buckets[owner]\n        if !ok {\n            continue\n        }\n        for _, parent := range parents {\n            edges := ensure%sEdges(parent)\n            edges.%s = append(edges.%s, item)\n        }\n    }\n", edge.Target, scanArgs(target), refFieldName, source.Name, exportName(edge.Name), exportName(edge.Name))
+	fmt.Fprintf(buf, "    if err := rows.Err(); err != nil {\n        return err\n    }\n")
+	fmt.Fprintf(buf, "    for _, parent := range parents {\n        if parent == nil {\n            continue\n        }\n        edges := ensure%sEdges(parent)\n        if edges.%s == nil {\n            edges.%s = []*%s{}\n        }\n        edges.markLoaded(%q)\n    }\n", source.Name, exportName(edge.Name), exportName(edge.Name), edge.Target, edge.Name)
+	fmt.Fprintf(buf, "    return nil\n}\n\n")
+}
+
+func emitManyToManyLoader(buf *bytes.Buffer, source Entity, edge dsl.Edge, entityIndex map[string]Entity) {
+	target, ok := entityIndex[edge.Target]
+	if !ok {
+		return
+	}
+	sourcePrimary := primaryField(source)
+	targetPrimary := primaryField(target)
+	joinTable, leftColumn, rightColumn := manyToManyJoinSpec(source, sourcePrimary, edge, targetPrimary)
+	if joinTable == "" {
+		return
+	}
+	keyType := goTypeForField(sourcePrimary)
+	sourceKeyName := exportName(sourcePrimary.Name)
+	columns := entityColumns(target)
+	selectCols := append([]string{}, columns...)
+	selectCols = append(selectCols, fmt.Sprintf("jt.%s", leftColumn))
+	query := fmt.Sprintf("SELECT %s FROM %s AS t JOIN %s AS jt ON t.%s = jt.%s WHERE jt.%s IN (%%s)", strings.Join(selectCols, ", "), pluralize(edge.Target), joinTable, fieldColumn(targetPrimary), rightColumn, leftColumn)
+	constName := fmt.Sprintf("%s%sRelationQuery", strings.ToLower(source.Name), exportName(edge.Name))
+	fmt.Fprintf(buf, "const %s = `%s`\n", constName, query)
+
+	fmt.Fprintf(buf, "func (c *%sClient) Load%s(ctx context.Context, parents ...*%s) error {\n", source.Name, exportName(edge.Name), source.Name)
+	fmt.Fprintf(buf, "    if len(parents) == 0 {\n        return nil\n    }\n")
+	fmt.Fprintf(buf, "    type keyType = %s\n", keyType)
+	fmt.Fprintf(buf, "    keys := make([]keyType, 0, len(parents))\n")
+	fmt.Fprintf(buf, "    seen := make(map[keyType]struct{}, len(parents))\n")
+	fmt.Fprintf(buf, "    buckets := make(map[keyType][]*%s, len(parents))\n", source.Name)
+	fmt.Fprintf(buf, "    for _, parent := range parents {\n        if parent == nil {\n            continue\n        }\n        key := parent.%s\n        if isZero(key) {\n            edges := ensure%sEdges(parent)\n            if edges.%s == nil {\n                edges.%s = []*%s{}\n            }\n            edges.markLoaded(%q)\n            continue\n        }\n        if _, ok := seen[key]; !ok {\n            seen[key] = struct{}{}\n            keys = append(keys, key)\n        }\n        buckets[key] = append(buckets[key], parent)\n    }\n", sourceKeyName, source.Name, exportName(edge.Name), exportName(edge.Name), edge.Target, edge.Name)
+	fmt.Fprintf(buf, "    if len(keys) == 0 {\n        for _, parent := range parents {\n            if parent == nil {\n                continue\n            }\n            edges := ensure%sEdges(parent)\n            if edges.%s == nil {\n                edges.%s = []*%s{}\n            }\n            edges.markLoaded(%q)\n        }\n        return nil\n    }\n", source.Name, exportName(edge.Name), exportName(edge.Name), edge.Target, edge.Name)
+	fmt.Fprintf(buf, "    sql, args := buildInQuery(%s, keys)\n", constName)
+	fmt.Fprintf(buf, "    rows, err := c.db.Pool.Query(ctx, sql, args...)\n    if err != nil {\n        return err\n    }\n    defer rows.Close()\n")
+	fmt.Fprintf(buf, "    for rows.Next() {\n        item := new(%s)\n        var owner keyType\n        if err := rows.Scan(%s); err != nil {\n            return err\n        }\n        parents, ok := buckets[owner]\n        if !ok {\n            continue\n        }\n        for _, parent := range parents {\n            edges := ensure%sEdges(parent)\n            edges.%s = append(edges.%s, item)\n        }\n    }\n", edge.Target, scanArgsWithExtra(target, "&owner"), source.Name, exportName(edge.Name), exportName(edge.Name))
+	fmt.Fprintf(buf, "    if err := rows.Err(); err != nil {\n        return err\n    }\n")
+	fmt.Fprintf(buf, "    for _, parent := range parents {\n        if parent == nil {\n            continue\n        }\n        edges := ensure%sEdges(parent)\n        if edges.%s == nil {\n            edges.%s = []*%s{}\n        }\n        edges.markLoaded(%q)\n    }\n", source.Name, exportName(edge.Name), exportName(edge.Name), edge.Target, edge.Name)
+	fmt.Fprintf(buf, "    return nil\n}\n\n")
+}
+
+func emitRelationshipHelpers(buf *bytes.Buffer) {
+	fmt.Fprintf(buf, "func buildInQuery[T any](base string, values []T) (string, []any) {\n")
+	fmt.Fprintf(buf, "    if len(values) == 0 {\n        return base, nil\n    }\n")
+	fmt.Fprintf(buf, "    placeholders := make([]string, len(values))\n")
+	fmt.Fprintf(buf, "    args := make([]any, len(values))\n")
+	fmt.Fprintf(buf, "    for i := range values {\n        placeholders[i] = fmt.Sprintf(\"$%%d\", i+1)\n        args[i] = values[i]\n    }\n")
+	fmt.Fprintf(buf, "    return fmt.Sprintf(base, strings.Join(placeholders, %q)), args\n}\n\n", ", ")
+
+	fmt.Fprintf(buf, "func isZero[T comparable](v T) bool {\n    var zero T\n    return v == zero\n}\n\n")
+}
+
+func scanArgs(ent Entity) string { return strings.Join(scanArgsForVar(ent, "item"), ", ") }
+
+func scanArgsWithExtra(ent Entity, extra string) string {
+	parts := scanArgsForVar(ent, "item")
+	if extra != "" {
+		parts = append(parts, extra)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func scanArgsForVar(ent Entity, varName string) []string {
+	parts := make([]string, len(ent.Fields))
+	for i, field := range ent.Fields {
+		parts[i] = fmt.Sprintf("&%s.%s", varName, exportName(field.Name))
+	}
+	return parts
+}
+
+func fieldByColumn(ent Entity, column string) (dsl.Field, bool) {
+	for _, field := range ent.Fields {
+		if fieldColumn(field) == column {
+			return field, true
+		}
+	}
+	return dsl.Field{}, false
+}
+
+func goTypeForField(field dsl.Field) string {
+	if field.GoType != "" {
+		return field.GoType
+	}
+	return defaultGoType(field.Type)
+}
+
+func edgeRefColumn(source Entity, edge dsl.Edge, primary dsl.Field) string {
+	if edge.RefName != "" {
+		return edge.RefName
+	}
+	if primary.Name == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s_%s", toSnakeCase(source.Name), fieldColumn(primary))
+}
+
+func manyToManyJoinSpec(source Entity, sourcePrimary dsl.Field, edge dsl.Edge, targetPrimary dsl.Field) (string, string, string) {
+	joinTable := edge.Through
+	if joinTable == "" {
+		joinTable = defaultJoinTableName(source.Name, edge.Target)
+	}
+	if joinTable == "" {
+		return "", "", ""
+	}
+	left := fmt.Sprintf("%s_%s", toSnakeCase(source.Name), fieldColumn(sourcePrimary))
+	right := fmt.Sprintf("%s_%s", toSnakeCase(edge.Target), fieldColumn(targetPrimary))
+	return joinTable, left, right
+}
+
+func emitEdgesStruct(buf *bytes.Buffer, ent Entity) {
+	fmt.Fprintf(buf, "type %sEdges struct {\n", ent.Name)
+	fmt.Fprintf(buf, "    loaded map[string]bool\n")
+	for _, edge := range ent.Edges {
+		fieldName := exportName(edge.Name)
+		jsonTag := jsonName(edge.Name)
+		switch edge.Kind {
+		case dsl.EdgeToOne:
+			fmt.Fprintf(buf, "    %s *%s `json:\"%s,omitempty\"`\n", fieldName, edge.Target, jsonTag)
+		case dsl.EdgeToMany, dsl.EdgeManyToMany:
+			fmt.Fprintf(buf, "    %s []*%s `json:\"%s,omitempty\"`\n", fieldName, edge.Target, jsonTag)
+		}
+	}
+	fmt.Fprintf(buf, "}\n\n")
+
+	fmt.Fprintf(buf, "func (e *%sEdges) markLoaded(name string) {\n", ent.Name)
+	fmt.Fprintf(buf, "    if e == nil {\n        return\n    }\n")
+	fmt.Fprintf(buf, "    if e.loaded == nil {\n        e.loaded = make(map[string]bool)\n    }\n")
+	fmt.Fprintf(buf, "    e.loaded[name] = true\n}\n\n")
+}
+
+func emitEdgeAccessors(buf *bytes.Buffer, ent Entity) {
+	fmt.Fprintf(buf, "func ensure%sEdges(m *%s) *%sEdges {\n", ent.Name, ent.Name, ent.Name)
+	fmt.Fprintf(buf, "    if m.Edges == nil {\n        m.Edges = &%sEdges{}\n    }\n", ent.Name)
+	fmt.Fprintf(buf, "    if m.Edges.loaded == nil {\n        m.Edges.loaded = make(map[string]bool)\n    }\n")
+	fmt.Fprintf(buf, "    return m.Edges\n}\n\n")
+
+	fmt.Fprintf(buf, "func (m *%s) EdgeLoaded(name string) bool {\n", ent.Name)
+	fmt.Fprintf(buf, "    if m == nil || m.Edges == nil || m.Edges.loaded == nil {\n        return false\n    }\n")
+	fmt.Fprintf(buf, "    return m.Edges.loaded[name]\n}\n\n")
+
+	for _, edge := range ent.Edges {
+		fieldName := exportName(edge.Name)
+		jsonTag := edge.Name
+		switch edge.Kind {
+		case dsl.EdgeToOne:
+			fmt.Fprintf(buf, "func (m *%s) Set%s(value *%s) {\n", ent.Name, fieldName, edge.Target)
+			fmt.Fprintf(buf, "    edges := ensure%sEdges(m)\n", ent.Name)
+			fmt.Fprintf(buf, "    edges.%s = value\n", fieldName)
+			fmt.Fprintf(buf, "    edges.markLoaded(%q)\n}\n\n", jsonTag)
+		case dsl.EdgeToMany, dsl.EdgeManyToMany:
+			fmt.Fprintf(buf, "func (m *%s) Set%s(values []*%s) {\n", ent.Name, fieldName, edge.Target)
+			fmt.Fprintf(buf, "    edges := ensure%sEdges(m)\n", ent.Name)
+			fmt.Fprintf(buf, "    if values == nil {\n        values = []*%s{}\n    }\n", edge.Target)
+			fmt.Fprintf(buf, "    edges.%s = values\n", fieldName)
+			fmt.Fprintf(buf, "    edges.markLoaded(%q)\n}\n\n", jsonTag)
+		}
+	}
 }
 
 func entityColumns(ent Entity) []string {

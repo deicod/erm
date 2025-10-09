@@ -81,7 +81,7 @@ type User struct{ dsl.Schema }
 func (User) Fields() []dsl.Field {
     return []dsl.Field{
         dsl.UUIDv7("id").Primary(),
-        dsl.String("name").Size(255),
+        dsl.String("name").Optional(),
         dsl.Time("created_at").DefaultNow(),
         dsl.Time("updated_at").UpdateNow(),
     }
@@ -89,7 +89,7 @@ func (User) Fields() []dsl.Field {
 
 func (User) Edges() []dsl.Edge {
     return []dsl.Edge{
-        dsl.To("posts", Post.Type).ForeignKey("user_id"), // User has many posts
+        dsl.ToMany("posts", "Post").Ref("author_id"),
     }
 }
 
@@ -98,9 +98,9 @@ type Post struct{ dsl.Schema }
 func (Post) Fields() []dsl.Field {
     return []dsl.Field{
         dsl.UUIDv7("id").Primary(),
-        dsl.UUIDv7("user_id"), // Foreign key
-        dsl.String("title").Size(255),
-        dsl.Text("content"),
+        dsl.UUIDv7("author_id"), // Foreign key column
+        dsl.String("title").NotEmpty(),
+        dsl.String("body").Optional(),
         dsl.Time("created_at").DefaultNow(),
         dsl.Time("updated_at").UpdateNow(),
     }
@@ -108,16 +108,18 @@ func (Post) Fields() []dsl.Field {
 
 func (Post) Edges() []dsl.Edge {
     return []dsl.Edge{
-        dsl.From("user", User.Type).ForeignKey("user_id"), // Post belongs to user
+        dsl.ToOne("author", "User").Field("author_id").Inverse("posts"),
     }
 }
 ```
 
 ### Edge Types
 
-- `dsl.To(name, target)` - Defines a "has many" relationship (from source to target)
-- `dsl.From(name, source)` - Defines a "belongs to" relationship (from target to source)
-- `dsl.Through(name, intermediate)` - Defines many-to-many relationships through an intermediate schema
+- `dsl.ToOne(name, target)` - Defines a required/optional foreign-key to another entity
+- `dsl.ToMany(name, target)` - Defines a collection of targets keyed by a foreign column
+- `dsl.ManyToMany(name, target)` - Defines many-to-many relationships via a join table (auto-generated unless overridden with `.ThroughTable()`)
+
+The generator produces helpers such as `LoadAuthor`, `LoadPosts`, and `LoadGroups` so that you can batch eager-load relationships and populate each model's `Edges` struct. Callers can set edges manually with the generated `Set<Name>` helpers or check if an edge has been loaded with `EdgeLoaded("name")`.
 
 ## Indexes
 

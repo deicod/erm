@@ -42,7 +42,7 @@ type User struct{ dsl.Schema }
 
 func (User) Edges() []dsl.Edge {
     return []dsl.Edge{
-        dsl.To("posts", Post.Type).ForeignKey("user_id"),
+        dsl.ToMany("posts", "Post").Ref("author_id"),
     }
 }
 
@@ -50,7 +50,7 @@ type Post struct{ dsl.Schema }
 
 func (Post) Edges() []dsl.Edge {
     return []dsl.Edge{
-        dsl.From("user", User.Type).ForeignKey("user_id"),
+        dsl.ToOne("author", "User").Field("author_id").Inverse("posts"),
     }
 }
 ```

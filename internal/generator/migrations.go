@@ -295,15 +295,10 @@ func ensureJoinTable(joinTables map[string]joinTableSpec, source Entity, entityI
 		return
 	}
 	joinName := edge.Through
-	key := joinName
 	if joinName == "" {
-		left := pluralize(source.Name)
-		right := pluralize(edge.Target)
-		joinName = fmt.Sprintf("%s_%s", left, right)
-		parts := []string{left, right}
-		sort.Strings(parts)
-		key = strings.Join(parts, "__")
+		joinName = defaultJoinTableName(source.Name, edge.Target)
 	}
+	key := joinName
 	if key == "" {
 		key = joinName
 	}
