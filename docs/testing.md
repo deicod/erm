@@ -62,6 +62,12 @@ server.
 
 ---
 
+> **Looking for real-world patterns?** The [editorial workspace walkthroughs](../examples/blog/walkthroughs/validation.md)
+> pair these helpers with concrete validation, profiling, and error-handling suites so you can copy the structure into your own
+> projects.
+
+---
+
 ## Mocking Patterns
 
 - Use `pgxmock.AnyArg()` for timestamps or automatically generated UUIDs.

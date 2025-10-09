@@ -69,6 +69,25 @@ symptoms, root causes, and remediation steps.
 
 ---
 
+## Production Incident Playbook
+
+When latency spikes or errors surface after deployment, anchor the investigation around the workspace editorial scenario described in
+[`examples/blog/walkthroughs/error-handling.md`](../examples/blog/walkthroughs/error-handling.md):
+
+1. **Reproduce with recorded queries** – Capture the GraphQL payload from structured logs (`request_id`, `viewer_id`) and replay it with
+   your chosen CLI (for example `erm gql replay --request-id <id>`) so dataloaders and privacy policies execute exactly as they did in production.
+2. **Inspect query plans** – Enable `ERM_OBSERVABILITY_DEBUG=1` and rerun the profiling walkthrough to emit SQL and planner output.
+   Compare against the stored baseline in your observability dashboard; divergences usually point to missing indexes or bloated predicates.
+3. **Validate edge constraints** – Use the sample `Membership` schema's unique index to confirm no duplicate workspace memberships were inserted.
+   If the incident trace shows `FOREIGN KEY` violations, run the walkthrough's validation steps to reapply cascading deletes and regenerate migrations.
+4. **Capture remediation** – Update the `examples/blog/README.md` playbook with the findings (new index, privacy tweak, or resolver guard) so future
+   responders start with a proven checklist.
+
+This incident template keeps the team aligned on root cause analysis: reproduce with production data, inspect ORM-generated SQL, and verify schema
+constraints before shipping hotfixes.
+
+---
+
 ## Debugging Tips
 
 - Run `erm gen --verbose` to print file diffs and execution details.
