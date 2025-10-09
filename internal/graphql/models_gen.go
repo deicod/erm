@@ -11,6 +11,28 @@ type Node interface {
 	GetID() string
 }
 
+type CreateUserInput struct {
+	ClientMutationID *string    `json:"clientMutationId,omitempty"`
+	ID               *string    `json:"id,omitempty"`
+	CreatedAt        *time.Time `json:"createdAt,omitempty"`
+	UpdatedAt        *time.Time `json:"updatedAt,omitempty"`
+}
+
+type CreateUserPayload struct {
+	ClientMutationID *string `json:"clientMutationId,omitempty"`
+	User             *User   `json:"user,omitempty"`
+}
+
+type DeleteUserInput struct {
+	ClientMutationID *string `json:"clientMutationId,omitempty"`
+	ID               string  `json:"id"`
+}
+
+type DeleteUserPayload struct {
+	ClientMutationID *string `json:"clientMutationId,omitempty"`
+	DeletedUserID    string  `json:"deletedUserID"`
+}
+
 type Mutation struct {
 }
 
@@ -22,6 +44,18 @@ type PageInfo struct {
 }
 
 type Query struct {
+}
+
+type UpdateUserInput struct {
+	ClientMutationID *string    `json:"clientMutationId,omitempty"`
+	ID               string     `json:"id"`
+	CreatedAt        *time.Time `json:"createdAt,omitempty"`
+	UpdatedAt        *time.Time `json:"updatedAt,omitempty"`
+}
+
+type UpdateUserPayload struct {
+	ClientMutationID *string `json:"clientMutationId,omitempty"`
+	User             *User   `json:"user,omitempty"`
 }
 
 type User struct {

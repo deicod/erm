@@ -16,3 +16,6 @@ models:
   Time:
     model:
       - time.Time
+  Timestamptz:
+    model:
+      - time.Time
