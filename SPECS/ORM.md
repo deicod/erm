@@ -29,8 +29,8 @@ func (User) Fields() []dsl.Field {
         dsl.UUIDv7("id").Primary(),
         dsl.String("email").Unique().NotEmpty(),
         dsl.String("name").Optional(),
-        dsl.Time("created_at").DefaultNow(),
-        dsl.Time("updated_at").UpdateNow(),
+        dsl.TimestampTZ("created_at").DefaultNow(),
+        dsl.TimestampTZ("updated_at").UpdateNow(),
     }
 }
 

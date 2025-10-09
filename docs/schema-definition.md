@@ -28,8 +28,8 @@ func (User) Fields() []dsl.Field {
         dsl.String("email").NotEmpty().Unique().Comment("Primary login identifier."),
         dsl.String("display_name").Optional().Size(120),
         dsl.Bool("is_admin").Default(false),
-        dsl.Time("created_at").DefaultNow(),
-        dsl.Time("updated_at").UpdateNow(),
+        dsl.TimestampTZ("created_at").DefaultNow(),
+        dsl.TimestampTZ("updated_at").UpdateNow(),
     }
 }
 
@@ -77,39 +77,100 @@ You can override only the methods you need—defaults handle the rest.
 Fields describe table columns and GraphQL scalar exposure. Each field factory returns a fluent builder that supports modifiers,
 validators, and annotations.
 
-### Primitive Fields
+### Field Constructors
 
-| Constructor | Description | Notes |
-|-------------|-------------|-------|
-| `dsl.String(name)` | Variable length text (defaults to `TEXT`). | Use `.Size(n)` to constrain to `VARCHAR(n)`. |
-| `dsl.Int(name)` | 32-bit integer. | Use `.Min()`, `.Max()`, `.Positive()`. |
-| `dsl.Int64(name)` | 64-bit integer. | |
-| `dsl.Float(name)` | Float64. | `.Precision()` controls decimal scale for SQL. |
-| `dsl.Bool(name)` | Boolean flag. | `.Default(false)` recommended. |
-| `dsl.Time(name)` | Timestamp with timezone. | `.DefaultNow()` and `.UpdateNow()` integrate with Go `time.Time`. |
-| `dsl.Bytes(name)` | Byte slice stored as `BYTEA`. | Useful for binary blobs (e.g., signed documents). |
+PostgreSQL column families map to dedicated helpers. Unless you override `GoType` or `Column`, the generators derive SQL, Go, and GraphQL metadata (including custom scalars such as `BigInt`, `Decimal`, `Timestamptz`, and `JSONB`). Legacy shortcuts like `dsl.String`, `dsl.Int`, `dsl.Float`, and `dsl.Bool` remain as aliases for the richer helpers below.
 
-### Special Fields
+#### Character & UUID
 
-| Constructor | Description |
-|-------------|-------------|
-| `dsl.UUIDv7(name)` | UUID version 7. Default primary key for entities. |
-| `dsl.UUID(name)` | Generic UUID (v4 or custom). |
-| `dsl.JSON(name)` | JSONB column with optional schema validation. |
-| `dsl.Enum(name, values...)` | Enum backed by `TEXT CHECK`. Generates Go constants and GraphQL enum. |
-| `dsl.Vector(name, dim)` | pgvector embedding column (requires extension). |
-| `dsl.Geometry(name, srid)` | PostGIS geometry field. |
-| `dsl.Geography(name, srid)` | PostGIS geography field. |
-| `dsl.Decimal(name, precision, scale)` | Numeric column for money/precise values. |
+| Constructor | SQL type | Go type | GraphQL scalar |
+|-------------|----------|---------|----------------|
+| `dsl.Text(name)` | `text` | `string` | `String` |
+| `dsl.VarChar(name, size)` | `varchar(size)` (defaults to `varchar`) | `string` | `String` |
+| `dsl.Char(name, size)` | `char(size)` | `string` | `String` |
+| `dsl.UUID(name)` / `dsl.UUIDv7(name)` | `uuid` | `string` | `ID` |
+
+#### Numeric & Boolean
+
+| Constructor | SQL type | Go type | GraphQL scalar |
+|-------------|----------|---------|----------------|
+| `dsl.Boolean(name)` | `boolean` | `bool` | `Boolean` |
+| `dsl.SmallInt(name)` | `smallint` | `int16` | `Int` |
+| `dsl.Integer(name)` | `integer` | `int32` | `Int` |
+| `dsl.BigInt(name)` | `bigint` | `int64` | `BigInt` |
+| `dsl.SmallSerial(name)` | `smallserial` | `int16` | `Int` |
+| `dsl.Serial(name)` | `serial` | `int32` | `Int` |
+| `dsl.BigSerial(name)` | `bigserial` | `int64` | `BigInt` |
+| `dsl.SmallIntIdentity(name, mode)` | `smallint GENERATED … AS IDENTITY` | `int16` | `Int` |
+| `dsl.IntegerIdentity(name, mode)` | `integer GENERATED … AS IDENTITY` | `int32` | `Int` |
+| `dsl.BigIntIdentity(name, mode)` | `bigint GENERATED … AS IDENTITY` | `int64` | `BigInt` |
+| `dsl.Decimal(name, precision, scale)` | `decimal(precision,scale)` | `string` | `Decimal` |
+| `dsl.Numeric(name, precision, scale)` | `numeric(precision,scale)` | `string` | `Decimal` |
+| `dsl.Real(name)` | `real` | `float32` | `Float` |
+| `dsl.DoublePrecision(name)` | `double precision` | `float64` | `Float` |
+| `dsl.Money(name)` | `money` | `string` | `Money` |
+
+Use `dsl.IdentityAlways` or `dsl.IdentityByDefault` as the second parameter when you need identity columns. When omitted, identity helpers default to `BY DEFAULT` semantics.
+
+#### Temporal
+
+| Constructor | SQL type | Go type | GraphQL scalar |
+|-------------|----------|---------|----------------|
+| `dsl.Date(name)` | `date` | `time.Time` | `Date` |
+| `dsl.Time(name)` | `time` | `time.Time` | `Time` |
+| `dsl.TimeTZ(name)` | `timetz` | `time.Time` | `Timetz` |
+| `dsl.Timestamp(name)` | `timestamp` | `time.Time` | `Timestamp` |
+| `dsl.TimestampTZ(name)` | `timestamptz` | `time.Time` | `Timestamptz` |
+| `dsl.Interval(name)` | `interval` | `string` | `Interval` |
+
+#### Binary, JSON, and XML
+
+| Constructor | SQL type | Go type | GraphQL scalar |
+|-------------|----------|---------|----------------|
+| `dsl.Bytea(name)` | `bytea` | `[]byte` | `String` |
+| `dsl.JSON(name)` | `json` | `json.RawMessage` | `JSON` |
+| `dsl.JSONB(name)` | `jsonb` | `json.RawMessage` | `JSONB` |
+| `dsl.XML(name)` | `xml` | `string` | `XML` |
+
+#### Network & Bit Strings
+
+| Constructor | SQL type | Go type | GraphQL scalar |
+|-------------|----------|---------|----------------|
+| `dsl.Inet(name)` | `inet` | `string` | `Inet` |
+| `dsl.CIDR(name)` | `cidr` | `string` | `CIDR` |
+| `dsl.MACAddr(name)` | `macaddr` | `string` | `MacAddr` |
+| `dsl.MACAddr8(name)` | `macaddr8` | `string` | `MacAddr8` |
+| `dsl.Bit(name, length)` | `bit(length)` | `string` | `BitString` |
+| `dsl.VarBit(name, length)` | `varbit(length)` | `string` | `VarBitString` |
+
+#### Text Search & Range Types
+
+| Constructor | SQL type | Go type | GraphQL scalar |
+|-------------|----------|---------|----------------|
+| `dsl.TSVector(name)` | `tsvector` | `string` | `TSVector` |
+| `dsl.TSQuery(name)` | `tsquery` | `string` | `TSQuery` |
+| `dsl.Int4Range(name)` | `int4range` | `string` | `Int4Range` |
+| `dsl.Int8Range(name)` | `int8range` | `string` | `Int8Range` |
+| `dsl.NumRange(name)` | `numrange` | `string` | `NumRange` |
+| `dsl.TSRange(name)` | `tsrange` | `string` | `TSRange` |
+| `dsl.TSTZRange(name)` | `tstzrange` | `string` | `TSTZRange` |
+| `dsl.DateRange(name)` | `daterange` | `string` | `DateRange` |
+
+#### Arrays & Extensions
+
+- `dsl.Array(name, elementType)` creates PostgreSQL arrays (`elementType[]`). Pass constants like `dsl.TypeText` or `dsl.TypeInteger`; the generators derive the appropriate Go slice (for example `[]string` or `[]int32`) and GraphQL list (`[String!]!`).
+- `dsl.Geometry(name)` / `dsl.Geography(name)` require the PostGIS extension. Columns are exposed as `[]byte` in Go and the `JSON` scalar in GraphQL.
+- `dsl.Vector(name, dim)` requires the `vector` extension and maps to `[]float32` in Go and `[Float!]!` in GraphQL.
+- `dsl.Enum(name, values...)` still generates GraphQL enums backed by a `TEXT CHECK` constraint.
 
 ### Common Modifiers
 
 Modifiers can be chained:
 
 ```go
-dsl.String("username").NotEmpty().Unique().Default("anonymous")
-dsl.Time("deleted_at").Optional().Nillable().Comment("Null when active.")
-dsl.Float("rating").Range(0, 5).Default(0)
+dsl.VarChar("username", 64).NotEmpty().Unique().Default("anonymous")
+dsl.TimestampTZ("deleted_at").Optional().Comment("Null when active.")
+dsl.Decimal("rating", 4, 2).WithDefault("0.00")
 ```
 
 Selected modifiers:
@@ -124,6 +185,8 @@ Selected modifiers:
 - `.Immutable()` – Prevents updates after initial creation.
 - `.Sensitive()` – Excludes from GraphQL outputs and JSON logs (still stored in DB).
 - `.Comment(text)` – Adds database comment and docstring for GraphQL schema.
+- `.Length(n)` / `.Precision(n)` / `.Scale(n)` – Override size metadata for `VARCHAR`, numeric, and temporal columns.
+- `.Identity(mode)` – Toggle identity generation (`dsl.IdentityAlways` or `dsl.IdentityByDefault`) on supported integer types.
 
 ### Validators and Hooks
 
@@ -408,8 +471,8 @@ type AuditMixin struct{ dsl.Mixin }
 
 func (AuditMixin) Fields() []dsl.Field {
     return []dsl.Field{
-        dsl.Time("created_at").DefaultNow(),
-        dsl.Time("updated_at").UpdateNow(),
+        dsl.TimestampTZ("created_at").DefaultNow(),
+        dsl.TimestampTZ("updated_at").UpdateNow(),
     }
 }
 

@@ -407,20 +407,122 @@ func executeDSLFunc(name string, args []any) (any, error) {
 	switch name {
 	case "UUIDv7":
 		return dsl.UUIDv7(argString(args, 0)), nil
+	case "UUID":
+		return dsl.UUID(argString(args, 0)), nil
+	case "Text":
+		return dsl.Text(argString(args, 0)), nil
 	case "String":
 		return dsl.String(argString(args, 0)), nil
+	case "VarChar":
+		return dsl.VarChar(argString(args, 0), argIntDefault(args, 1, 0)), nil
+	case "Char":
+		return dsl.Char(argString(args, 0), argIntDefault(args, 1, 0)), nil
+	case "Boolean":
+		return dsl.Boolean(argString(args, 0)), nil
 	case "Int":
 		return dsl.Int(argString(args, 0)), nil
+	case "Integer":
+		return dsl.Integer(argString(args, 0)), nil
+	case "SmallInt":
+		return dsl.SmallInt(argString(args, 0)), nil
+	case "BigInt":
+		return dsl.BigInt(argString(args, 0)), nil
+	case "SmallSerial":
+		return dsl.SmallSerial(argString(args, 0)), nil
+	case "Serial":
+		return dsl.Serial(argString(args, 0)), nil
+	case "BigSerial":
+		return dsl.BigSerial(argString(args, 0)), nil
+	case "SmallIntIdentity":
+		return dsl.SmallIntIdentity(argString(args, 0), argIdentityMode(args, 1)), nil
+	case "IntegerIdentity":
+		return dsl.IntegerIdentity(argString(args, 0), argIdentityMode(args, 1)), nil
+	case "BigIntIdentity":
+		return dsl.BigIntIdentity(argString(args, 0), argIdentityMode(args, 1)), nil
 	case "Float":
 		return dsl.Float(argString(args, 0)), nil
+	case "Real":
+		return dsl.Real(argString(args, 0)), nil
+	case "DoublePrecision":
+		return dsl.DoublePrecision(argString(args, 0)), nil
+	case "Decimal":
+		return dsl.Decimal(argString(args, 0), argIntDefault(args, 1, 0), argIntDefault(args, 2, 0)), nil
+	case "Numeric":
+		return dsl.Numeric(argString(args, 0), argIntDefault(args, 1, 0), argIntDefault(args, 2, 0)), nil
 	case "Bool":
 		return dsl.Bool(argString(args, 0)), nil
 	case "Bytes":
 		return dsl.Bytes(argString(args, 0)), nil
+	case "Bytea":
+		return dsl.Bytea(argString(args, 0)), nil
+	case "Money":
+		return dsl.Money(argString(args, 0)), nil
+	case "Date":
+		return dsl.Date(argString(args, 0)), nil
 	case "Time":
 		return dsl.Time(argString(args, 0)), nil
+	case "TimeTZ":
+		return dsl.TimeTZ(argString(args, 0)), nil
+	case "Timestamp":
+		return dsl.Timestamp(argString(args, 0)), nil
+	case "TimestampTZ":
+		return dsl.TimestampTZ(argString(args, 0)), nil
+	case "Interval":
+		return dsl.Interval(argString(args, 0)), nil
 	case "JSON":
 		return dsl.JSON(argString(args, 0)), nil
+	case "JSONB":
+		return dsl.JSONB(argString(args, 0)), nil
+	case "XML":
+		return dsl.XML(argString(args, 0)), nil
+	case "Inet":
+		return dsl.Inet(argString(args, 0)), nil
+	case "CIDR":
+		return dsl.CIDR(argString(args, 0)), nil
+	case "MACAddr":
+		return dsl.MACAddr(argString(args, 0)), nil
+	case "MACAddr8":
+		return dsl.MACAddr8(argString(args, 0)), nil
+	case "Bit":
+		return dsl.Bit(argString(args, 0), argIntDefault(args, 1, 0)), nil
+	case "VarBit":
+		return dsl.VarBit(argString(args, 0), argIntDefault(args, 1, 0)), nil
+	case "TSVector":
+		return dsl.TSVector(argString(args, 0)), nil
+	case "TSQuery":
+		return dsl.TSQuery(argString(args, 0)), nil
+	case "Point":
+		return dsl.Point(argString(args, 0)), nil
+	case "Line":
+		return dsl.Line(argString(args, 0)), nil
+	case "Lseg":
+		return dsl.Lseg(argString(args, 0)), nil
+	case "Box":
+		return dsl.Box(argString(args, 0)), nil
+	case "Path":
+		return dsl.Path(argString(args, 0)), nil
+	case "Polygon":
+		return dsl.Polygon(argString(args, 0)), nil
+	case "Circle":
+		return dsl.Circle(argString(args, 0)), nil
+	case "Int4Range":
+		return dsl.Int4Range(argString(args, 0)), nil
+	case "Int8Range":
+		return dsl.Int8Range(argString(args, 0)), nil
+	case "NumRange":
+		return dsl.NumRange(argString(args, 0)), nil
+	case "TSRange":
+		return dsl.TSRange(argString(args, 0)), nil
+	case "TSTZRange":
+		return dsl.TSTZRange(argString(args, 0)), nil
+	case "DateRange":
+		return dsl.DateRange(argString(args, 0)), nil
+	case "Array":
+		elem, err := argFieldType(args, 1)
+		if err != nil {
+			return nil, err
+		}
+		return dsl.Array(argString(args, 0), elem), nil
 	case "Geometry":
 		return dsl.Geometry(argString(args, 0)), nil
 	case "Geography":
@@ -462,6 +564,20 @@ func executeFieldMethod(f dsl.Field, name string, args []any) (any, error) {
 		return f.SRID(argInt(args, 0)), nil
 	case "TimeSeries":
 		return f.TimeSeries(), nil
+	case "Identity":
+		return f.Identity(argIdentityMode(args, 0)), nil
+	case "Length":
+		return f.Length(argInt(args, 0)), nil
+	case "Precision":
+		return f.Precision(argInt(args, 0)), nil
+	case "Scale":
+		return f.Scale(argInt(args, 0)), nil
+	case "ArrayElement":
+		elem, err := argFieldType(args, 0)
+		if err != nil {
+			return nil, err
+		}
+		return f.ArrayElement(elem), nil
 	default:
 		return nil, fmt.Errorf("unsupported field method %s", name)
 	}
@@ -609,4 +725,114 @@ func argInt(args []any, idx int) int {
 	default:
 		return 0
 	}
+}
+
+func argIntDefault(args []any, idx, def int) int {
+	if idx >= len(args) {
+		return def
+	}
+	return argInt(args, idx)
+}
+
+func argIdentityMode(args []any, idx int) dsl.IdentityMode {
+	if idx >= len(args) {
+		return dsl.IdentityByDefault
+	}
+	switch v := args[idx].(type) {
+	case dsl.IdentityMode:
+		if v == "" {
+			return dsl.IdentityByDefault
+		}
+		return v
+	case string:
+		if mode, ok := identityModeLookup[v]; ok {
+			return mode
+		}
+	}
+	return dsl.IdentityByDefault
+}
+
+func argFieldType(args []any, idx int) (dsl.FieldType, error) {
+	if idx >= len(args) {
+		return "", fmt.Errorf("missing field type argument")
+	}
+	switch v := args[idx].(type) {
+	case dsl.FieldType:
+		if v == "" {
+			return "", fmt.Errorf("invalid field type")
+		}
+		return v, nil
+	case string:
+		if ft, ok := fieldTypeLookup[v]; ok {
+			return ft, nil
+		}
+		if ft, ok := fieldTypeLookup[strings.TrimPrefix(v, "dsl.")]; ok {
+			return ft, nil
+		}
+	}
+	return "", fmt.Errorf("unsupported field type %v", args[idx])
+}
+
+var identityModeLookup = map[string]dsl.IdentityMode{
+	"IdentityByDefault": dsl.IdentityByDefault,
+	"IdentityAlways":    dsl.IdentityAlways,
+}
+
+var fieldTypeLookup = map[string]dsl.FieldType{
+	"TypeUUID":            dsl.TypeUUID,
+	"TypeText":            dsl.TypeText,
+	"TypeString":          dsl.TypeString,
+	"TypeVarChar":         dsl.TypeVarChar,
+	"TypeChar":            dsl.TypeChar,
+	"TypeBoolean":         dsl.TypeBoolean,
+	"TypeBool":            dsl.TypeBool,
+	"TypeSmallInt":        dsl.TypeSmallInt,
+	"TypeInteger":         dsl.TypeInteger,
+	"TypeInt":             dsl.TypeInt,
+	"TypeBigInt":          dsl.TypeBigInt,
+	"TypeSmallSerial":     dsl.TypeSmallSerial,
+	"TypeSerial":          dsl.TypeSerial,
+	"TypeBigSerial":       dsl.TypeBigSerial,
+	"TypeDecimal":         dsl.TypeDecimal,
+	"TypeNumeric":         dsl.TypeNumeric,
+	"TypeReal":            dsl.TypeReal,
+	"TypeDoublePrecision": dsl.TypeDoublePrecision,
+	"TypeFloat":           dsl.TypeFloat,
+	"TypeMoney":           dsl.TypeMoney,
+	"TypeBytea":           dsl.TypeBytea,
+	"TypeBytes":           dsl.TypeBytes,
+	"TypeDate":            dsl.TypeDate,
+	"TypeTime":            dsl.TypeTime,
+	"TypeTimeTZ":          dsl.TypeTimeTZ,
+	"TypeTimestamp":       dsl.TypeTimestamp,
+	"TypeTimestampTZ":     dsl.TypeTimestampTZ,
+	"TypeInterval":        dsl.TypeInterval,
+	"TypeJSON":            dsl.TypeJSON,
+	"TypeJSONB":           dsl.TypeJSONB,
+	"TypeXML":             dsl.TypeXML,
+	"TypeInet":            dsl.TypeInet,
+	"TypeCIDR":            dsl.TypeCIDR,
+	"TypeMACAddr":         dsl.TypeMACAddr,
+	"TypeMACAddr8":        dsl.TypeMACAddr8,
+	"TypeBit":             dsl.TypeBit,
+	"TypeVarBit":          dsl.TypeVarBit,
+	"TypeTSVector":        dsl.TypeTSVector,
+	"TypeTSQuery":         dsl.TypeTSQuery,
+	"TypePoint":           dsl.TypePoint,
+	"TypeLine":            dsl.TypeLine,
+	"TypeLseg":            dsl.TypeLseg,
+	"TypeBox":             dsl.TypeBox,
+	"TypePath":            dsl.TypePath,
+	"TypePolygon":         dsl.TypePolygon,
+	"TypeCircle":          dsl.TypeCircle,
+	"TypeInt4Range":       dsl.TypeInt4Range,
+	"TypeInt8Range":       dsl.TypeInt8Range,
+	"TypeNumRange":        dsl.TypeNumRange,
+	"TypeTSRange":         dsl.TypeTSRange,
+	"TypeTSTZRange":       dsl.TypeTSTZRange,
+	"TypeDateRange":       dsl.TypeDateRange,
+	"TypeArray":           dsl.TypeArray,
+	"TypeGeometry":        dsl.TypeGeometry,
+	"TypeGeography":       dsl.TypeGeography,
+	"TypeVector":          dsl.TypeVector,
 }

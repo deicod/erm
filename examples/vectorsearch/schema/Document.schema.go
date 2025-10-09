@@ -11,8 +11,8 @@ func (Document) Fields() []dsl.Field {
 		dsl.String("content").Optional(),
 		dsl.Vector("embedding", 1536),
 		dsl.JSON("metadata").Optional(),
-		dsl.Time("created_at").DefaultNow(),
-		dsl.Time("updated_at").UpdateNow(),
+		dsl.TimestampTZ("created_at").DefaultNow(),
+		dsl.TimestampTZ("updated_at").UpdateNow(),
 	}
 }
 

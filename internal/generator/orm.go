@@ -81,7 +81,7 @@ func writeModels(root string, entities []Entity) error {
 		for _, field := range ent.Fields {
 			goType := field.GoType
 			if goType == "" {
-				goType = defaultGoType(field.Type)
+				goType = defaultGoType(field)
 			}
 			fmt.Fprintf(buf, "    %s %s `db:\"%s\" json:\"%s\"`\n", exportName(field.Name), goType, fieldColumn(field), jsonName(field.Name))
 		}
@@ -172,26 +172,56 @@ func quoteStringSlice(items []string) string {
 	return fmt.Sprintf("[]string{%s}", strings.Join(parts, ", "))
 }
 
-func defaultGoType(ft dsl.FieldType) string {
-	switch ft {
-	case dsl.TypeUUID, dsl.TypeString:
+func defaultGoType(field dsl.Field) string {
+	switch field.Type {
+	case dsl.TypeUUID:
 		return "string"
-	case dsl.TypeBool:
+	case dsl.TypeText, dsl.TypeVarChar, dsl.TypeChar, dsl.TypeXML,
+		dsl.TypeInet, dsl.TypeCIDR, dsl.TypeMACAddr, dsl.TypeMACAddr8,
+		dsl.TypeBit, dsl.TypeVarBit, dsl.TypeTSVector, dsl.TypeTSQuery,
+		dsl.TypePoint, dsl.TypeLine, dsl.TypeLseg, dsl.TypeBox, dsl.TypePath,
+		dsl.TypePolygon, dsl.TypeCircle, dsl.TypeInt4Range, dsl.TypeInt8Range,
+		dsl.TypeNumRange, dsl.TypeTSRange, dsl.TypeTSTZRange, dsl.TypeDateRange,
+		dsl.TypeMoney, dsl.TypeInterval:
+		return "string"
+	case dsl.TypeBoolean:
 		return "bool"
-	case dsl.TypeInt:
-		return "int"
-	case dsl.TypeFloat:
+	case dsl.TypeSmallInt, dsl.TypeSmallSerial:
+		return "int16"
+	case dsl.TypeInteger, dsl.TypeSerial:
+		return "int32"
+	case dsl.TypeBigInt, dsl.TypeBigSerial:
+		return "int64"
+	case dsl.TypeDecimal, dsl.TypeNumeric:
+		return "string"
+	case dsl.TypeReal:
+		return "float32"
+	case dsl.TypeDoublePrecision:
 		return "float64"
-	case dsl.TypeBytes:
+	case dsl.TypeBytea:
 		return "[]byte"
-	case dsl.TypeTime:
+	case dsl.TypeDate, dsl.TypeTime, dsl.TypeTimeTZ, dsl.TypeTimestamp, dsl.TypeTimestampTZ:
 		return "time.Time"
-	case dsl.TypeJSON:
+	case dsl.TypeJSON, dsl.TypeJSONB:
 		return "json.RawMessage"
 	case dsl.TypeGeometry, dsl.TypeGeography:
 		return "[]byte"
 	case dsl.TypeVector:
 		return "[]float32"
+	case dsl.TypeArray:
+		elemType, _ := field.Annotations["array_element"].(dsl.FieldType)
+		if elemType == "" {
+			return "[]string"
+		}
+		elemField := dsl.Field{Type: elemType}
+		elemGo := defaultGoType(elemField)
+		if elemGo == "" {
+			return "[]any"
+		}
+		if strings.HasPrefix(elemGo, "[]") {
+			return "[]" + elemGo
+		}
+		return "[]" + elemGo
 	default:
 		return "string"
 	}
@@ -203,7 +233,7 @@ func collectModelImports(entities []Entity) []string {
 		for _, field := range ent.Fields {
 			goType := field.GoType
 			if goType == "" {
-				goType = defaultGoType(field.Type)
+				goType = defaultGoType(field)
 			}
 			switch goType {
 			case "time.Time":
@@ -642,7 +672,7 @@ func goTypeForField(field dsl.Field) string {
 	if field.GoType != "" {
 		return field.GoType
 	}
-	return defaultGoType(field.Type)
+	return defaultGoType(field)
 }
 
 func edgeRefColumn(source Entity, edge dsl.Edge, primary dsl.Field) string {
@@ -779,20 +809,106 @@ func fieldTypeLiteral(ft dsl.FieldType) string {
 	switch ft {
 	case dsl.TypeUUID:
 		return "dsl.TypeUUID"
-	case dsl.TypeString:
-		return "dsl.TypeString"
-	case dsl.TypeInt:
-		return "dsl.TypeInt"
-	case dsl.TypeFloat:
-		return "dsl.TypeFloat"
-	case dsl.TypeBool:
-		return "dsl.TypeBool"
-	case dsl.TypeBytes:
-		return "dsl.TypeBytes"
+	case dsl.TypeText:
+		return "dsl.TypeText"
+	case dsl.TypeVarChar:
+		return "dsl.TypeVarChar"
+	case dsl.TypeChar:
+		return "dsl.TypeChar"
+	case dsl.TypeBoolean:
+		return "dsl.TypeBoolean"
+	case dsl.TypeSmallInt:
+		return "dsl.TypeSmallInt"
+	case dsl.TypeInteger:
+		return "dsl.TypeInteger"
+	case dsl.TypeBigInt:
+		return "dsl.TypeBigInt"
+	case dsl.TypeSmallSerial:
+		return "dsl.TypeSmallSerial"
+	case dsl.TypeSerial:
+		return "dsl.TypeSerial"
+	case dsl.TypeBigSerial:
+		return "dsl.TypeBigSerial"
+	case dsl.TypeDecimal:
+		return "dsl.TypeDecimal"
+	case dsl.TypeNumeric:
+		return "dsl.TypeNumeric"
+	case dsl.TypeReal:
+		return "dsl.TypeReal"
+	case dsl.TypeDoublePrecision:
+		return "dsl.TypeDoublePrecision"
+	case dsl.TypeMoney:
+		return "dsl.TypeMoney"
+	case dsl.TypeBytea:
+		return "dsl.TypeBytea"
+	case dsl.TypeDate:
+		return "dsl.TypeDate"
 	case dsl.TypeTime:
 		return "dsl.TypeTime"
+	case dsl.TypeTimeTZ:
+		return "dsl.TypeTimeTZ"
+	case dsl.TypeTimestamp:
+		return "dsl.TypeTimestamp"
+	case dsl.TypeTimestampTZ:
+		return "dsl.TypeTimestampTZ"
+	case dsl.TypeInterval:
+		return "dsl.TypeInterval"
 	case dsl.TypeJSON:
 		return "dsl.TypeJSON"
+	case dsl.TypeJSONB:
+		return "dsl.TypeJSONB"
+	case dsl.TypeXML:
+		return "dsl.TypeXML"
+	case dsl.TypeInet:
+		return "dsl.TypeInet"
+	case dsl.TypeCIDR:
+		return "dsl.TypeCIDR"
+	case dsl.TypeMACAddr:
+		return "dsl.TypeMACAddr"
+	case dsl.TypeMACAddr8:
+		return "dsl.TypeMACAddr8"
+	case dsl.TypeBit:
+		return "dsl.TypeBit"
+	case dsl.TypeVarBit:
+		return "dsl.TypeVarBit"
+	case dsl.TypeTSVector:
+		return "dsl.TypeTSVector"
+	case dsl.TypeTSQuery:
+		return "dsl.TypeTSQuery"
+	case dsl.TypePoint:
+		return "dsl.TypePoint"
+	case dsl.TypeLine:
+		return "dsl.TypeLine"
+	case dsl.TypeLseg:
+		return "dsl.TypeLseg"
+	case dsl.TypeBox:
+		return "dsl.TypeBox"
+	case dsl.TypePath:
+		return "dsl.TypePath"
+	case dsl.TypePolygon:
+		return "dsl.TypePolygon"
+	case dsl.TypeCircle:
+		return "dsl.TypeCircle"
+	case dsl.TypeInt4Range:
+		return "dsl.TypeInt4Range"
+	case dsl.TypeInt8Range:
+		return "dsl.TypeInt8Range"
+	case dsl.TypeNumRange:
+		return "dsl.TypeNumRange"
+	case dsl.TypeTSRange:
+		return "dsl.TypeTSRange"
+	case dsl.TypeTSTZRange:
+		return "dsl.TypeTSTZRange"
+	case dsl.TypeDateRange:
+		return "dsl.TypeDateRange"
+	case dsl.TypeArray:
+		return "dsl.TypeArray"
+	case dsl.TypeGeometry:
+		return "dsl.TypeGeometry"
+	case dsl.TypeGeography:
+		return "dsl.TypeGeography"
+	case dsl.TypeVector:
+		return "dsl.TypeVector"
 	default:
 		return fmt.Sprintf("dsl.FieldType(%q)", string(ft))
 	}

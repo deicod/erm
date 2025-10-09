@@ -93,3 +93,30 @@ func mustContain(t *testing.T, content, needle string) {
 		t.Fatalf("expected generated content to contain %q\nactual: %s", needle, content)
 	}
 }
+
+func TestDefaultGoType_PostgresFamilies(t *testing.T) {
+	tests := []struct {
+		name  string
+		field dsl.Field
+		want  string
+	}{
+		{"uuid", dsl.UUID("id"), "string"},
+		{"text", dsl.Text("title"), "string"},
+		{"bigint", dsl.BigInt("counter"), "int64"},
+		{"decimal", dsl.Decimal("price", 10, 2), "string"},
+		{"real", dsl.Real("ratio"), "float32"},
+		{"timestamp", dsl.TimestampTZ("created_at"), "time.Time"},
+		{"jsonb", dsl.JSONB("payload"), "json.RawMessage"},
+		{"vector", dsl.Vector("embedding", 3), "[]float32"},
+		{"array_text", dsl.Array("tags", dsl.TypeText), "[]string"},
+		{"array_int", dsl.Array("scores", dsl.TypeInteger), "[]int32"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := defaultGoType(tt.field); got != tt.want {
+				t.Fatalf("defaultGoType(%s) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+}

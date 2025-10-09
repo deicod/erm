@@ -90,3 +90,30 @@ func TestRenderInitialMigration_ManyToManyEdges(t *testing.T) {
 		t.Fatalf("expected memberships table to reference groups(id), got:\n%s", sql)
 	}
 }
+
+func TestFieldSQLType_PostgresFamilies(t *testing.T) {
+	tests := []struct {
+		name  string
+		field dsl.Field
+		want  string
+	}{
+		{"text", dsl.Text("title"), "text"},
+		{"varchar", dsl.VarChar("code", 12), "varchar(12)"},
+		{"decimal", dsl.Decimal("price", 10, 2), "decimal(10,2)"},
+		{"timestamp", dsl.TimestampTZ("created_at"), "timestamptz"},
+		{"identity", dsl.BigIntIdentity("id", dsl.IdentityAlways), "bigint GENERATED ALWAYS AS IDENTITY"},
+		{"jsonb", dsl.JSONB("payload"), "jsonb"},
+		{"bit", dsl.Bit("mask", 8), "bit(8)"},
+		{"array", dsl.Array("tags", dsl.TypeText), "text[]"},
+		{"vector", dsl.Vector("embedding", 3), "vector(3)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := fieldSQLType(tt.field)
+			if got != tt.want {
+				t.Fatalf("fieldSQLType(%s) = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+}

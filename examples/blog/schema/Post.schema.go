@@ -10,8 +10,8 @@ func (Post) Fields() []dsl.Field {
 		dsl.UUIDv7("author_id"),
 		dsl.String("title").NotEmpty(),
 		dsl.String("body").Optional(),
-		dsl.Time("created_at").DefaultNow(),
-		dsl.Time("updated_at").UpdateNow(),
+		dsl.TimestampTZ("created_at").DefaultNow(),
+		dsl.TimestampTZ("updated_at").UpdateNow(),
 	}
 }
 

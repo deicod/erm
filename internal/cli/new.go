@@ -43,8 +43,8 @@ type {{Entity}} struct{ dsl.Schema }
 func ({{Entity}}) Fields() []dsl.Field {
     return []dsl.Field{
         dsl.UUIDv7("id").Primary(),
-        dsl.Time("created_at").DefaultNow(),
-        dsl.Time("updated_at").UpdateNow(),
+        dsl.TimestampTZ("created_at").DefaultNow(),
+        dsl.TimestampTZ("updated_at").UpdateNow(),
     }
 }
 
