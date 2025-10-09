@@ -2,6 +2,35 @@ package dsl
 
 type Schema struct{}
 
+type ComparisonOperator string
+
+const (
+	OpEqual       ComparisonOperator = "eq"
+	OpNotEqual    ComparisonOperator = "neq"
+	OpGreaterThan ComparisonOperator = "gt"
+	OpLessThan    ComparisonOperator = "lt"
+	OpGTE         ComparisonOperator = "gte"
+	OpLTE         ComparisonOperator = "lte"
+	OpILike       ComparisonOperator = "ilike"
+)
+
+type SortDirection string
+
+const (
+	SortAsc  SortDirection = "asc"
+	SortDesc SortDirection = "desc"
+)
+
+type AggregateFunc string
+
+const (
+	AggCount AggregateFunc = "count"
+	AggSum   AggregateFunc = "sum"
+	AggAvg   AggregateFunc = "avg"
+	AggMin   AggregateFunc = "min"
+	AggMax   AggregateFunc = "max"
+)
+
 type FieldType string
 
 const (
@@ -349,4 +378,98 @@ func ToOne(name, target string) Edge  { return Edge{Name: name, Target: target, 
 func ToMany(name, target string) Edge { return Edge{Name: name, Target: target, Kind: EdgeToMany} }
 func ManyToMany(name, target string) Edge {
 	return Edge{Name: name, Target: target, Kind: EdgeManyToMany}
+}
+
+type Predicate struct {
+	Name     string
+	Field    string
+	Operator ComparisonOperator
+}
+
+func NewPredicate(field string, op ComparisonOperator) Predicate {
+	return Predicate{Field: field, Operator: op}
+}
+
+func (p Predicate) Named(name string) Predicate {
+	p.Name = name
+	return p
+}
+
+type Order struct {
+	Name      string
+	Field     string
+	Direction SortDirection
+}
+
+func OrderBy(field string, dir SortDirection) Order {
+	return Order{Field: field, Direction: dir}
+}
+
+func (o Order) Named(name string) Order {
+	o.Name = name
+	return o
+}
+
+type Aggregate struct {
+	Name   string
+	Func   AggregateFunc
+	Field  string
+	GoType string
+}
+
+func NewAggregate(name string, fn AggregateFunc) Aggregate {
+	return Aggregate{Name: name, Func: fn}
+}
+
+func (a Aggregate) On(field string) Aggregate {
+	a.Field = field
+	return a
+}
+
+func (a Aggregate) WithGoType(goType string) Aggregate {
+	a.GoType = goType
+	return a
+}
+
+func CountAggregate(name string) Aggregate {
+	return Aggregate{Name: name, Func: AggCount, GoType: "int", Field: "*"}
+}
+
+type QuerySpec struct {
+	Predicates   []Predicate
+	Orders       []Order
+	Aggregates   []Aggregate
+	DefaultLimit int
+	MaxLimit     int
+}
+
+func Query() QuerySpec { return QuerySpec{} }
+
+func (q QuerySpec) WithPredicates(predicates ...Predicate) QuerySpec {
+	q.Predicates = append(q.Predicates, predicates...)
+	return q
+}
+
+func (q QuerySpec) WithOrders(orders ...Order) QuerySpec {
+	q.Orders = append(q.Orders, orders...)
+	return q
+}
+
+func (q QuerySpec) WithAggregates(aggregates ...Aggregate) QuerySpec {
+	q.Aggregates = append(q.Aggregates, aggregates...)
+	return q
+}
+
+func (q QuerySpec) WithDefaultLimit(limit int) QuerySpec {
+	if limit > 0 {
+		q.DefaultLimit = limit
+	}
+	return q
+}
+
+func (q QuerySpec) WithMaxLimit(limit int) QuerySpec {
+	if limit > 0 {
+		q.MaxLimit = limit
+	}
+	return q
 }

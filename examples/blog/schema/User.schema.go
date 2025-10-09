@@ -20,3 +20,20 @@ func (User) Edges() []dsl.Edge {
 	}
 }
 func (User) Indexes() []dsl.Index { return []dsl.Index{dsl.Idx("idx_user_email").On("email").Unique()} }
+
+func (User) Query() dsl.QuerySpec {
+	return dsl.Query().
+		WithPredicates(
+			dsl.NewPredicate("id", dsl.OpEqual).Named("IDEq"),
+			dsl.NewPredicate("email", dsl.OpILike).Named("EmailILike"),
+		).
+		WithOrders(
+			dsl.OrderBy("created_at", dsl.SortDesc).Named("CreatedAtDesc"),
+			dsl.OrderBy("email", dsl.SortAsc).Named("EmailAsc"),
+		).
+		WithAggregates(
+			dsl.CountAggregate("Count"),
+		).
+		WithDefaultLimit(25).
+		WithMaxLimit(100)
+}

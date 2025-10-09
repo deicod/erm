@@ -18,6 +18,7 @@ type Entity struct {
 	Fields  []dsl.Field
 	Edges   []dsl.Edge
 	Indexes []dsl.Index
+	Query   dsl.QuerySpec
 }
 
 func loadEntities(root string) ([]Entity, error) {
@@ -94,6 +95,12 @@ func loadEntities(root string) ([]Entity, error) {
 					return nil, fmt.Errorf("%s.%s: %w", recv, fn.Name.Name, err)
 				}
 				ent.Indexes = indexes
+			case "Query":
+				spec, err := evaluator.evalQuerySpec(fn)
+				if err != nil {
+					return nil, fmt.Errorf("%s.%s: %w", recv, fn.Name.Name, err)
+				}
+				ent.Query = spec
 			}
 		}
 	}
@@ -106,6 +113,7 @@ func loadEntities(root string) ([]Entity, error) {
 	}
 	for i := range out {
 		ensureDefaultField(&out[i])
+		ensureDefaultQuery(&out[i])
 	}
 	synthesizeInverseEdges(out)
 	return out, nil
@@ -180,6 +188,27 @@ func ensureDefaultField(ent *Entity) {
 		}
 	}
 	ent.Fields = append([]dsl.Field{dsl.UUIDv7("id").Primary()}, ent.Fields...)
+}
+
+func ensureDefaultQuery(ent *Entity) {
+	if ent.Query.DefaultLimit == 0 {
+		ent.Query.DefaultLimit = 20
+	}
+	if len(ent.Query.Predicates) == 0 {
+		ent.Query.Predicates = []dsl.Predicate{
+			dsl.NewPredicate("id", dsl.OpEqual).Named("IDEq"),
+		}
+	}
+	if len(ent.Query.Orders) == 0 {
+		ent.Query.Orders = []dsl.Order{
+			dsl.OrderBy("id", dsl.SortAsc).Named("IDAsc"),
+		}
+	}
+	if len(ent.Query.Aggregates) == 0 {
+		ent.Query.Aggregates = []dsl.Aggregate{
+			dsl.CountAggregate("Count"),
+		}
+	}
 }
 
 type exprEvaluator struct{}
@@ -259,6 +288,28 @@ func (e *exprEvaluator) evalIndexSlice(fn *ast.FuncDecl) ([]dsl.Index, error) {
 		return indexes, nil
 	}
 	return nil, errors.New("no return statement found")
+}
+
+func (e *exprEvaluator) evalQuerySpec(fn *ast.FuncDecl) (dsl.QuerySpec, error) {
+	if fn.Body == nil {
+		return dsl.QuerySpec{}, errors.New("missing body")
+	}
+	for _, stmt := range fn.Body.List {
+		ret, ok := stmt.(*ast.ReturnStmt)
+		if !ok || len(ret.Results) == 0 {
+			continue
+		}
+		val, err := e.evalExpr(ret.Results[0])
+		if err != nil {
+			return dsl.QuerySpec{}, err
+		}
+		spec, ok := val.(dsl.QuerySpec)
+		if !ok {
+			return dsl.QuerySpec{}, fmt.Errorf("expected dsl.QuerySpec, got %T", val)
+		}
+		return spec, nil
+	}
+	return dsl.QuerySpec{}, errors.New("no return statement found")
 }
 
 func (e *exprEvaluator) evalExpr(expr ast.Expr) (any, error) {
@@ -398,6 +449,14 @@ func (e *exprEvaluator) evalCallExpr(call *ast.CallExpr) (any, error) {
 		return executeEdgeMethod(b, selector.Sel.Name, args)
 	case dsl.Index:
 		return executeIndexMethod(b, selector.Sel.Name, args)
+	case dsl.QuerySpec:
+		return executeQuerySpecMethod(b, selector.Sel.Name, args)
+	case dsl.Predicate:
+		return executePredicateMethod(b, selector.Sel.Name, args)
+	case dsl.Order:
+		return executeOrderMethod(b, selector.Sel.Name, args)
+	case dsl.Aggregate:
+		return executeAggregateMethod(b, selector.Sel.Name, args)
 	default:
 		return nil, fmt.Errorf("unsupported call base %T", base)
 	}
@@ -523,6 +582,28 @@ func executeDSLFunc(name string, args []any) (any, error) {
 			return nil, err
 		}
 		return dsl.Array(argString(args, 0), elem), nil
+	case "Query":
+		return dsl.Query(), nil
+	case "NewPredicate":
+		op, err := argComparisonOperator(args, 1)
+		if err != nil {
+			return nil, err
+		}
+		return dsl.NewPredicate(argString(args, 0), op), nil
+	case "OrderBy":
+		dir, err := argSortDirection(args, 1)
+		if err != nil {
+			return nil, err
+		}
+		return dsl.OrderBy(argString(args, 0), dir), nil
+	case "NewAggregate":
+		fn, err := argAggregateFunc(args, 1)
+		if err != nil {
+			return nil, err
+		}
+		return dsl.NewAggregate(argString(args, 0), fn), nil
+	case "CountAggregate":
+		return dsl.CountAggregate(argString(args, 0)), nil
 	case "Geometry":
 		return dsl.Geometry(argString(args, 0)), nil
 	case "Geography":
@@ -700,6 +781,76 @@ func executeIndexMethod(index dsl.Index, name string, args []any) (any, error) {
 	}
 }
 
+func executeQuerySpecMethod(spec dsl.QuerySpec, name string, args []any) (any, error) {
+	switch name {
+	case "WithPredicates":
+		preds := make([]dsl.Predicate, len(args))
+		for i, arg := range args {
+			p, ok := arg.(dsl.Predicate)
+			if !ok {
+				return nil, fmt.Errorf("expected dsl.Predicate, got %T", arg)
+			}
+			preds[i] = p
+		}
+		return spec.WithPredicates(preds...), nil
+	case "WithOrders":
+		orders := make([]dsl.Order, len(args))
+		for i, arg := range args {
+			o, ok := arg.(dsl.Order)
+			if !ok {
+				return nil, fmt.Errorf("expected dsl.Order, got %T", arg)
+			}
+			orders[i] = o
+		}
+		return spec.WithOrders(orders...), nil
+	case "WithAggregates":
+		aggs := make([]dsl.Aggregate, len(args))
+		for i, arg := range args {
+			a, ok := arg.(dsl.Aggregate)
+			if !ok {
+				return nil, fmt.Errorf("expected dsl.Aggregate, got %T", arg)
+			}
+			aggs[i] = a
+		}
+		return spec.WithAggregates(aggs...), nil
+	case "WithDefaultLimit":
+		return spec.WithDefaultLimit(argInt(args, 0)), nil
+	case "WithMaxLimit":
+		return spec.WithMaxLimit(argInt(args, 0)), nil
+	default:
+		return nil, fmt.Errorf("unsupported query spec method %s", name)
+	}
+}
+
+func executePredicateMethod(pred dsl.Predicate, name string, args []any) (any, error) {
+	switch name {
+	case "Named":
+		return pred.Named(argString(args, 0)), nil
+	default:
+		return nil, fmt.Errorf("unsupported predicate method %s", name)
+	}
+}
+
+func executeOrderMethod(order dsl.Order, name string, args []any) (any, error) {
+	switch name {
+	case "Named":
+		return order.Named(argString(args, 0)), nil
+	default:
+		return nil, fmt.Errorf("unsupported order method %s", name)
+	}
+}
+
+func executeAggregateMethod(agg dsl.Aggregate, name string, args []any) (any, error) {
+	switch name {
+	case "On":
+		return agg.On(argString(args, 0)), nil
+	case "WithGoType":
+		return agg.WithGoType(argString(args, 0)), nil
+	default:
+		return nil, fmt.Errorf("unsupported aggregate method %s", name)
+	}
+}
+
 func argString(args []any, idx int) string {
 	if idx >= len(args) {
 		return ""
@@ -778,6 +929,69 @@ var identityModeLookup = map[string]dsl.IdentityMode{
 	"IdentityAlways":    dsl.IdentityAlways,
 }
 
+func argComparisonOperator(args []any, idx int) (dsl.ComparisonOperator, error) {
+	if idx >= len(args) {
+		return "", fmt.Errorf("missing comparison operator")
+	}
+	switch v := args[idx].(type) {
+	case dsl.ComparisonOperator:
+		if v == "" {
+			return "", fmt.Errorf("invalid comparison operator")
+		}
+		return v, nil
+	case string:
+		if op, ok := comparisonLookup[v]; ok {
+			return op, nil
+		}
+		if op, ok := comparisonLookup[strings.TrimPrefix(v, "dsl.")]; ok {
+			return op, nil
+		}
+	}
+	return "", fmt.Errorf("unsupported comparison operator %v", args[idx])
+}
+
+func argSortDirection(args []any, idx int) (dsl.SortDirection, error) {
+	if idx >= len(args) {
+		return "", fmt.Errorf("missing sort direction")
+	}
+	switch v := args[idx].(type) {
+	case dsl.SortDirection:
+		if v == "" {
+			return "", fmt.Errorf("invalid sort direction")
+		}
+		return v, nil
+	case string:
+		if dir, ok := sortDirectionLookup[v]; ok {
+			return dir, nil
+		}
+		if dir, ok := sortDirectionLookup[strings.TrimPrefix(v, "dsl.")]; ok {
+			return dir, nil
+		}
+	}
+	return "", fmt.Errorf("unsupported sort direction %v", args[idx])
+}
+
+func argAggregateFunc(args []any, idx int) (dsl.AggregateFunc, error) {
+	if idx >= len(args) {
+		return "", fmt.Errorf("missing aggregate function")
+	}
+	switch v := args[idx].(type) {
+	case dsl.AggregateFunc:
+		if v == "" {
+			return "", fmt.Errorf("invalid aggregate func")
+		}
+		return v, nil
+	case string:
+		if fn, ok := aggregateFuncLookup[v]; ok {
+			return fn, nil
+		}
+		if fn, ok := aggregateFuncLookup[strings.TrimPrefix(v, "dsl.")]; ok {
+			return fn, nil
+		}
+	}
+	return "", fmt.Errorf("unsupported aggregate func %v", args[idx])
+}
+
 var fieldTypeLookup = map[string]dsl.FieldType{
 	"TypeUUID":            dsl.TypeUUID,
 	"TypeText":            dsl.TypeText,
@@ -835,4 +1049,27 @@ var fieldTypeLookup = map[string]dsl.FieldType{
 	"TypeGeometry":        dsl.TypeGeometry,
 	"TypeGeography":       dsl.TypeGeography,
 	"TypeVector":          dsl.TypeVector,
+}
+
+var comparisonLookup = map[string]dsl.ComparisonOperator{
+	"OpEqual":       dsl.OpEqual,
+	"OpNotEqual":    dsl.OpNotEqual,
+	"OpGreaterThan": dsl.OpGreaterThan,
+	"OpLessThan":    dsl.OpLessThan,
+	"OpGTE":         dsl.OpGTE,
+	"OpLTE":         dsl.OpLTE,
+	"OpILike":       dsl.OpILike,
+}
+
+var sortDirectionLookup = map[string]dsl.SortDirection{
+	"SortAsc":  dsl.SortAsc,
+	"SortDesc": dsl.SortDesc,
+}
+
+var aggregateFuncLookup = map[string]dsl.AggregateFunc{
+	"AggCount": dsl.AggCount,
+	"AggSum":   dsl.AggSum,
+	"AggAvg":   dsl.AggAvg,
+	"AggMin":   dsl.AggMin,
+	"AggMax":   dsl.AggMax,
 }

@@ -4,9 +4,11 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/deicod/erm/internal/observability/tracing"
+	"github.com/deicod/erm/internal/orm/runtime"
 )
 
 type DB struct{ Pool *pgxpool.Pool }
@@ -31,6 +33,16 @@ func (db *DB) Close() {
 	if db.Pool != nil {
 		db.Pool.Close()
 	}
+}
+
+func (db *DB) Select(ctx context.Context, spec runtime.SelectSpec) (pgx.Rows, error) {
+	sql, args := runtime.BuildSelectSQL(spec)
+	return db.Pool.Query(ctx, sql, args...)
+}
+
+func (db *DB) Aggregate(ctx context.Context, spec runtime.AggregateSpec) pgx.Row {
+	sql, args := runtime.BuildAggregateSQL(spec)
+	return db.Pool.QueryRow(ctx, sql, args...)
 }
 
 func newPoolConfig(url string, opts ...Option) (*pgxpool.Config, error) {

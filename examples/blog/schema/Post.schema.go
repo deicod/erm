@@ -21,3 +21,19 @@ func (Post) Edges() []dsl.Edge {
 	}
 }
 func (Post) Indexes() []dsl.Index { return nil }
+
+func (Post) Query() dsl.QuerySpec {
+	return dsl.Query().
+		WithPredicates(
+			dsl.NewPredicate("id", dsl.OpEqual).Named("IDEq"),
+			dsl.NewPredicate("author_id", dsl.OpEqual).Named("AuthorIDEq"),
+		).
+		WithOrders(
+			dsl.OrderBy("created_at", dsl.SortDesc).Named("CreatedAtDesc"),
+		).
+		WithAggregates(
+			dsl.CountAggregate("Count"),
+		).
+		WithDefaultLimit(20).
+		WithMaxLimit(200)
+}

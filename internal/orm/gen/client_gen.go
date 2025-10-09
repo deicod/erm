@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/deicod/erm/internal/orm/id"
 	"github.com/deicod/erm/internal/orm/pg"
+	"github.com/deicod/erm/internal/orm/runtime"
 	"github.com/jackc/pgx/v5"
 	"time"
 )
@@ -124,4 +125,134 @@ func (c *UserClient) Update(ctx context.Context, input *User) (*User, error) {
 func (c *UserClient) Delete(ctx context.Context, id string) error {
 	_, err := c.db.Pool.Exec(ctx, userDeleteQuery, id)
 	return err
+}
+
+type UserQuery struct {
+	db           *pg.DB
+	predicates   []runtime.Predicate
+	orders       []runtime.Order
+	limit        *int
+	offset       int
+	defaultLimit int
+	maxLimit     int
+}
+
+func (c *UserClient) Query() *UserQuery {
+	return &UserQuery{db: c.db, defaultLimit: 20, maxLimit: 0}
+}
+
+func (q *UserQuery) Limit(n int) *UserQuery {
+	if n <= 0 {
+		q.limit = nil
+		return q
+	}
+	q.limit = &n
+	return q
+}
+
+func (q *UserQuery) Offset(n int) *UserQuery {
+	if n < 0 {
+		return q
+	}
+	q.offset = n
+	return q
+}
+
+func (q *UserQuery) WhereIDEq(value string) *UserQuery {
+	q.predicates = append(q.predicates, runtime.Predicate{Column: "id", Operator: runtime.OpEqual, Value: value})
+	return q
+}
+
+func (q *UserQuery) OrderByIDAsc() *UserQuery {
+	q.orders = append(q.orders, runtime.Order{Column: "id", Direction: runtime.SortAsc})
+	return q
+}
+
+func (q *UserQuery) All(ctx context.Context) ([]*User, error) {
+	spec := runtime.SelectSpec{
+		Table:      "users",
+		Columns:    []string{"id", "created_at", "updated_at"},
+		Predicates: q.predicates,
+		Orders:     q.orders,
+		Limit:      q.effectiveLimit(),
+		Offset:     q.offset,
+	}
+	rows, err := q.db.Select(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []*User
+	for rows.Next() {
+		item := new(User)
+		if err := rows.Scan(&item.ID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (q *UserQuery) First(ctx context.Context) (*User, error) {
+	clone := q.clone()
+	one := 1
+	clone.limit = &one
+	items, err := clone.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, nil
+	}
+	return items[0], nil
+}
+
+func (q *UserQuery) Count(ctx context.Context) (int, error) {
+	spec := runtime.AggregateSpec{
+		Table:      "users",
+		Predicates: q.predicates,
+		Aggregate:  runtime.Aggregate{Func: runtime.AggCount, Column: "*"},
+	}
+	row := q.db.Aggregate(ctx, spec)
+	var out int
+	if err := row.Scan(&out); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+func (q *UserQuery) clone() *UserQuery {
+	cp := *q
+	if len(q.predicates) > 0 {
+		cp.predicates = append([]runtime.Predicate(nil), q.predicates...)
+	}
+	if len(q.orders) > 0 {
+		cp.orders = append([]runtime.Order(nil), q.orders...)
+	}
+	if q.limit != nil {
+		limit := *q.limit
+		cp.limit = &limit
+	}
+	return &cp
+}
+
+func (q *UserQuery) effectiveLimit() int {
+	if q.limit != nil {
+		limit := *q.limit
+		if q.maxLimit > 0 && limit > q.maxLimit {
+			return q.maxLimit
+		}
+		return limit
+	}
+	limit := q.defaultLimit
+	if limit <= 0 && q.maxLimit > 0 {
+		return q.maxLimit
+	}
+	if q.maxLimit > 0 && limit > q.maxLimit {
+		return q.maxLimit
+	}
+	return limit
 }
