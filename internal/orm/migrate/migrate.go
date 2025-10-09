@@ -143,7 +143,12 @@ func Discover(ctx context.Context, fsys fs.FS, dir string) ([]FileMigration, err
 		return nil, err
 	}
 
-	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].Version == files[j].Version {
+			return files[i].Path < files[j].Path
+		}
+		return files[i].Version < files[j].Version
+	})
 
 	versions := make(map[string]string, len(files))
 	for _, f := range files {
