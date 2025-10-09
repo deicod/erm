@@ -78,10 +78,11 @@ func renderInitialMigration(entities []Entity, flags extensionFlags) string {
 	}
 	migrationEntities, joinTables := buildMigrationPlan(entities)
 	sort.Slice(migrationEntities, func(i, j int) bool { return migrationEntities[i].Entity.Name < migrationEntities[j].Entity.Name })
+	var deferredFKs []string
 	for _, ent := range migrationEntities {
 		table := pluralize(ent.Entity.Name)
 		buf.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n", table))
-		cols := make([]string, 0, len(ent.Fields)+len(ent.ForeignKeys)+1)
+		cols := make([]string, 0, len(ent.Fields)+1)
 		primaryCols := make([]string, 0, 1)
 		var hypertableColumn string
 		for _, field := range ent.Fields {
@@ -109,11 +110,12 @@ func renderInitialMigration(entities []Entity, flags extensionFlags) string {
 		if len(primaryCols) > 0 {
 			cols = append(cols, fmt.Sprintf("    PRIMARY KEY (%s)", strings.Join(primaryCols, ", ")))
 		}
-		for _, fk := range ent.ForeignKeys {
-			cols = append(cols, fmt.Sprintf("    CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)", fk.ConstraintKey, fk.Column, fk.TargetTable, fk.TargetColumn))
-		}
 		buf.WriteString(strings.Join(cols, ",\n"))
 		buf.WriteString("\n);\n\n")
+
+		for _, fk := range ent.ForeignKeys {
+			deferredFKs = append(deferredFKs, fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s);", table, fk.ConstraintKey, fk.Column, fk.TargetTable, fk.TargetColumn))
+		}
 
 		// Indexes
 		for _, idx := range ent.Entity.Indexes {
@@ -136,6 +138,13 @@ func renderInitialMigration(entities []Entity, flags extensionFlags) string {
 		if hypertableColumn != "" {
 			buf.WriteString(fmt.Sprintf("SELECT create_hypertable('%s', '%s', if_not_exists => TRUE);\n\n", table, hypertableColumn))
 		}
+	}
+	if len(deferredFKs) > 0 {
+		for _, stmt := range deferredFKs {
+			buf.WriteString(stmt)
+			buf.WriteString("\n")
+		}
+		buf.WriteString("\n")
 	}
 	if len(joinTables) > 0 {
 		sort.Slice(joinTables, func(i, j int) bool { return joinTables[i].Name < joinTables[j].Name })
