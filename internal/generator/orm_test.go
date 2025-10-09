@@ -64,7 +64,7 @@ func TestWriteORMClients_EdgeHelpers(t *testing.T) {
 	mustContain(t, content, "func (c *PostClient) LoadAuthor(")
 	mustContain(t, content, "const userPostsRelationQuery = `SELECT id, author_id, title FROM posts WHERE author_id IN (%s)`")
 	mustContain(t, content, "func (c *UserClient) LoadPosts(")
-	mustContain(t, content, "const userGroupsRelationQuery = `SELECT id, name, jt.user_id FROM groups AS t JOIN users_groups AS jt ON t.id = jt.group_id WHERE jt.user_id IN (%s)`")
+	mustContain(t, content, "const userGroupsRelationQuery = `SELECT id, name, jt.user_id FROM groups AS t JOIN groups_users AS jt ON t.id = jt.group_id WHERE jt.user_id IN (%s)`")
 	mustContain(t, content, "func (c *UserClient) LoadGroups(")
 
 	fset := token.NewFileSet()

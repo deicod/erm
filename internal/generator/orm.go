@@ -658,7 +658,7 @@ func edgeRefColumn(source Entity, edge dsl.Edge, primary dsl.Field) string {
 func manyToManyJoinSpec(source Entity, sourcePrimary dsl.Field, edge dsl.Edge, targetPrimary dsl.Field) (string, string, string) {
 	joinTable := edge.Through
 	if joinTable == "" {
-		joinTable = fmt.Sprintf("%s_%s", pluralize(source.Name), pluralize(edge.Target))
+		joinTable = defaultJoinTableName(source.Name, edge.Target)
 	}
 	if joinTable == "" {
 		return "", "", ""

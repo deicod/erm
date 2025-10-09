@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -84,4 +85,10 @@ func pluralize(name string) string {
 	}
 
 	return word + "s"
+}
+
+func defaultJoinTableName(left, right string) string {
+	parts := []string{pluralize(left), pluralize(right)}
+	sort.Strings(parts)
+	return strings.Join(parts, "_")
 }

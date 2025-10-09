@@ -52,11 +52,11 @@ func TestRenderInitialMigration_ManyToManyEdges(t *testing.T) {
 
 	sql := renderInitialMigration(entities, extensionFlags{})
 
-	if !strings.Contains(sql, "CREATE TABLE IF NOT EXISTS users_groups") {
-		t.Fatalf("expected default join table users_groups to be created, got:\n%s", sql)
+	if !strings.Contains(sql, "CREATE TABLE IF NOT EXISTS groups_users") {
+		t.Fatalf("expected default join table groups_users to be created, got:\n%s", sql)
 	}
-	if !strings.Contains(sql, "CONSTRAINT fk_users_groups_user_id FOREIGN KEY (user_id) REFERENCES users (id)") {
-		t.Fatalf("expected users_groups table to reference users(id), got:\n%s", sql)
+	if !strings.Contains(sql, "CONSTRAINT fk_groups_users_user_id FOREIGN KEY (user_id) REFERENCES users (id)") {
+		t.Fatalf("expected groups_users table to reference users(id), got:\n%s", sql)
 	}
 	if !strings.Contains(sql, "CREATE TABLE IF NOT EXISTS memberships") {
 		t.Fatalf("expected custom through table memberships to be created, got:\n%s", sql)
