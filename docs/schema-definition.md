@@ -147,37 +147,212 @@ dsl.String("password").Sensitive().Validate(func(p string) error {
 
 Edges define how entities relate. Every edge can declare direction, inverse edges, foreign key fields, and cascade behavior.
 
-### To-One
+### Direction: `To*` vs. inverse edges
+
+Edges are declared from the *source* schema. The `dsl.ToOne`, `dsl.ToMany`, and `dsl.ManyToMany` helpers describe how the
+source links to a *target* schema. Use `.Ref("<edge>")` or `.Inverse("<edge>")` on one side to connect the inverse edge so
+generators know both ends describe the same relationship.
 
 ```go
-dsl.ToOne("author", "User").
-    Field("author_id").           // optional; defaults to `<edge>_id`
-    Unique().                      // ensures 1:1 relationship
-    Required().                    // disallow null author_id
-    Comment("User that wrote the post")
+// user.schema.go
+func (User) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToMany("posts", "Post").                      // source: User
+            Ref("author").                                 // matches Post's ToOne edge
+            Comment("All posts authored by this user."),
+    }
+}
+
+// post.schema.go
+func (Post) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToOne("author", "User").                       // source: Post
+            Field("author_id").                            // FK column on posts table
+            Required().
+            Comment("Account that created the post"),
+    }
+}
 ```
 
-### To-Many
+`Ref("author")` tells erm that the `User.posts` edge is the inverse of `Post.author`. During codegen this produces join helper
+methods, GraphQL field resolvers, and migrates a single `author_id` column on the `posts` table.
+
+### Base edge helpers
+
+- `dsl.ToOne(name, target)` – Foreign key column stored on the source table. Chain `.Field("column")` to override the default
+  `<edge>_id` column. Use `.Unique()` to upgrade the relationship to one-to-one.
+- `dsl.ToMany(name, target)` – Inverse side of a `ToOne` or `ManyToMany`. Call `.Ref("edge")` to point at the owning
+  relationship, or `.Inverse("edge")` for convenience edges without a physical column.
+- `dsl.ManyToMany(name, target)` – Declares a join table. Accepts `.ThroughTable()` / `.ThroughColumns()` when you need custom
+  names.
+
+### Relationship recipes
+
+The following snippets illustrate common modeling patterns. You can paste them into schemas by replacing the type names and
+field identifiers with your domain.
+
+#### One-to-one (two types)
 
 ```go
-dsl.ToMany("comments", "Comment").
-    Ref("post").                  // matches Comment edge
-    BatchSize(100).                // dataloader batch size override
-    Comment("All comments on this post")
+// profile.schema.go
+func (Profile) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToOne("user", "User").
+            Field("user_id").
+            Unique().
+            Required(),
+    }
+}
+
+// user.schema.go
+func (User) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToOne("profile", "Profile").
+            Ref("user").
+            Unique(),
+    }
+}
 ```
 
-### Many-to-Many
+The `Profile` table owns the `user_id` column. Marking both sides `Unique()` guarantees a true one-to-one link.
+
+#### One-to-one (same type)
 
 ```go
-dsl.ManyToMany("members", "User").
-    ThroughTable("workspace_members").
-    ThroughColumns("workspace_id", "user_id").
-    Comment("Users belonging to this workspace")
+func (User) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToOne("manager", "User").
+            Field("manager_id").
+            Comment("Direct manager for reporting hierarchy"),
+    }
+}
 ```
 
-When you omit `ThroughTable`, erm generates a join table name using both entity names (e.g., `users_projects`).
+This self-referential relationship stores a `manager_id` column on the `users` table. You can expose the inverse with
+`dsl.ToMany("reports", "User").Ref("manager")` when needed.
 
-### Edge Annotations
+#### One-to-one (bidirectional convenience)
+
+```go
+// workspace.schema.go
+func (Workspace) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToOne("billing_account", "BillingAccount").
+            Field("billing_account_id").
+            Unique().
+            Inverse("workspace"),
+    }
+}
+
+// billingaccount.schema.go
+func (BillingAccount) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToOne("workspace", "Workspace").
+            Unique(),
+    }
+}
+```
+
+`.Inverse("workspace")` synthesizes a read-only convenience edge on `BillingAccount` without defining a second foreign key.
+
+#### One-to-many (two types)
+
+```go
+// post.schema.go
+func (Post) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToMany("comments", "Comment").
+            Ref("post").
+            Comment("Comments left on this post"),
+    }
+}
+
+// comment.schema.go
+func (Comment) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToOne("post", "Post").
+            Field("post_id").
+            Required(),
+    }
+}
+```
+
+The `Comment.post` edge owns the `post_id` column. Loading `Post.comments` batches automatically thanks to the `.Ref("post")`
+link.
+
+#### One-to-many (same type)
+
+```go
+func (Task) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToOne("parent", "Task").Field("parent_id"),
+        dsl.ToMany("children", "Task").Ref("parent"),
+    }
+}
+```
+
+Parents and children are stored in the same table. erm enforces referential integrity via the generated foreign key.
+
+#### Many-to-many (two types)
+
+```go
+// workspace.schema.go
+func (Workspace) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ManyToMany("members", "User").
+            ThroughTable("workspace_members").
+            ThroughColumns("workspace_id", "user_id"),
+    }
+}
+
+// user.schema.go
+func (User) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ManyToMany("workspaces", "Workspace").
+            Ref("members"),
+    }
+}
+```
+
+Providing custom join table metadata is optional. Without it, erm generates `users_workspaces` (alphabetical) and creates the
+necessary foreign keys.
+
+#### Many-to-many (same type)
+
+```go
+func (User) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ManyToMany("followers", "User").
+            ThroughTable("user_followers").
+            ThroughColumns("user_id", "follower_id"),
+    }
+}
+```
+
+Self-referential many-to-many edges are ideal for social graphs. Use `.Inverse("following")` if you want a convenience edge on
+the same schema.
+
+#### Many-to-many (bidirectional convenience)
+
+```go
+// project.schema.go
+func (Project) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ManyToMany("tags", "Tag").Inverse("projects"),
+    }
+}
+
+// tag.schema.go
+func (Tag) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ManyToMany("projects", "Project"),
+    }
+}
+```
+
+Using `.Inverse("projects")` keeps the `Tag` schema minimal while still generating loaders for both directions.
+
+### Edge annotations
 
 - `.OnDeleteCascade()` / `.OnDeleteSetNull()` – Control FK behavior in SQL and GraphQL.
 - `.Inverse(name)` – Create an inverse edge without writing a second schema definition. `Ref()` is preferred when referencing a
@@ -185,7 +360,7 @@ When you omit `ThroughTable`, erm generates a join table name using both entity 
 - `.StorageKey(name)` – Override join table or foreign key column names explicitly.
 - `.Privacy(expression)` – Apply edge-specific guard in addition to entity policy.
 
-### Generated Helpers
+### Generated helpers
 
 For each edge, the ORM emits:
 
