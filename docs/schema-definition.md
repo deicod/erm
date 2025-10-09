@@ -46,6 +46,22 @@ func (User) Indexes() []dsl.Index {
     }
 }
 
+func (User) Query() dsl.QuerySpec {
+    return dsl.Query().
+        WithPredicates(
+            dsl.NewPredicate("id", dsl.OpEqual).Named("IDEq"),
+            dsl.NewPredicate("email", dsl.OpILike).Named("EmailILike"),
+        ).
+        WithOrders(
+            dsl.OrderBy("created_at", dsl.SortDesc).Named("CreatedAtDesc"),
+        ).
+        WithAggregates(
+            dsl.CountAggregate("Count"),
+        ).
+        WithDefaultLimit(25).
+        WithMaxLimit(100)
+}
+
 func (User) Annotations() []dsl.Annotation {
     return []dsl.Annotation{
         dsl.GraphQL("User").Description("A registered account in the workspace."),
@@ -60,6 +76,7 @@ Key methods you can implement:
 | `Fields() []dsl.Field` | Define columns, constraints, defaults, and modifiers. |
 | `Edges() []dsl.Edge` | Model relationships between entities and configure inverse edges. |
 | `Indexes() []dsl.Index` | Add single or multi-column indexes with ordering and predicates. |
+| `Query() dsl.QuerySpec` | Describe predicates, sort orders, and aggregates for the fluent query builder. |
 | `Mixins() []dsl.Mixin` | Embed reusable field/edge definitions. |
 | `Annotations() []dsl.Annotation` | Provide metadata consumed by generators (GraphQL, privacy, observability). |
 | `Hooks() []dsl.Hook` | Register lifecycle hooks that run before/after mutations. |
@@ -459,6 +476,50 @@ Features:
 - `.Using(method)` – Choose index method (e.g., `gin` for JSONB or `gist` for PostGIS).
 
 The generator emits SQL in migrations and attaches helper predicates to Go query builders (e.g., `WhereWorkspaceIDEQ`).
+
+---
+
+## Query Specifications
+
+`Query() dsl.QuerySpec` teaches the ORM about supported filters, sort orders, and aggregates. The generator turns each descriptor
+into a fluent helper on the `<Entity>Client`.
+
+```go
+func (Post) Query() dsl.QuerySpec {
+    return dsl.Query().
+        WithPredicates(
+            dsl.NewPredicate("id", dsl.OpEqual).Named("IDEq"),
+            dsl.NewPredicate("author_id", dsl.OpEqual).Named("AuthorIDEq"),
+            dsl.NewPredicate("title", dsl.OpILike).Named("TitleILike"),
+        ).
+        WithOrders(
+            dsl.OrderBy("created_at", dsl.SortDesc).Named("CreatedAtDesc"),
+            dsl.OrderBy("title", dsl.SortAsc).Named("TitleAsc"),
+        ).
+        WithAggregates(
+            dsl.CountAggregate("Count"),
+        ).
+        WithDefaultLimit(20).
+        WithMaxLimit(100)
+}
+```
+
+Generates helpers such as:
+
+```go
+posts, err := client.Posts().
+    Query().
+    WhereAuthorIDEq(userID).
+    WhereTitleILike("%launch%").
+    OrderByCreatedAtDesc().
+    Limit(10).
+    All(ctx)
+
+total, err := client.Posts().Query().Count(ctx)
+```
+
+Under the hood these descriptors are translated into parametrised SQL by `runtime.BuildSelectSQL` and `runtime.BuildAggregateSQL`,
+and executed via the pgx-backed `pg.DB` helpers (`Select`, `Aggregate`).
 
 ---
 

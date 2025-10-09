@@ -14,3 +14,16 @@ func (User) Fields() []dsl.Field {
 
 func (User) Edges() []dsl.Edge    { return nil }
 func (User) Indexes() []dsl.Index { return nil }
+
+func (User) Query() dsl.QuerySpec {
+	return dsl.Query().
+		WithPredicates(
+			dsl.NewPredicate("id", dsl.OpEqual).Named("IDEq"),
+		).
+		WithOrders(
+			dsl.OrderBy("created_at", dsl.SortAsc).Named("CreatedAtAsc"),
+		).
+		WithAggregates(
+			dsl.CountAggregate("Count"),
+		)
+}

@@ -203,6 +203,61 @@ mutation CompleteTask($id: ID!) {
 }
 ```
 
+---
+
+## Example 2: Blog Query Builder
+
+The `examples/blog` workspace demonstrates how query descriptors translate into fluent helpers for list and aggregate queries.
+
+### Schema Highlights
+
+`examples/blog/schema/Post.schema.go`:
+
+```go
+func (Post) Query() dsl.QuerySpec {
+    return dsl.Query().
+        WithPredicates(
+            dsl.NewPredicate("author_id", dsl.OpEqual).Named("AuthorIDEq"),
+            dsl.NewPredicate("title", dsl.OpILike).Named("TitleILike"),
+        ).
+        WithOrders(
+            dsl.OrderBy("created_at", dsl.SortDesc).Named("CreatedAtDesc"),
+        ).
+        WithAggregates(
+            dsl.CountAggregate("Count"),
+        ).
+        WithDefaultLimit(20).
+        WithMaxLimit(200)
+}
+```
+
+`examples/blog/schema/User.schema.go` adds complementary predicates (`IDEq`, `EmailILike`) and ordering helpers.
+
+### Using the Generated Client
+
+```go
+// Fetch the five most recent posts by a specific author.
+posts, err := client.Posts().
+    Query().
+    WhereAuthorIDEq(authorID).
+    OrderByCreatedAtDesc().
+    Limit(5).
+    All(ctx)
+
+// Count all posts matching a case-insensitive title fragment.
+total, err := client.Posts().
+    Query().
+    WhereTitleILike("%roadmap%").
+    Count(ctx)
+
+if err != nil {
+    log.Fatalf("query posts: %v", err)
+}
+```
+
+Behind the scenes the runtime builds parametrised SQL using `runtime.BuildSelectSQL` and executes it via the pgx-backed
+`pg.DB.Select` / `pg.DB.Aggregate` helpers.
+
 ### Step 7 – Test Privacy
 
 ```go

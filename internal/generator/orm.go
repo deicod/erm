@@ -288,6 +288,7 @@ func writeClients(root string, entities []Entity) error {
 	imports = append(imports,
 		"github.com/jackc/pgx/v5",
 		"github.com/deicod/erm/internal/orm/pg",
+		"github.com/deicod/erm/internal/orm/runtime",
 	)
 	if needsID {
 		imports = append(imports, "github.com/deicod/erm/internal/orm/id")
@@ -364,6 +365,7 @@ func emitEntityClients(buf *bytes.Buffer, ent Entity, entityIndex map[string]Ent
 		emitUpdateMethod(buf, ent)
 	}
 	emitDeleteMethod(buf, ent)
+	emitQueryBuilder(buf, ent)
 	emitEdgeLoaders(buf, ent, entityIndex)
 }
 
@@ -504,6 +506,130 @@ func emitDeleteMethod(buf *bytes.Buffer, ent Entity) {
 	fmt.Fprintf(buf, "func (c *%sClient) Delete(ctx context.Context, id string) error {\n", ent.Name)
 	fmt.Fprintf(buf, "    _, err := c.db.Pool.Exec(ctx, %sDeleteQuery, id)\n", strings.ToLower(ent.Name))
 	fmt.Fprintf(buf, "    return err\n}\n\n")
+}
+
+func emitQueryBuilder(buf *bytes.Buffer, ent Entity) {
+	spec := ent.Query
+	columns := entityColumns(ent)
+
+	fmt.Fprintf(buf, "type %sQuery struct {\n", ent.Name)
+	fmt.Fprintf(buf, "    db *pg.DB\n")
+	fmt.Fprintf(buf, "    predicates []runtime.Predicate\n")
+	fmt.Fprintf(buf, "    orders []runtime.Order\n")
+	fmt.Fprintf(buf, "    limit *int\n")
+	fmt.Fprintf(buf, "    offset int\n")
+	fmt.Fprintf(buf, "    defaultLimit int\n")
+	fmt.Fprintf(buf, "    maxLimit int\n")
+	fmt.Fprintf(buf, "}\n\n")
+
+	fmt.Fprintf(buf, "func (c *%sClient) Query() *%sQuery {\n", ent.Name, ent.Name)
+	fmt.Fprintf(buf, "    return &%sQuery{db: c.db, defaultLimit: %d, maxLimit: %d}\n}\n\n", ent.Name, spec.DefaultLimit, spec.MaxLimit)
+
+	fmt.Fprintf(buf, "func (q *%sQuery) Limit(n int) *%sQuery {\n", ent.Name, ent.Name)
+	fmt.Fprintf(buf, "    if n <= 0 {\n        q.limit = nil\n        return q\n    }\n")
+	fmt.Fprintf(buf, "    q.limit = &n\n    return q\n}\n\n")
+
+	fmt.Fprintf(buf, "func (q *%sQuery) Offset(n int) *%sQuery {\n", ent.Name, ent.Name)
+	fmt.Fprintf(buf, "    if n < 0 {\n        return q\n    }\n")
+	fmt.Fprintf(buf, "    q.offset = n\n    return q\n}\n\n")
+
+	fieldIndex := map[string]dsl.Field{}
+	for _, field := range ent.Fields {
+		fieldIndex[strings.ToLower(field.Name)] = field
+	}
+
+	for _, pred := range spec.Predicates {
+		methodName := "Where" + predicateMethodName(pred)
+		goType := predicateGoType(pred, fieldIndex)
+		column := predicateColumn(pred, fieldIndex)
+		fmt.Fprintf(buf, "func (q *%sQuery) %s(value %s) *%sQuery {\n", ent.Name, methodName, goType, ent.Name)
+		fmt.Fprintf(buf, "    q.predicates = append(q.predicates, runtime.Predicate{Column: %q, Operator: %s, Value: value})\n", column, runtimeOperatorLiteral(pred.Operator))
+		fmt.Fprintf(buf, "    return q\n}\n\n")
+	}
+
+	for _, order := range spec.Orders {
+		methodName := "OrderBy" + orderMethodName(order)
+		column := orderColumn(order, fieldIndex)
+		fmt.Fprintf(buf, "func (q *%sQuery) %s() *%sQuery {\n", ent.Name, methodName, ent.Name)
+		fmt.Fprintf(buf, "    q.orders = append(q.orders, runtime.Order{Column: %q, Direction: %s})\n", column, runtimeSortLiteral(order.Direction))
+		fmt.Fprintf(buf, "    return q\n}\n\n")
+	}
+
+	emitQueryAll(buf, ent, columns)
+	emitQueryFirst(buf, ent)
+
+	for _, agg := range spec.Aggregates {
+		emitAggregateMethod(buf, ent, agg, fieldIndex)
+	}
+
+	fmt.Fprintf(buf, "func (q *%sQuery) clone() *%sQuery {\n", ent.Name, ent.Name)
+	fmt.Fprintf(buf, "    cp := *q\n")
+	fmt.Fprintf(buf, "    if len(q.predicates) > 0 {\n        cp.predicates = append([]runtime.Predicate(nil), q.predicates...)\n    }\n")
+	fmt.Fprintf(buf, "    if len(q.orders) > 0 {\n        cp.orders = append([]runtime.Order(nil), q.orders...)\n    }\n")
+	fmt.Fprintf(buf, "    if q.limit != nil {\n        limit := *q.limit\n        cp.limit = &limit\n    }\n")
+	fmt.Fprintf(buf, "    return &cp\n}\n\n")
+
+	fmt.Fprintf(buf, "func (q *%sQuery) effectiveLimit() int {\n", ent.Name)
+	fmt.Fprintf(buf, "    if q.limit != nil {\n        limit := *q.limit\n        if q.maxLimit > 0 && limit > q.maxLimit {\n            return q.maxLimit\n        }\n        return limit\n    }\n")
+	fmt.Fprintf(buf, "    limit := q.defaultLimit\n")
+	fmt.Fprintf(buf, "    if limit <= 0 && q.maxLimit > 0 {\n        return q.maxLimit\n    }\n")
+	fmt.Fprintf(buf, "    if q.maxLimit > 0 && limit > q.maxLimit {\n        return q.maxLimit\n    }\n")
+	fmt.Fprintf(buf, "    return limit\n}\n")
+}
+
+func emitQueryAll(buf *bytes.Buffer, ent Entity, columns []string) {
+	fmt.Fprintf(buf, "func (q *%sQuery) All(ctx context.Context) ([]*%s, error) {\n", ent.Name, ent.Name)
+	fmt.Fprintf(buf, "    spec := runtime.SelectSpec{\n")
+	fmt.Fprintf(buf, "        Table: %q,\n", pluralize(ent.Name))
+	fmt.Fprintf(buf, "        Columns: %s,\n", quoteStringSlice(columns))
+	fmt.Fprintf(buf, "        Predicates: q.predicates,\n")
+	fmt.Fprintf(buf, "        Orders: q.orders,\n")
+	fmt.Fprintf(buf, "        Limit: q.effectiveLimit(),\n")
+	fmt.Fprintf(buf, "        Offset: q.offset,\n")
+	fmt.Fprintf(buf, "    }\n")
+	fmt.Fprintf(buf, "    rows, err := q.db.Select(ctx, spec)\n")
+	fmt.Fprintf(buf, "    if err != nil {\n        return nil, err\n    }\n")
+	fmt.Fprintf(buf, "    defer rows.Close()\n")
+	fmt.Fprintf(buf, "    var result []*%s\n", ent.Name)
+	fmt.Fprintf(buf, "    for rows.Next() {\n")
+	fmt.Fprintf(buf, "        item := new(%s)\n", ent.Name)
+	fmt.Fprintf(buf, "        if err := rows.Scan(%s); err != nil {\n            return nil, err\n        }\n", scanArgs(ent))
+	fmt.Fprintf(buf, "        result = append(result, item)\n    }\n")
+	fmt.Fprintf(buf, "    if err := rows.Err(); err != nil {\n        return nil, err\n    }\n")
+	fmt.Fprintf(buf, "    return result, nil\n}\n\n")
+}
+
+func emitQueryFirst(buf *bytes.Buffer, ent Entity) {
+	fmt.Fprintf(buf, "func (q *%sQuery) First(ctx context.Context) (*%s, error) {\n", ent.Name, ent.Name)
+	fmt.Fprintf(buf, "    clone := q.clone()\n")
+	fmt.Fprintf(buf, "    one := 1\n")
+	fmt.Fprintf(buf, "    clone.limit = &one\n")
+	fmt.Fprintf(buf, "    items, err := clone.All(ctx)\n")
+	fmt.Fprintf(buf, "    if err != nil {\n        return nil, err\n    }\n")
+	fmt.Fprintf(buf, "    if len(items) == 0 {\n        return nil, nil\n    }\n")
+	fmt.Fprintf(buf, "    return items[0], nil\n}\n\n")
+}
+
+func emitAggregateMethod(buf *bytes.Buffer, ent Entity, agg dsl.Aggregate, fields map[string]dsl.Field) {
+	methodName := exportName(agg.Name)
+	if methodName == "" {
+		methodName = "Aggregate"
+	}
+	goType := agg.GoType
+	if goType == "" {
+		goType = "int"
+	}
+	column := aggregateColumn(agg, fields)
+	fmt.Fprintf(buf, "func (q *%sQuery) %s(ctx context.Context) (%s, error) {\n", ent.Name, methodName, goType)
+	fmt.Fprintf(buf, "    spec := runtime.AggregateSpec{\n")
+	fmt.Fprintf(buf, "        Table: %q,\n", pluralize(ent.Name))
+	fmt.Fprintf(buf, "        Predicates: q.predicates,\n")
+	fmt.Fprintf(buf, "        Aggregate: runtime.Aggregate{Func: %s, Column: %q},\n", runtimeAggregateLiteral(agg.Func), column)
+	fmt.Fprintf(buf, "    }\n")
+	fmt.Fprintf(buf, "    row := q.db.Aggregate(ctx, spec)\n")
+	fmt.Fprintf(buf, "    var out %s\n", goType)
+	fmt.Fprintf(buf, "    if err := row.Scan(&out); err != nil {\n        return out, err\n    }\n")
+	fmt.Fprintf(buf, "    return out, nil\n}\n\n")
 }
 
 func emitEdgeLoaders(buf *bytes.Buffer, ent Entity, entityIndex map[string]Entity) {
@@ -657,6 +783,126 @@ func scanArgsForVar(ent Entity, varName string) []string {
 		parts[i] = fmt.Sprintf("&%s.%s", varName, exportName(field.Name))
 	}
 	return parts
+}
+
+func predicateMethodName(pred dsl.Predicate) string {
+	if pred.Name != "" {
+		return exportName(pred.Name)
+	}
+	return exportName(pred.Field) + operatorSuffix(pred.Operator)
+}
+
+func predicateGoType(pred dsl.Predicate, fields map[string]dsl.Field) string {
+	if field, ok := fields[strings.ToLower(pred.Field)]; ok {
+		if field.GoType != "" {
+			return field.GoType
+		}
+		return defaultGoType(field)
+	}
+	return "any"
+}
+
+func predicateColumn(pred dsl.Predicate, fields map[string]dsl.Field) string {
+	if field, ok := fields[strings.ToLower(pred.Field)]; ok {
+		return fieldColumn(field)
+	}
+	return pred.Field
+}
+
+func orderMethodName(order dsl.Order) string {
+	if order.Name != "" {
+		return exportName(order.Name)
+	}
+	suffix := "Asc"
+	if order.Direction == dsl.SortDesc {
+		suffix = "Desc"
+	}
+	return exportName(order.Field) + suffix
+}
+
+func orderColumn(order dsl.Order, fields map[string]dsl.Field) string {
+	if field, ok := fields[strings.ToLower(order.Field)]; ok {
+		return fieldColumn(field)
+	}
+	return order.Field
+}
+
+func aggregateColumn(agg dsl.Aggregate, fields map[string]dsl.Field) string {
+	switch agg.Field {
+	case "", "*":
+		return "*"
+	default:
+		if field, ok := fields[strings.ToLower(agg.Field)]; ok {
+			return fieldColumn(field)
+		}
+		return agg.Field
+	}
+}
+
+func operatorSuffix(op dsl.ComparisonOperator) string {
+	switch op {
+	case dsl.OpEqual:
+		return "Eq"
+	case dsl.OpNotEqual:
+		return "NotEq"
+	case dsl.OpGreaterThan:
+		return "GT"
+	case dsl.OpLessThan:
+		return "LT"
+	case dsl.OpGTE:
+		return "GTE"
+	case dsl.OpLTE:
+		return "LTE"
+	case dsl.OpILike:
+		return "ILike"
+	default:
+		return "Eq"
+	}
+}
+
+func runtimeOperatorLiteral(op dsl.ComparisonOperator) string {
+	switch op {
+	case dsl.OpEqual:
+		return "runtime.OpEqual"
+	case dsl.OpNotEqual:
+		return "runtime.OpNotEqual"
+	case dsl.OpGreaterThan:
+		return "runtime.OpGreaterThan"
+	case dsl.OpLessThan:
+		return "runtime.OpLessThan"
+	case dsl.OpGTE:
+		return "runtime.OpGTE"
+	case dsl.OpLTE:
+		return "runtime.OpLTE"
+	case dsl.OpILike:
+		return "runtime.OpILike"
+	default:
+		return "runtime.OpEqual"
+	}
+}
+
+func runtimeSortLiteral(dir dsl.SortDirection) string {
+	switch dir {
+	case dsl.SortDesc:
+		return "runtime.SortDesc"
+	default:
+		return "runtime.SortAsc"
+	}
+}
+
+func runtimeAggregateLiteral(fn dsl.AggregateFunc) string {
+	switch fn {
+	case dsl.AggSum:
+		return "runtime.AggSum"
+	case dsl.AggAvg:
+		return "runtime.AggAvg"
+	case dsl.AggMin:
+		return "runtime.AggMin"
+	case dsl.AggMax:
+		return "runtime.AggMax"
+	default:
+		return "runtime.AggCount"
+	}
 }
 
 func fieldByColumn(ent Entity, column string) (dsl.Field, bool) {

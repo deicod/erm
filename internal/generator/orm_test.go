@@ -44,6 +44,9 @@ func TestWriteORMClients_EdgeHelpers(t *testing.T) {
 	}
 
 	synthesizeInverseEdges(entities)
+	for i := range entities {
+		ensureDefaultQuery(&entities[i])
+	}
 
 	root := t.TempDir()
 	if err := writeModels(root, entities); err != nil {
@@ -66,6 +69,10 @@ func TestWriteORMClients_EdgeHelpers(t *testing.T) {
 	mustContain(t, content, "func (c *UserClient) LoadPosts(")
 	mustContain(t, content, "const userGroupsRelationQuery = `SELECT id, name, jt.user_id FROM groups AS t JOIN groups_users AS jt ON t.id = jt.group_id WHERE jt.user_id IN (%s)`")
 	mustContain(t, content, "func (c *UserClient) LoadGroups(")
+	mustContain(t, content, "type PostQuery struct {")
+	mustContain(t, content, "func (c *PostClient) Query() *PostQuery")
+	mustContain(t, content, "func (q *PostQuery) WhereIDEq(")
+	mustContain(t, content, "func (q *PostQuery) Count(")
 
 	fset := token.NewFileSet()
 	if _, err := parser.ParseFile(fset, clientPath, clientSrc, parser.AllErrors); err != nil {
