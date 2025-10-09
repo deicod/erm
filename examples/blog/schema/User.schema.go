@@ -14,5 +14,9 @@ func (User) Fields() []dsl.Field {
 	}
 }
 
-func (User) Edges() []dsl.Edge    { return []dsl.Edge{dsl.ToMany("posts", "Post")} }
+func (User) Edges() []dsl.Edge {
+        return []dsl.Edge{
+                dsl.ToMany("posts", "Post").Ref("author_id"),
+        }
+}
 func (User) Indexes() []dsl.Index { return []dsl.Index{dsl.Idx("idx_user_email").On("email").Unique()} }
