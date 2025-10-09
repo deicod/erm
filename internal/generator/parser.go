@@ -536,7 +536,11 @@ func buildInverseEdge(source Entity, edge dsl.Edge) dsl.Edge {
 	case dsl.EdgeToMany:
 		primary, _ := findPrimaryField(source)
 		// Reuse the forward edge reference resolution so explicit overrides win.
-		inverse.Column = edgeRefColumn(source, edge, primary)
+		column := edgeRefColumn(source, edge, primary)
+		inverse.Column = column
+		if column != "" {
+			inverse.RefName = column
+		}
 	case dsl.EdgeManyToMany:
 		// Through already copied above.
 	}

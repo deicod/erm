@@ -32,6 +32,31 @@ func TestRenderInitialMigration_OneToManyEdges(t *testing.T) {
 	}
 }
 
+func TestRenderInitialMigration_ToManyDerivesRefColumn(t *testing.T) {
+	entities := []Entity{
+		{
+			Name:   "User",
+			Fields: []dsl.Field{dsl.UUIDv7("id").Primary()},
+			Edges: []dsl.Edge{
+				dsl.ToMany("pets", "Pet"),
+			},
+		},
+		{
+			Name:   "Pet",
+			Fields: []dsl.Field{dsl.UUIDv7("id").Primary()},
+		},
+	}
+
+	sql := renderInitialMigration(entities, extensionFlags{})
+
+	if !strings.Contains(sql, "user_id uuid NOT NULL") {
+		t.Fatalf("expected pets table to include derived user_id column, got:\n%s", sql)
+	}
+	if !strings.Contains(sql, "CONSTRAINT fk_pets_user_id FOREIGN KEY (user_id) REFERENCES users (id)") {
+		t.Fatalf("expected pets table to include foreign key constraint, got:\n%s", sql)
+	}
+}
+
 func TestRenderInitialMigration_ManyToManyEdges(t *testing.T) {
 	entities := []Entity{
 		{
