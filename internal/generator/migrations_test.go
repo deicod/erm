@@ -15,7 +15,7 @@ func TestGenerateMigrations_TableAddition(t *testing.T) {
 		Name:   "User",
 		Fields: []dsl.Field{dsl.UUIDv7("id").Primary()},
 	}}
-	if _, err := generateMigrations(root, base, GeneratorOptions{Now: fixedClock(2024, 1, 1, 0, 0, 0)}); err != nil {
+	if _, err := generateMigrations(root, base, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 1, 1, 0, 0, 0)}); err != nil {
 		t.Fatalf("initial migration: %v", err)
 	}
 
@@ -26,7 +26,7 @@ func TestGenerateMigrations_TableAddition(t *testing.T) {
 			Fields: []dsl.Field{dsl.UUIDv7("id").Primary()},
 		},
 	}
-	res, err := generateMigrations(root, updated, GeneratorOptions{Now: fixedClock(2024, 1, 1, 1, 0, 0)})
+	res, err := generateMigrations(root, updated, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 1, 1, 1, 0, 0)})
 	if err != nil {
 		t.Fatalf("table addition: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestGenerateMigrations_ColumnDiffs(t *testing.T) {
 		Name:   "User",
 		Fields: []dsl.Field{dsl.UUIDv7("id").Primary()},
 	}}
-	if _, err := generateMigrations(root, base, GeneratorOptions{Now: fixedClock(2024, 2, 1, 0, 0, 0)}); err != nil {
+	if _, err := generateMigrations(root, base, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 2, 1, 0, 0, 0)}); err != nil {
 		t.Fatalf("initial migration: %v", err)
 	}
 
@@ -57,7 +57,7 @@ func TestGenerateMigrations_ColumnDiffs(t *testing.T) {
 		Name:   "User",
 		Fields: []dsl.Field{dsl.UUIDv7("id").Primary(), dsl.Text("email").Optional()},
 	}}
-	addRes, err := generateMigrations(root, withEmail, GeneratorOptions{Now: fixedClock(2024, 2, 1, 1, 0, 0)})
+	addRes, err := generateMigrations(root, withEmail, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 2, 1, 1, 0, 0)})
 	if err != nil {
 		t.Fatalf("add column: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestGenerateMigrations_ColumnDiffs(t *testing.T) {
 		Name:   "User",
 		Fields: []dsl.Field{dsl.UUIDv7("id").Primary(), dsl.VarChar("email", 128)},
 	}}
-	modRes, err := generateMigrations(root, updated, GeneratorOptions{Now: fixedClock(2024, 2, 1, 2, 0, 0)})
+	modRes, err := generateMigrations(root, updated, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 2, 1, 2, 0, 0)})
 	if err != nil {
 		t.Fatalf("modify column: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestGenerateMigrations_ColumnDiffs(t *testing.T) {
 		Name:   "User",
 		Fields: []dsl.Field{dsl.UUIDv7("id").Primary()},
 	}}
-	dropRes, err := generateMigrations(root, remove, GeneratorOptions{Now: fixedClock(2024, 2, 1, 3, 0, 0)})
+	dropRes, err := generateMigrations(root, remove, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 2, 1, 3, 0, 0)})
 	if err != nil {
 		t.Fatalf("drop column: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestGenerateMigrations_IndexDiffs(t *testing.T) {
 			dsl.Text("email").Optional(),
 		},
 	}}
-	if _, err := generateMigrations(root, base, GeneratorOptions{Now: fixedClock(2024, 3, 1, 0, 0, 0)}); err != nil {
+	if _, err := generateMigrations(root, base, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 3, 1, 0, 0, 0)}); err != nil {
 		t.Fatalf("initial migration: %v", err)
 	}
 
@@ -135,7 +135,7 @@ func TestGenerateMigrations_IndexDiffs(t *testing.T) {
 			dsl.Idx("users_email_idx").On("email"),
 		},
 	}}
-	addRes, err := generateMigrations(root, addIdx, GeneratorOptions{Now: fixedClock(2024, 3, 1, 1, 0, 0)})
+	addRes, err := generateMigrations(root, addIdx, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 3, 1, 1, 0, 0)})
 	if err != nil {
 		t.Fatalf("add index: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestGenerateMigrations_IndexDiffs(t *testing.T) {
 			dsl.Idx("users_email_idx").On("email").Unique(),
 		},
 	}}
-	modRes, err := generateMigrations(root, modIdx, GeneratorOptions{Now: fixedClock(2024, 3, 1, 2, 0, 0)})
+	modRes, err := generateMigrations(root, modIdx, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 3, 1, 2, 0, 0)})
 	if err != nil {
 		t.Fatalf("modify index: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestGenerateMigrations_IndexDiffs(t *testing.T) {
 	}
 
 	dropIdx := []Entity{base[0]}
-	dropRes, err := generateMigrations(root, dropIdx, GeneratorOptions{Now: fixedClock(2024, 3, 1, 3, 0, 0)})
+	dropRes, err := generateMigrations(root, dropIdx, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 3, 1, 3, 0, 0)})
 	if err != nil {
 		t.Fatalf("drop index: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestGenerateMigrations_JoinTableDiffs(t *testing.T) {
 			Fields: []dsl.Field{dsl.UUIDv7("id").Primary()},
 		},
 	}
-	if _, err := generateMigrations(root, base, GeneratorOptions{Now: fixedClock(2024, 4, 1, 0, 0, 0)}); err != nil {
+	if _, err := generateMigrations(root, base, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 4, 1, 0, 0, 0)}); err != nil {
 		t.Fatalf("initial migration: %v", err)
 	}
 
@@ -216,7 +216,7 @@ func TestGenerateMigrations_JoinTableDiffs(t *testing.T) {
 		},
 		base[1],
 	}
-	addRes, err := generateMigrations(root, withJoin, GeneratorOptions{Now: fixedClock(2024, 4, 1, 1, 0, 0)})
+	addRes, err := generateMigrations(root, withJoin, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 4, 1, 1, 0, 0)})
 	if err != nil {
 		t.Fatalf("add join table: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestGenerateMigrations_JoinTableDiffs(t *testing.T) {
 		t.Fatalf("expected snapshot to include join table")
 	}
 
-	dropRes, err := generateMigrations(root, base, GeneratorOptions{Now: fixedClock(2024, 4, 1, 2, 0, 0)})
+	dropRes, err := generateMigrations(root, base, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 4, 1, 2, 0, 0)})
 	if err != nil {
 		t.Fatalf("drop join table: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestGenerateMigrations_ExtensionToggles(t *testing.T) {
 		Name:   "Place",
 		Fields: []dsl.Field{dsl.UUIDv7("id").Primary()},
 	}}
-	if _, err := generateMigrations(root, base, GeneratorOptions{Now: fixedClock(2024, 5, 1, 0, 0, 0)}); err != nil {
+	if _, err := generateMigrations(root, base, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 5, 1, 0, 0, 0)}); err != nil {
 		t.Fatalf("initial migration: %v", err)
 	}
 
@@ -258,7 +258,7 @@ func TestGenerateMigrations_ExtensionToggles(t *testing.T) {
 			dsl.Geometry("boundary"),
 		},
 	}}
-	addRes, err := generateMigrations(root, withPostGIS, GeneratorOptions{Now: fixedClock(2024, 5, 1, 1, 0, 0)})
+	addRes, err := generateMigrations(root, withPostGIS, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 5, 1, 1, 0, 0)})
 	if err != nil {
 		t.Fatalf("enable postgis: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestGenerateMigrations_ExtensionToggles(t *testing.T) {
 	}
 
 	revert := base
-	dropRes, err := generateMigrations(root, revert, GeneratorOptions{Now: fixedClock(2024, 5, 1, 2, 0, 0)})
+	dropRes, err := generateMigrations(root, revert, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 5, 1, 2, 0, 0)})
 	if err != nil {
 		t.Fatalf("disable postgis: %v", err)
 	}

@@ -696,6 +696,11 @@ You can rename migration files using `--name` flag on `erm gen` for clarity:
 erm gen --name add-user-auth-fields
 ```
 
+Behind the scenes, the generator records the post-generation schema in `migrations/schema.snapshot.json`. Future runs compare the
+current DSL output against this snapshot to derive incremental migrations—only the delta between snapshots is emitted. Use
+`erm gen --dry-run` to inspect the computed SQL without touching disk, and pair it with `erm migrate` to apply changes once
+you are satisfied.
+
 ---
 
 ## Schema Authoring Tips

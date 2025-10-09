@@ -14,10 +14,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type GeneratorOptions struct {
-	MigrationName string
-	DryRun        bool
-	Now           func() time.Time
+type generatorOptions struct {
+	GenerateOptions
+	Now func() time.Time
 }
 
 type MigrationResult struct {
@@ -27,14 +26,14 @@ type MigrationResult struct {
 	Snapshot   SchemaSnapshot
 }
 
-func (opts GeneratorOptions) now() time.Time {
+func (opts generatorOptions) now() time.Time {
 	if opts.Now != nil {
 		return opts.Now()
 	}
 	return time.Now().UTC()
 }
 
-func generateMigrations(root string, entities []Entity, opts GeneratorOptions) (MigrationResult, error) {
+func generateMigrations(root string, entities []Entity, opts generatorOptions) (MigrationResult, error) {
 	result := MigrationResult{}
 	dir := filepath.Join(root, "migrations")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -59,6 +58,14 @@ func generateMigrations(root string, entities []Entity, opts GeneratorOptions) (
 	result.Operations = ops
 	result.Snapshot = prev
 	if len(ops) == 0 {
+		if opts.Force {
+			result.Snapshot = next
+			if !opts.DryRun {
+				if err := writeSchemaSnapshot(root, next); err != nil {
+					return result, err
+				}
+			}
+		}
 		return result, nil
 	}
 
