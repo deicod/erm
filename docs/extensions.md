@@ -148,7 +148,7 @@ type Metric struct{ dsl.Schema }
 func (Metric) Fields() []dsl.Field {
     return []dsl.Field{
         dsl.UUIDv7("id").Primary(),
-        dsl.Time("collected_at").NotEmpty(),
+        dsl.TimestampTZ("collected_at").NotEmpty(),
         dsl.String("name").NotEmpty(),
         dsl.Float("value").Required(),
         dsl.JSON("labels").Optional(),

@@ -99,7 +99,7 @@ func (Post) Fields() []dsl.Field {
         dsl.UUIDv7("id").Primary(),
         dsl.String("title").NotEmpty(),
         dsl.String("body").Optional(),
-        dsl.Time("published_at").Optional().Nillable(),
+        dsl.TimestampTZ("published_at").Optional().Nillable(),
     }
 }
 

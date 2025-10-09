@@ -349,23 +349,154 @@ func findPrimaryField(ent Entity) (dsl.Field, bool) {
 }
 
 func fieldSQLType(field dsl.Field) string {
+	base := sqlTypeLiteral(field)
+	if isIdentityColumn(field) {
+		mode := "BY DEFAULT"
+		if m, ok := field.Annotations["identity_mode"].(string); ok && m == string(dsl.IdentityAlways) {
+			mode = "ALWAYS"
+		}
+		base = fmt.Sprintf("%s GENERATED %s AS IDENTITY", base, mode)
+	}
+	return base
+}
+
+func sqlTypeLiteral(field dsl.Field) string {
 	switch field.Type {
 	case dsl.TypeUUID:
 		return "uuid"
-	case dsl.TypeString:
+	case dsl.TypeText:
 		return "text"
-	case dsl.TypeInt:
-		return "bigint"
-	case dsl.TypeFloat:
-		return "double precision"
-	case dsl.TypeBool:
+	case dsl.TypeVarChar:
+		if size := annotationInt(field, "length"); size > 0 {
+			return fmt.Sprintf("varchar(%d)", size)
+		}
+		return "varchar"
+	case dsl.TypeChar:
+		if size := annotationInt(field, "length"); size > 0 {
+			return fmt.Sprintf("char(%d)", size)
+		}
+		return "char"
+	case dsl.TypeBoolean:
 		return "boolean"
-	case dsl.TypeBytes:
+	case dsl.TypeSmallInt:
+		return "smallint"
+	case dsl.TypeInteger:
+		return "integer"
+	case dsl.TypeBigInt:
+		return "bigint"
+	case dsl.TypeSmallSerial:
+		return "smallserial"
+	case dsl.TypeSerial:
+		return "serial"
+	case dsl.TypeBigSerial:
+		return "bigserial"
+	case dsl.TypeDecimal, dsl.TypeNumeric:
+		precision := annotationInt(field, "precision")
+		scale := annotationInt(field, "scale")
+		base := string(field.Type)
+		if precision > 0 && scale >= 0 {
+			return fmt.Sprintf("%s(%d,%d)", base, precision, scale)
+		}
+		if precision > 0 {
+			return fmt.Sprintf("%s(%d)", base, precision)
+		}
+		return base
+	case dsl.TypeReal:
+		return "real"
+	case dsl.TypeDoublePrecision:
+		return "double precision"
+	case dsl.TypeMoney:
+		return "money"
+	case dsl.TypeBytea:
 		return "bytea"
+	case dsl.TypeDate:
+		return "date"
 	case dsl.TypeTime:
+		if precision := annotationInt(field, "precision"); precision > 0 {
+			return fmt.Sprintf("time(%d)", precision)
+		}
+		return "time"
+	case dsl.TypeTimeTZ:
+		if precision := annotationInt(field, "precision"); precision > 0 {
+			return fmt.Sprintf("timetz(%d)", precision)
+		}
+		return "timetz"
+	case dsl.TypeTimestamp:
+		if precision := annotationInt(field, "precision"); precision > 0 {
+			return fmt.Sprintf("timestamp(%d)", precision)
+		}
+		return "timestamp"
+	case dsl.TypeTimestampTZ:
+		if precision := annotationInt(field, "precision"); precision > 0 {
+			return fmt.Sprintf("timestamptz(%d)", precision)
+		}
 		return "timestamptz"
+	case dsl.TypeInterval:
+		if precision := annotationInt(field, "precision"); precision > 0 {
+			return fmt.Sprintf("interval(%d)", precision)
+		}
+		return "interval"
 	case dsl.TypeJSON:
+		return "json"
+	case dsl.TypeJSONB:
 		return "jsonb"
+	case dsl.TypeXML:
+		return "xml"
+	case dsl.TypeInet:
+		return "inet"
+	case dsl.TypeCIDR:
+		return "cidr"
+	case dsl.TypeMACAddr:
+		return "macaddr"
+	case dsl.TypeMACAddr8:
+		return "macaddr8"
+	case dsl.TypeBit:
+		if size := annotationInt(field, "length"); size > 0 {
+			return fmt.Sprintf("bit(%d)", size)
+		}
+		return "bit"
+	case dsl.TypeVarBit:
+		if size := annotationInt(field, "length"); size > 0 {
+			return fmt.Sprintf("varbit(%d)", size)
+		}
+		return "varbit"
+	case dsl.TypeTSVector:
+		return "tsvector"
+	case dsl.TypeTSQuery:
+		return "tsquery"
+	case dsl.TypePoint:
+		return "point"
+	case dsl.TypeLine:
+		return "line"
+	case dsl.TypeLseg:
+		return "lseg"
+	case dsl.TypeBox:
+		return "box"
+	case dsl.TypePath:
+		return "path"
+	case dsl.TypePolygon:
+		return "polygon"
+	case dsl.TypeCircle:
+		return "circle"
+	case dsl.TypeInt4Range:
+		return "int4range"
+	case dsl.TypeInt8Range:
+		return "int8range"
+	case dsl.TypeNumRange:
+		return "numrange"
+	case dsl.TypeTSRange:
+		return "tsrange"
+	case dsl.TypeTSTZRange:
+		return "tstzrange"
+	case dsl.TypeDateRange:
+		return "daterange"
+	case dsl.TypeArray:
+		elem, _ := field.Annotations["array_element"].(dsl.FieldType)
+		if elem == "" {
+			return "text[]"
+		}
+		elementField := dsl.Field{Type: elem}
+		return fmt.Sprintf("%s[]", sqlTypeLiteral(elementField))
 	case dsl.TypeGeometry:
 		return "geometry"
 	case dsl.TypeGeography:
@@ -376,8 +507,39 @@ func fieldSQLType(field dsl.Field) string {
 		}
 		return "vector"
 	default:
+		if custom := string(field.Type); custom != "" {
+			return custom
+		}
 		return "text"
 	}
+}
+
+func annotationInt(field dsl.Field, key string) int {
+	if v, ok := field.Annotations[key]; ok {
+		switch val := v.(type) {
+		case int:
+			return val
+		case int32:
+			return int(val)
+		case int64:
+			return int(val)
+		}
+	}
+	return 0
+}
+
+func isIdentityColumn(field dsl.Field) bool {
+	if field.Annotations == nil {
+		return false
+	}
+	if v, ok := field.Annotations["identity"].(bool); !ok || !v {
+		return false
+	}
+	switch field.Type {
+	case dsl.TypeSmallInt, dsl.TypeInteger, dsl.TypeBigInt:
+		return true
+	}
+	return false
 }
 
 type projectConfig struct {

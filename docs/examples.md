@@ -107,7 +107,7 @@ func (Task) Fields() []dsl.Field {
         dsl.String("title").NotEmpty(),
         dsl.String("description").Optional(),
         dsl.Enum("priority", "LOW", "MEDIUM", "HIGH").Default("MEDIUM"),
-        dsl.Time("due_date").Optional().Nillable(),
+        dsl.TimestampTZ("due_date").Optional().Nillable(),
         dsl.Bool("completed").Default(false),
     }
 }
@@ -233,7 +233,7 @@ type Event struct{ dsl.Schema }
 func (Event) Fields() []dsl.Field {
     return []dsl.Field{
         dsl.UUIDv7("id").Primary(),
-        dsl.Time("occurred_at").NotEmpty(),
+        dsl.TimestampTZ("occurred_at").NotEmpty(),
         dsl.String("category").NotEmpty(),
         dsl.JSON("payload").Optional(),
         dsl.Vector("embedding", 384).Optional(),

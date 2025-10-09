@@ -27,8 +27,13 @@ func buildGraphQLGeneratedSection(entities []Entity) string {
 	}
 	sort.Slice(entities, func(i, j int) bool { return entities[i].Name < entities[j].Name })
 	builder := &strings.Builder{}
-	if hasJSONField(entities) {
-		builder.WriteString("scalar JSON\n\n")
+
+	scalars := collectCustomScalars(entities)
+	if len(scalars) > 0 {
+		for _, scalar := range scalars {
+			builder.WriteString(fmt.Sprintf("scalar %s\n", scalar))
+		}
+		builder.WriteString("\n")
 	}
 
 	for _, ent := range entities {
@@ -73,42 +78,144 @@ func renderConnectionTypes(ent Entity) string {
 }
 
 func fieldGraphQLType(field dsl.Field) string {
-	var base string
-	switch field.Type {
-	case dsl.TypeUUID:
-		base = "ID"
-	case dsl.TypeString:
-		base = "String"
-	case dsl.TypeInt:
-		base = "Int"
-	case dsl.TypeFloat:
-		base = "Float"
-	case dsl.TypeBool:
-		base = "Boolean"
-	case dsl.TypeBytes:
-		base = "String"
-	case dsl.TypeTime:
-		base = "Time"
-	case dsl.TypeJSON:
-		base = "JSON"
-	default:
-		base = "String"
-	}
+	typ, _ := graphqlFieldType(field)
+	return typ
+}
+
+func graphqlFieldType(field dsl.Field) (string, []string) {
+	base, scalars := graphqlNamedType(field)
 	if !field.Nullable {
 		base += "!"
 	}
-	return base
+	return base, scalars
 }
 
-func hasJSONField(entities []Entity) bool {
+func graphqlNamedType(field dsl.Field) (string, []string) {
+	switch field.Type {
+	case dsl.TypeArray:
+		elemType, _ := field.Annotations["array_element"].(dsl.FieldType)
+		if elemType == "" {
+			elemType = dsl.TypeText
+		}
+		elemField := dsl.Field{Type: elemType}
+		name, scalars := graphqlNamedType(elemField)
+		name = strings.TrimSuffix(name, "!")
+		return fmt.Sprintf("[%s!]", name), scalars
+	case dsl.TypeVector:
+		return "[Float!]", nil
+	default:
+		name, scalar := graphqlScalarName(field.Type)
+		scalars := []string{}
+		if scalar != "" {
+			scalars = append(scalars, scalar)
+		}
+		return name, scalars
+	}
+}
+
+func graphqlScalarName(ft dsl.FieldType) (string, string) {
+	switch ft {
+	case dsl.TypeUUID:
+		return "ID", ""
+	case dsl.TypeText, dsl.TypeVarChar, dsl.TypeChar, dsl.TypeBytea,
+		dsl.TypePoint, dsl.TypeLine, dsl.TypeLseg, dsl.TypeBox, dsl.TypePath, dsl.TypePolygon,
+		dsl.TypeCircle:
+		return "String", ""
+	case dsl.TypeBoolean:
+		return "Boolean", ""
+	case dsl.TypeSmallInt, dsl.TypeInteger, dsl.TypeSmallSerial, dsl.TypeSerial:
+		return "Int", ""
+	case dsl.TypeBigInt, dsl.TypeBigSerial:
+		return "BigInt", "BigInt"
+	case dsl.TypeDecimal, dsl.TypeNumeric:
+		return "Decimal", "Decimal"
+	case dsl.TypeReal, dsl.TypeDoublePrecision:
+		return "Float", ""
+	case dsl.TypeMoney:
+		return "Money", "Money"
+	case dsl.TypeDate:
+		return "Date", "Date"
+	case dsl.TypeTime:
+		return "Time", "Time"
+	case dsl.TypeTimeTZ:
+		return "Timetz", "Timetz"
+	case dsl.TypeTimestamp:
+		return "Timestamp", "Timestamp"
+	case dsl.TypeTimestampTZ:
+		return "Timestamptz", "Timestamptz"
+	case dsl.TypeInterval:
+		return "Interval", "Interval"
+	case dsl.TypeJSON:
+		return "JSON", "JSON"
+	case dsl.TypeJSONB:
+		return "JSONB", "JSONB"
+	case dsl.TypeXML:
+		return "XML", "XML"
+	case dsl.TypeInet:
+		return "Inet", "Inet"
+	case dsl.TypeCIDR:
+		return "CIDR", "CIDR"
+	case dsl.TypeMACAddr:
+		return "MacAddr", "MacAddr"
+	case dsl.TypeMACAddr8:
+		return "MacAddr8", "MacAddr8"
+	case dsl.TypeBit:
+		return "BitString", "BitString"
+	case dsl.TypeVarBit:
+		return "VarBitString", "VarBitString"
+	case dsl.TypeTSVector:
+		return "TSVector", "TSVector"
+	case dsl.TypeTSQuery:
+		return "TSQuery", "TSQuery"
+	case dsl.TypeInt4Range:
+		return "Int4Range", "Int4Range"
+	case dsl.TypeInt8Range:
+		return "Int8Range", "Int8Range"
+	case dsl.TypeNumRange:
+		return "NumRange", "NumRange"
+	case dsl.TypeTSRange:
+		return "TSRange", "TSRange"
+	case dsl.TypeTSTZRange:
+		return "TSTZRange", "TSTZRange"
+	case dsl.TypeDateRange:
+		return "DateRange", "DateRange"
+	case dsl.TypeGeometry, dsl.TypeGeography:
+		return "JSON", "JSON"
+	case dsl.TypeArray:
+		return "[String!]", ""
+	case dsl.TypeVector:
+		return "[Float!]", ""
+	default:
+		return "String", ""
+	}
+}
+
+var predeclaredScalars = map[string]struct{}{
+	"Time": {},
+}
+
+func collectCustomScalars(entities []Entity) []string {
+	set := map[string]struct{}{}
 	for _, ent := range entities {
-		for _, f := range ent.Fields {
-			if f.Type == dsl.TypeJSON {
-				return true
+		for _, field := range ent.Fields {
+			_, scalars := graphqlFieldType(field)
+			for _, scalar := range scalars {
+				if _, ok := predeclaredScalars[scalar]; ok {
+					continue
+				}
+				set[scalar] = struct{}{}
 			}
 		}
 	}
-	return false
+	if len(set) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(set))
+	for scalar := range set {
+		out = append(out, scalar)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func lowerCamel(name string) string {
