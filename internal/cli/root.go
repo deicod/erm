@@ -17,6 +17,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newNewCmd())
 	cmd.AddCommand(newGenCmd())
+	cmd.AddCommand(newMigrateCmd())
 	cmd.AddCommand(newGraphQLInitCmd())
 	cmd.AddCommand(newDoctorCmd())
 	return cmd

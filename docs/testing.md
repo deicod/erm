@@ -111,8 +111,18 @@ Use snapshots (`github.com/bradleyjkemp/cupaloy`) if you want to compare full Gr
 
 - `testutil.NewClient` applies migrations automatically to a temporary database.
 - For long-running integration suites, use Docker Compose to provide a persistent Postgres instance and run migrations with
-  `erm gen` + SQL tool (e.g., `migrate`).
+  `erm gen` followed by `erm migrate` to apply the generated SQL.
+- Combine `erm gen --dry-run` with CI to ensure the schema snapshot is in sync before executing migrations.
 - Remember to clean up data between tests using transactions or TRUNCATE statements.
+
+Example local workflow when developing against a shared test database:
+
+```bash
+erm gen --dry-run           # Inspect upcoming migration SQL
+erm gen --name add_flag     # Materialize the migration and update the snapshot
+erm migrate                 # Apply migrations using database.url from erm.yaml
+go test ./internal/...      # Execute integration suite against the migrated schema
+```
 
 ---
 
@@ -160,8 +170,9 @@ Suggested CI steps:
 
 1. `go test ./...` – Runs all unit and integration tests (set `ERM_DATABASE_URL` to a disposable DB).
 2. `erm gen --dry-run` – Ensures no schema drift.
-3. `golangci-lint run` – Lint generated and handwritten code.
-4. `erm doctor` (when available) – Confirms migration ordering and configuration sanity.
+3. `erm migrate` – Applies pending migrations against the CI database before tests run.
+4. `golangci-lint run` – Lint generated and handwritten code.
+5. `erm doctor` (when available) – Confirms migration ordering and configuration sanity.
 
 ---
 

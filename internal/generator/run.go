@@ -1,42 +1,36 @@
 package generator
 
-import (
-	"fmt"
-	"path/filepath"
-)
+type GenerateOptions struct {
+	DryRun        bool
+	Force         bool
+	MigrationName string
+}
 
-func Run(root string, opts GeneratorOptions) error {
+var forceWrite bool
+
+func Run(root string, opts GenerateOptions) (MigrationResult, error) {
+	prevForce := forceWrite
+	forceWrite = opts.Force
+	defer func() { forceWrite = prevForce }()
+
 	entities, err := loadEntities(root)
 	if err != nil {
-		return err
+		return MigrationResult{}, err
 	}
-	if err := writeORMArtifacts(root, entities); err != nil {
-		return err
+	if !opts.DryRun {
+		if err := writeORMArtifacts(root, entities); err != nil {
+			return MigrationResult{}, err
+		}
+		if err := writeGraphQLArtifacts(root, entities); err != nil {
+			return MigrationResult{}, err
+		}
+		if err := runGQLGen(root); err != nil {
+			return MigrationResult{}, err
+		}
 	}
-	if err := writeGraphQLArtifacts(root, entities); err != nil {
-		return err
-	}
-	if err := runGQLGen(root); err != nil {
-		return err
-	}
-	result, err := generateMigrations(root, entities, opts)
+	result, err := generateMigrations(root, entities, generatorOptions{GenerateOptions: opts})
 	if err != nil {
-		return err
+		return MigrationResult{}, err
 	}
-	if opts.DryRun {
-		if len(result.Operations) == 0 {
-			fmt.Println("generator: no schema changes detected (dry-run)")
-		} else {
-			fmt.Println("generator: migration dry-run preview")
-			fmt.Println(result.SQL)
-		}
-	} else {
-		if result.FilePath != "" {
-			fmt.Printf("generator: wrote migration %s\n", filepath.Base(result.FilePath))
-		} else {
-			fmt.Println("generator: no schema changes detected")
-		}
-	}
-	fmt.Println("generator: wrote ORM and GraphQL artifacts")
-	return nil
+	return result, nil
 }

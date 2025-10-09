@@ -10,7 +10,10 @@ import (
 )
 
 type projectConfig struct {
-	Module string `yaml:"module"`
+	Module   string `yaml:"module"`
+	Database struct {
+		URL string `yaml:"url"`
+	} `yaml:"database"`
 }
 
 func loadProjectConfig(root string) (projectConfig, error) {

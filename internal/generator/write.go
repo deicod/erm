@@ -19,9 +19,11 @@ func writeFile(path string, content []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	if existing, err := os.ReadFile(path); err == nil {
-		if bytes.Equal(existing, content) {
-			return nil
+	if !forceWrite {
+		if existing, err := os.ReadFile(path); err == nil {
+			if bytes.Equal(existing, content) {
+				return nil
+			}
 		}
 	}
 	return os.WriteFile(path, content, 0o644)
