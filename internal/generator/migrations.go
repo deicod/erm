@@ -165,6 +165,8 @@ func renderInitialMigration(entities []Entity, flags extensionFlags) string {
 }
 
 func buildMigrationPlan(entities []Entity) ([]entityMigration, []joinTableSpec) {
+	// Migrations operate on the fully-derived entity metadata so generated DDL
+	// mirrors the defaults and overrides resolved by the DSL parser.
 	plan := make([]entityMigration, len(entities))
 	entityIndex := make(map[string]*entityMigration, len(entities))
 	for i, ent := range entities {
@@ -255,9 +257,9 @@ func ensureToManyColumn(src *entityMigration, entityIndex map[string]*entityMigr
 	if !ok {
 		return
 	}
-	refColumn := edge.RefName
+	refColumn := edgeRefColumn(src.Entity, edge, srcPrimary)
 	if refColumn == "" {
-		refColumn = fmt.Sprintf("%s_%s", toSnakeCase(src.Entity.Name), fieldColumn(srcPrimary))
+		return
 	}
 	fkField := makeForeignKeyField(refColumn, srcPrimary, edge.Nullable, edge.Unique)
 	if idx, exists := target.fieldIndex[refColumn]; exists {
@@ -294,9 +296,9 @@ func ensureJoinTable(joinTables map[string]joinTableSpec, source Entity, entityI
 	if !ok {
 		return
 	}
-	joinName := edge.Through
-	if joinName == "" {
-		joinName = defaultJoinTableName(source.Name, edge.Target)
+	joinName, leftColumn, rightColumn := manyToManyJoinSpec(source, srcPrimary, edge, targetPrimary)
+	if joinName == "" || leftColumn == "" || rightColumn == "" {
+		return
 	}
 	key := joinName
 	if key == "" {
@@ -305,8 +307,6 @@ func ensureJoinTable(joinTables map[string]joinTableSpec, source Entity, entityI
 	if _, exists := joinTables[key]; exists {
 		return
 	}
-	leftColumn := fmt.Sprintf("%s_%s", toSnakeCase(source.Name), fieldColumn(srcPrimary))
-	rightColumn := fmt.Sprintf("%s_%s", toSnakeCase(edge.Target), fieldColumn(targetPrimary))
 	joinTables[key] = joinTableSpec{
 		Name: joinName,
 		Left: joinTableColumn{
