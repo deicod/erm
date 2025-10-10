@@ -37,8 +37,8 @@ func writeRegistry(root string, entities []Entity) error {
 		fmt.Fprintf(buf, "            Table: \"%s\",\n", pluralize(ent.Name))
 		fmt.Fprintf(buf, "            Fields: []runtime.FieldSpec{\n")
 		for _, field := range ent.Fields {
-			fmt.Fprintf(buf, "                {Name: %q, Column: %q, GoType: %q, Type: %s, Primary: %t, Nullable: %t, Unique: %t, DefaultNow: %t, UpdateNow: %t, DefaultExpr: %q, Annotations: %s},\n",
-				field.Name, fieldColumn(field), field.GoType, fieldTypeLiteral(field.Type), field.IsPrimary, field.Nullable, field.IsUnique, field.HasDefaultNow, field.HasUpdateNow, field.DefaultExpr, mapLiteral(field.Annotations))
+			fmt.Fprintf(buf, "                {Name: %q, Column: %q, GoType: %q, Type: %s, Primary: %t, Nullable: %t, Unique: %t, DefaultNow: %t, UpdateNow: %t, DefaultExpr: %q, ReadOnly: %t, ComputedSpec: %s, Annotations: %s},\n",
+				field.Name, fieldColumn(field), field.GoType, fieldTypeLiteral(field.Type), field.IsPrimary, field.Nullable, field.IsUnique, field.HasDefaultNow, field.HasUpdateNow, field.DefaultExpr, field.ReadOnly || field.ComputedSpec != nil, computedLiteral(field.ComputedSpec), mapLiteral(field.Annotations))
 		}
 		fmt.Fprintf(buf, "            },\n")
 		fmt.Fprintf(buf, "            Edges: []runtime.EdgeSpec{\n")
@@ -347,7 +347,13 @@ func emitEntityClients(buf *bytes.Buffer, ent Entity, entityIndex map[string]Ent
 	lower := strings.ToLower(name)
 	columns := entityColumns(ent)
 	returning := strings.Join(columns, ", ")
-	insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s) RETURNING %s", pluralize(name), strings.Join(columns, ", "), placeholders(len(columns)), returning)
+	insertCols := insertColumns(ent)
+	var insertSQL string
+	if len(insertCols) == 0 {
+		insertSQL = fmt.Sprintf("INSERT INTO %s DEFAULT VALUES RETURNING %s", pluralize(name), returning)
+	} else {
+		insertSQL = fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s) RETURNING %s", pluralize(name), strings.Join(insertCols, ", "), placeholders(len(insertCols)), returning)
+	}
 	selectSQL := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1", returning, pluralize(name), primaryColumn(ent))
 	listSQL := fmt.Sprintf("SELECT %s FROM %s ORDER BY %s LIMIT $1 OFFSET $2", returning, pluralize(name), primaryColumn(ent))
 	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM %s", pluralize(name))
@@ -392,6 +398,14 @@ func emitCreateMethod(buf *bytes.Buffer, ent Entity) {
 	fmt.Fprintf(buf, "func (c *%sClient) Create(ctx context.Context, input *%s) (*%s, error) {\n", ent.Name, ent.Name, ent.Name)
 	fmt.Fprintf(buf, "    if input == nil {\n        return nil, errors.New(\"input cannot be nil\")\n    }\n")
 
+	computed := computedFields(ent)
+	if len(computed) > 0 {
+		for _, field := range computed {
+			fmt.Fprintf(buf, "    if !runtime.IsZeroValue(input.%s) {\n", exportName(field.Name))
+			fmt.Fprintf(buf, "        return nil, fmt.Errorf(\"%s.%s is computed and cannot be set\")\n    }\n", ent.Name, exportName(field.Name))
+		}
+	}
+
 	needsNow := false
 	for _, field := range ent.Fields {
 		if field.HasDefaultNow || field.HasUpdateNow {
@@ -423,8 +437,9 @@ func emitCreateMethod(buf *bytes.Buffer, ent Entity) {
 
 	fmt.Fprintf(buf, "    if err := ValidationRegistry.Validate(ctx, %q, validation.OpCreate, %sValidationRecord(input), input); err != nil {\n        return nil, err\n    }\n", ent.Name, strings.ToLower(ent.Name))
 
+	insertFields := insertableFields(ent)
 	fmt.Fprintf(buf, "    row := c.db.Pool.QueryRow(ctx, %sInsertQuery", strings.ToLower(ent.Name))
-	for _, field := range ent.Fields {
+	for _, field := range insertFields {
 		fmt.Fprintf(buf, ", input.%s", exportName(field.Name))
 	}
 	fmt.Fprintf(buf, ")\n")
@@ -445,6 +460,7 @@ func emitBulkCreateMethod(buf *bytes.Buffer, ent Entity) {
 	fmt.Fprintf(buf, "func (c *%sClient) BulkCreate(ctx context.Context, inputs []*%s) ([]*%s, error) {\n", ent.Name, ent.Name, ent.Name)
 	fmt.Fprintf(buf, "    if len(inputs) == 0 {\n        return []*%s{}, nil\n    }\n", ent.Name)
 	fmt.Fprintf(buf, "    rowsSpec := make([][]any, 0, len(inputs))\n")
+	computed := computedFields(ent)
 	needsNow := false
 	for _, field := range ent.Fields {
 		if field.HasDefaultNow || field.HasUpdateNow {
@@ -456,6 +472,12 @@ func emitBulkCreateMethod(buf *bytes.Buffer, ent Entity) {
 	fmt.Fprintf(buf, "        if input == nil {\n            return nil, errors.New(\"input cannot be nil\")\n        }\n")
 	if needsNow {
 		fmt.Fprintf(buf, "        now := time.Now().UTC()\n")
+	}
+	if len(computed) > 0 {
+		for _, field := range computed {
+			fmt.Fprintf(buf, "        if !runtime.IsZeroValue(input.%s) {\n", exportName(field.Name))
+			fmt.Fprintf(buf, "            return nil, fmt.Errorf(\"%s.%s is computed and cannot be set\")\n        }\n", ent.Name, exportName(field.Name))
+		}
 	}
 	for _, field := range ent.Fields {
 		fieldName := exportName(field.Name)
@@ -475,20 +497,26 @@ func emitBulkCreateMethod(buf *bytes.Buffer, ent Entity) {
 		}
 	}
 	fmt.Fprintf(buf, "        if err := ValidationRegistry.Validate(ctx, %q, validation.OpCreate, %sValidationRecord(input), input); err != nil {\n            return nil, err\n        }\n", ent.Name, strings.ToLower(ent.Name))
-	fmt.Fprintf(buf, "        row := []any{")
-	for i, field := range ent.Fields {
-		if i > 0 {
-			fmt.Fprintf(buf, ", ")
+	insertFields := insertableFields(ent)
+	if len(insertFields) == 0 {
+		fmt.Fprintf(buf, "        row := []any{}\n")
+	} else {
+		fmt.Fprintf(buf, "        row := []any{")
+		for i, field := range insertFields {
+			if i > 0 {
+				fmt.Fprintf(buf, ", ")
+			}
+			fmt.Fprintf(buf, "input.%s", exportName(field.Name))
 		}
-		fmt.Fprintf(buf, "input.%s", exportName(field.Name))
+		fmt.Fprintf(buf, "}\n")
 	}
-	fmt.Fprintf(buf, "}\n")
 	fmt.Fprintf(buf, "        rowsSpec = append(rowsSpec, row)\n")
 	fmt.Fprintf(buf, "    }\n")
 	columns := entityColumns(ent)
+	insertCols := insertColumns(ent)
 	fmt.Fprintf(buf, "    spec := runtime.BulkInsertSpec{\n")
 	fmt.Fprintf(buf, "        Table: %q,\n", pluralize(ent.Name))
-	fmt.Fprintf(buf, "        Columns: %s,\n", quoteStringSlice(columns))
+	fmt.Fprintf(buf, "        Columns: %s,\n", quoteStringSlice(insertCols))
 	fmt.Fprintf(buf, "        Returning: %s,\n", quoteStringSlice(columns))
 	fmt.Fprintf(buf, "        Rows: rowsSpec,\n")
 	fmt.Fprintf(buf, "    }\n")
@@ -698,6 +726,9 @@ func emitValidationRecordHelper(buf *bytes.Buffer, ent Entity) {
 	fmt.Fprintf(buf, "    if input == nil {\n        return nil\n    }\n")
 	fmt.Fprintf(buf, "    return validation.Record{\n")
 	for _, field := range ent.Fields {
+		if isReadOnlyField(field) {
+			continue
+		}
 		fmt.Fprintf(buf, "        %q: input.%s,\n", exportName(field.Name), exportName(field.Name))
 	}
 	fmt.Fprintf(buf, "    }\n}\n\n")
@@ -1269,6 +1300,47 @@ func entityColumns(ent Entity) []string {
 	return cols
 }
 
+func insertColumns(ent Entity) []string {
+	fields := insertableFields(ent)
+	cols := make([]string, len(fields))
+	for i, field := range fields {
+		cols[i] = fieldColumn(field)
+	}
+	return cols
+}
+
+func insertableFields(ent Entity) []dsl.Field {
+	fields := make([]dsl.Field, 0, len(ent.Fields))
+	for _, field := range ent.Fields {
+		if isReadOnlyField(field) {
+			continue
+		}
+		fields = append(fields, field)
+	}
+	return fields
+}
+
+func computedFields(ent Entity) []dsl.Field {
+	fields := []dsl.Field{}
+	for _, field := range ent.Fields {
+		if isComputedField(field) {
+			fields = append(fields, field)
+		}
+	}
+	return fields
+}
+
+func isComputedField(field dsl.Field) bool {
+	return field.ComputedSpec != nil
+}
+
+func isReadOnlyField(field dsl.Field) bool {
+	if field.ComputedSpec != nil {
+		return true
+	}
+	return field.ReadOnly
+}
+
 func placeholders(n int) string {
 	items := make([]string, n)
 	for i := 0; i < n; i++ {
@@ -1299,6 +1371,9 @@ func updatableColumns(ent Entity) []string {
 	cols := []string{}
 	for _, field := range ent.Fields {
 		if field.IsPrimary {
+			continue
+		}
+		if isReadOnlyField(field) {
 			continue
 		}
 		if field.HasDefaultNow && !field.HasUpdateNow {
@@ -1454,4 +1529,19 @@ func mapLiteral(input map[string]any) string {
 		parts = append(parts, fmt.Sprintf("%q: %#v", key, input[key]))
 	}
 	return fmt.Sprintf("map[string]any{%s}", strings.Join(parts, ", "))
+}
+
+func computedLiteral(spec *dsl.ComputedColumn) string {
+	if spec == nil {
+		return "nil"
+	}
+	return fmt.Sprintf("&dsl.ComputedColumn{Expression: %s, Stored: %t, ReadOnly: %t}", expressionLiteral(spec.Expression), spec.Stored, spec.ReadOnly)
+}
+
+func expressionLiteral(expr dsl.ExpressionSpec) string {
+	deps := quoteStringSlice(expr.Dependencies)
+	if deps == "" {
+		deps = "nil"
+	}
+	return fmt.Sprintf("dsl.ExpressionSpec{SQL: %q, Dependencies: %s}", expr.SQL, deps)
 }

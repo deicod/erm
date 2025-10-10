@@ -262,6 +262,23 @@ Selected modifiers:
 - `.Length(n)` / `.Precision(n)` / `.Scale(n)` – Override size metadata for `VARCHAR`, numeric, and temporal columns.
 - `.Identity(mode)` – Toggle identity generation (`dsl.IdentityAlways` or `dsl.IdentityByDefault`) on supported integer types.
 
+### Computed Columns
+
+Generated (computed) columns let PostgreSQL derive values from other fields while keeping the ORM models in sync. Use `dsl.Expression` to describe the SQL fragment and optional dependency list, then wrap it with `dsl.Computed` on the field:
+
+```go
+dsl.Text("display_name").
+    Computed(dsl.Computed(dsl.Expression(
+        "COALESCE(first_name || ' ' || last_name, email)",
+        "first_name", "last_name", "email",
+    )))
+```
+
+- The generator emits `GENERATED ALWAYS AS (...) STORED` columns and records dependencies in the schema snapshot so diffs are stable.
+- Computed fields hydrate automatically from queries, but they are read-only: generated clients and GraphQL mutations reject inputs where a computed field is non-zero.
+- Because PostgreSQL cannot alter a generated expression in-place, the migration planner will drop and recreate the column if the definition changes. Plan for a brief lock or add a manual migration when large tables are involved.
+- Computed columns cannot declare defaults or be targeted by `.UpdateNow()`. If you need application-level fallbacks, keep a separate writable column instead.
+
 ### Validators and Hooks
 
 Attach validation logic directly to fields using `.Validate(func(value T) error)` or the shorthand `.Min()`, `.Max()`, `.Match()`.

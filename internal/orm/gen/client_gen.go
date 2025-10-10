@@ -50,10 +50,10 @@ func (c *Client) Users() *UserClient {
 	return &UserClient{db: c.db, cache: c.cacheStore()}
 }
 
-const userInsertQuery = `INSERT INTO users (id, created_at, updated_at) VALUES ($1, $2, $3) RETURNING id, created_at, updated_at`
-const userSelectQuery = `SELECT id, created_at, updated_at FROM users WHERE id = $1`
-const userListQuery = `SELECT id, created_at, updated_at FROM users ORDER BY id LIMIT $1 OFFSET $2`
-const userUpdateQuery = `UPDATE users SET updated_at = $1 WHERE id = $2 RETURNING id, created_at, updated_at`
+const userInsertQuery = `INSERT INTO users (id, created_at, updated_at) VALUES ($1, $2, $3) RETURNING id, slug, created_at, updated_at`
+const userSelectQuery = `SELECT id, slug, created_at, updated_at FROM users WHERE id = $1`
+const userListQuery = `SELECT id, slug, created_at, updated_at FROM users ORDER BY id LIMIT $1 OFFSET $2`
+const userUpdateQuery = `UPDATE users SET updated_at = $1 WHERE id = $2 RETURNING id, slug, created_at, updated_at`
 const userCountQuery = `SELECT COUNT(*) FROM users`
 const userDeleteQuery = `DELETE FROM users WHERE id = $1`
 
@@ -65,6 +65,9 @@ type UserClient struct {
 func (c *UserClient) Create(ctx context.Context, input *User) (*User, error) {
 	if input == nil {
 		return nil, errors.New("input cannot be nil")
+	}
+	if !runtime.IsZeroValue(input.Slug) {
+		return nil, fmt.Errorf("User.Slug is computed and cannot be set")
 	}
 	now := time.Now().UTC()
 	if input.ID == "" {
@@ -83,7 +86,7 @@ func (c *UserClient) Create(ctx context.Context, input *User) (*User, error) {
 	}
 	row := c.db.Pool.QueryRow(ctx, userInsertQuery, input.ID, input.CreatedAt, input.UpdatedAt)
 	out := new(User)
-	if err := row.Scan(&out.ID, &out.CreatedAt, &out.UpdatedAt); err != nil {
+	if err := row.Scan(&out.ID, &out.Slug, &out.CreatedAt, &out.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if c.cache != nil {
@@ -100,6 +103,9 @@ func (c *UserClient) BulkCreate(ctx context.Context, inputs []*User) ([]*User, e
 	for _, input := range inputs {
 		if input == nil {
 			return nil, errors.New("input cannot be nil")
+		}
+		if !runtime.IsZeroValue(input.Slug) {
+			return nil, fmt.Errorf("User.Slug is computed and cannot be set")
 		}
 		now := time.Now().UTC()
 		if input.ID == "" {
@@ -122,7 +128,7 @@ func (c *UserClient) BulkCreate(ctx context.Context, inputs []*User) ([]*User, e
 	spec := runtime.BulkInsertSpec{
 		Table:     "users",
 		Columns:   []string{"id", "created_at", "updated_at"},
-		Returning: []string{"id", "created_at", "updated_at"},
+		Returning: []string{"id", "slug", "created_at", "updated_at"},
 		Rows:      rowsSpec,
 	}
 	sql, args, err := runtime.BuildBulkInsertSQL(spec)
@@ -137,7 +143,7 @@ func (c *UserClient) BulkCreate(ctx context.Context, inputs []*User) ([]*User, e
 	var created []*User
 	for rows.Next() {
 		item := new(User)
-		if err := rows.Scan(&item.ID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Slug, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		created = append(created, item)
@@ -165,7 +171,7 @@ func (c *UserClient) ByID(ctx context.Context, id string) (*User, error) {
 	}
 	row := c.db.Pool.QueryRow(ctx, userSelectQuery, id)
 	out := new(User)
-	if err := row.Scan(&out.ID, &out.CreatedAt, &out.UpdatedAt); err != nil {
+	if err := row.Scan(&out.ID, &out.Slug, &out.CreatedAt, &out.UpdatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -193,7 +199,7 @@ func (c *UserClient) List(ctx context.Context, limit, offset int) ([]*User, erro
 	var result []*User
 	for rows.Next() {
 		item := new(User)
-		if err := rows.Scan(&item.ID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Slug, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		result = append(result, item)
@@ -227,7 +233,7 @@ func (c *UserClient) Update(ctx context.Context, input *User) (*User, error) {
 	}
 	row := c.db.Pool.QueryRow(ctx, userUpdateQuery, input.UpdatedAt, input.ID)
 	out := new(User)
-	if err := row.Scan(&out.ID, &out.CreatedAt, &out.UpdatedAt); err != nil {
+	if err := row.Scan(&out.ID, &out.Slug, &out.CreatedAt, &out.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if c.cache != nil {
@@ -263,7 +269,7 @@ func (c *UserClient) BulkUpdate(ctx context.Context, inputs []*User) ([]*User, e
 		Table:         "users",
 		PrimaryColumn: "id",
 		Columns:       []string{"updated_at"},
-		Returning:     []string{"id", "created_at", "updated_at"},
+		Returning:     []string{"id", "slug", "created_at", "updated_at"},
 		Rows:          specs,
 	}
 	sql, args, err := runtime.BuildBulkUpdateSQL(spec)
@@ -278,7 +284,7 @@ func (c *UserClient) BulkUpdate(ctx context.Context, inputs []*User) ([]*User, e
 	var updated []*User
 	for rows.Next() {
 		item := new(User)
-		if err := rows.Scan(&item.ID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Slug, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		updated = append(updated, item)
@@ -374,7 +380,7 @@ func (q *UserQuery) OrderByCreatedAtAsc() *UserQuery {
 func (q *UserQuery) All(ctx context.Context) ([]*User, error) {
 	spec := runtime.SelectSpec{
 		Table:      "users",
-		Columns:    []string{"id", "created_at", "updated_at"},
+		Columns:    []string{"id", "slug", "created_at", "updated_at"},
 		Predicates: q.predicates,
 		Orders:     q.orders,
 		Limit:      q.effectiveLimit(),
@@ -388,7 +394,7 @@ func (q *UserQuery) All(ctx context.Context) ([]*User, error) {
 	var result []*User
 	for rows.Next() {
 		item := new(User)
-		if err := rows.Scan(&item.ID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Slug, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		result = append(result, item)
@@ -402,7 +408,7 @@ func (q *UserQuery) All(ctx context.Context) ([]*User, error) {
 func (q *UserQuery) Stream(ctx context.Context) (*runtime.Stream[*User], error) {
 	spec := runtime.SelectSpec{
 		Table:      "users",
-		Columns:    []string{"id", "created_at", "updated_at"},
+		Columns:    []string{"id", "slug", "created_at", "updated_at"},
 		Predicates: q.predicates,
 		Orders:     q.orders,
 		Limit:      q.effectiveLimit(),
@@ -414,7 +420,7 @@ func (q *UserQuery) Stream(ctx context.Context) (*runtime.Stream[*User], error) 
 	}
 	stream := runtime.NewStream[*User](rows, func(rows pgx.Rows) (*User, error) {
 		item := new(User)
-		if err := rows.Scan(&item.ID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Slug, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		return item, nil

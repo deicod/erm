@@ -40,9 +40,9 @@ func TestUserValidationRegistry(t *testing.T) {
 
 	createdAt := time.Date(2024, time.January, 1, 12, 0, 0, 0, time.UTC)
 	updatedAt := createdAt.Add(time.Hour)
-	mock.ExpectQuery("INSERT INTO users (id, created_at, updated_at) VALUES ($1, $2, $3) RETURNING id, created_at, updated_at").
+	mock.ExpectQuery("INSERT INTO users (id, created_at, updated_at) VALUES ($1, $2, $3) RETURNING id, slug, created_at, updated_at").
 		WithArgs("usr_good", pgxmock.AnyArg(), pgxmock.AnyArg()).
-		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow("usr_good", createdAt, updatedAt))
+		WillReturnRows(mock.NewRows([]string{"id", "slug", "created_at", "updated_at"}).AddRow("usr_good", "usr_good", createdAt, updatedAt))
 
 	if _, err := client.Users().Create(ctx, &gen.User{ID: "usr_good"}); err != nil {
 		t.Fatalf("unexpected create error: %v", err)
@@ -55,9 +55,9 @@ func TestUserValidationRegistry(t *testing.T) {
 
 	past := time.Now().Add(-time.Hour)
 	newUpdated := past.Add(2 * time.Hour)
-	mock.ExpectQuery("UPDATE users SET updated_at = $1 WHERE id = $2 RETURNING id, created_at, updated_at").
+	mock.ExpectQuery("UPDATE users SET updated_at = $1 WHERE id = $2 RETURNING id, slug, created_at, updated_at").
 		WithArgs(pgxmock.AnyArg(), "usr_good").
-		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow("usr_good", past, newUpdated))
+		WillReturnRows(mock.NewRows([]string{"id", "slug", "created_at", "updated_at"}).AddRow("usr_good", "usr_good", past, newUpdated))
 
 	if _, err := client.Users().Update(ctx, &gen.User{ID: "usr_good", CreatedAt: past}); err != nil {
 		t.Fatalf("unexpected update error: %v", err)

@@ -104,6 +104,41 @@ func TestWriteORMClients_EdgeHelpers(t *testing.T) {
 	}
 }
 
+func TestWriteORMClients_ComputedFields(t *testing.T) {
+	entities := []Entity{
+		{
+			Name: "User",
+			Fields: []dsl.Field{
+				dsl.UUIDv7("id").Primary(),
+				dsl.String("first_name"),
+				dsl.String("last_name"),
+				dsl.Text("full_name").Computed(dsl.Computed(dsl.Expression("first_name || ' ' || last_name", "first_name", "last_name"))),
+			},
+		},
+	}
+
+	for i := range entities {
+		ensureDefaultQuery(&entities[i])
+	}
+
+	root := t.TempDir()
+	if err := writeClients(root, entities); err != nil {
+		t.Fatalf("writeClients: %v", err)
+	}
+
+	clientPath := filepath.Join(root, "internal", "orm", "gen", "client_gen.go")
+	clientSrc, err := os.ReadFile(clientPath)
+	if err != nil {
+		t.Fatalf("read client: %v", err)
+	}
+
+	content := string(clientSrc)
+	mustContain(t, content, "INSERT INTO users (id, first_name, last_name) VALUES ($1, $2, $3) RETURNING id, first_name, last_name, full_name")
+	mustContain(t, content, "if !runtime.IsZeroValue(input.FullName)")
+	mustContain(t, content, "fmt.Errorf(\"User.FullName is computed and cannot be set\")")
+	mustContain(t, content, "row := []any{input.ID, input.FirstName, input.LastName}")
+}
+
 func TestWriteRegistry_EdgeMetadata(t *testing.T) {
 	entities := []Entity{
 		{

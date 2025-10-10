@@ -20,9 +20,9 @@ func TestUserORMCRUDFlow(t *testing.T) {
 	createdAt := time.Date(2024, time.January, 1, 12, 0, 0, 0, time.UTC)
 	updatedAt := createdAt.Add(time.Hour)
 
-	mock.ExpectQuery("INSERT INTO users (id, created_at, updated_at) VALUES ($1, $2, $3) RETURNING id, created_at, updated_at").
+	mock.ExpectQuery("INSERT INTO users (id, created_at, updated_at) VALUES ($1, $2, $3) RETURNING id, slug, created_at, updated_at").
 		WithArgs("user-1", pgxmock.AnyArg(), pgxmock.AnyArg()).
-		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow("user-1", createdAt, updatedAt))
+		WillReturnRows(mock.NewRows([]string{"id", "slug", "created_at", "updated_at"}).AddRow("user-1", "user-1", createdAt, updatedAt))
 
 	user, err := client.Users().Create(ctx, &gen.User{ID: "user-1"})
 	if err != nil {
@@ -32,9 +32,9 @@ func TestUserORMCRUDFlow(t *testing.T) {
 		t.Fatalf("unexpected id: %s", user.ID)
 	}
 
-	mock.ExpectQuery("SELECT id, created_at, updated_at FROM users WHERE id = $1").
+	mock.ExpectQuery("SELECT id, slug, created_at, updated_at FROM users WHERE id = $1").
 		WithArgs("user-1").
-		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow("user-1", createdAt, updatedAt))
+		WillReturnRows(mock.NewRows([]string{"id", "slug", "created_at", "updated_at"}).AddRow("user-1", "user-1", createdAt, updatedAt))
 
 	fetched, err := client.Users().ByID(ctx, "user-1")
 	if err != nil {
@@ -44,11 +44,11 @@ func TestUserORMCRUDFlow(t *testing.T) {
 		t.Fatalf("unexpected record: %+v", fetched)
 	}
 
-	mock.ExpectQuery("SELECT id, created_at, updated_at FROM users ORDER BY id LIMIT $1 OFFSET $2").
+	mock.ExpectQuery("SELECT id, slug, created_at, updated_at FROM users ORDER BY id LIMIT $1 OFFSET $2").
 		WithArgs(5, 0).
-		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).
-			AddRow("user-1", createdAt, updatedAt).
-			AddRow("user-2", createdAt.Add(time.Minute), updatedAt.Add(time.Minute)))
+		WillReturnRows(mock.NewRows([]string{"id", "slug", "created_at", "updated_at"}).
+			AddRow("user-1", "user-1", createdAt, updatedAt).
+			AddRow("user-2", "user-2", createdAt.Add(time.Minute), updatedAt.Add(time.Minute)))
 
 	list, err := client.Users().List(ctx, 5, 0)
 	if err != nil {
@@ -58,9 +58,9 @@ func TestUserORMCRUDFlow(t *testing.T) {
 		t.Fatalf("expected 2 records, got %d", len(list))
 	}
 
-	mock.ExpectQuery("UPDATE users SET updated_at = $1 WHERE id = $2 RETURNING id, created_at, updated_at").
+	mock.ExpectQuery("UPDATE users SET updated_at = $1 WHERE id = $2 RETURNING id, slug, created_at, updated_at").
 		WithArgs(pgxmock.AnyArg(), "user-1").
-		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow("user-1", createdAt, updatedAt.Add(2*time.Hour)))
+		WillReturnRows(mock.NewRows([]string{"id", "slug", "created_at", "updated_at"}).AddRow("user-1", "user-1", createdAt, updatedAt.Add(2*time.Hour)))
 
 	updated, err := client.Users().Update(ctx, &gen.User{ID: "user-1"})
 	if err != nil {
@@ -70,11 +70,11 @@ func TestUserORMCRUDFlow(t *testing.T) {
 		t.Fatalf("expected updated timestamp to advance")
 	}
 
-	mock.ExpectQuery("INSERT INTO users (id, created_at, updated_at) VALUES ($1, $2, $3), ($4, $5, $6) RETURNING id, created_at, updated_at").
+	mock.ExpectQuery("INSERT INTO users (id, created_at, updated_at) VALUES ($1, $2, $3), ($4, $5, $6) RETURNING id, slug, created_at, updated_at").
 		WithArgs("user-2", pgxmock.AnyArg(), pgxmock.AnyArg(), "user-3", pgxmock.AnyArg(), pgxmock.AnyArg()).
-		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).
-			AddRow("user-2", createdAt, updatedAt.Add(3*time.Hour)).
-			AddRow("user-3", createdAt.Add(2*time.Hour), updatedAt.Add(4*time.Hour)))
+		WillReturnRows(mock.NewRows([]string{"id", "slug", "created_at", "updated_at"}).
+			AddRow("user-2", "user-2", createdAt, updatedAt.Add(3*time.Hour)).
+			AddRow("user-3", "user-3", createdAt.Add(2*time.Hour), updatedAt.Add(4*time.Hour)))
 
 	bulkCreated, err := client.Users().BulkCreate(ctx, []*gen.User{{ID: "user-2"}, {ID: "user-3"}})
 	if err != nil {
@@ -84,11 +84,11 @@ func TestUserORMCRUDFlow(t *testing.T) {
 		t.Fatalf("expected 2 users from bulk create, got %d", len(bulkCreated))
 	}
 
-	mock.ExpectQuery("WITH data(id, updated_at) AS (VALUES ($1, $2), ($3, $4)) UPDATE users AS t SET updated_at = data.updated_at FROM data WHERE t.id = data.id RETURNING id, created_at, updated_at").
+	mock.ExpectQuery("WITH data(id, updated_at) AS (VALUES ($1, $2), ($3, $4)) UPDATE users AS t SET updated_at = data.updated_at FROM data WHERE t.id = data.id RETURNING id, slug, created_at, updated_at").
 		WithArgs("user-2", pgxmock.AnyArg(), "user-3", pgxmock.AnyArg()).
-		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).
-			AddRow("user-2", createdAt, updatedAt.Add(5*time.Hour)).
-			AddRow("user-3", createdAt.Add(2*time.Hour), updatedAt.Add(6*time.Hour)))
+		WillReturnRows(mock.NewRows([]string{"id", "slug", "created_at", "updated_at"}).
+			AddRow("user-2", "user-2", createdAt, updatedAt.Add(5*time.Hour)).
+			AddRow("user-3", "user-3", createdAt.Add(2*time.Hour), updatedAt.Add(6*time.Hour)))
 
 	bulkUpdated, err := client.Users().BulkUpdate(ctx, []*gen.User{{ID: "user-2"}, {ID: "user-3"}})
 	if err != nil {
@@ -98,9 +98,9 @@ func TestUserORMCRUDFlow(t *testing.T) {
 		t.Fatalf("expected 2 users from bulk update, got %d", len(bulkUpdated))
 	}
 
-	mock.ExpectQuery("SELECT id, created_at, updated_at FROM users WHERE id = $1 LIMIT $2").
+	mock.ExpectQuery("SELECT id, slug, created_at, updated_at FROM users WHERE id = $1 LIMIT $2").
 		WithArgs("user-1", 1).
-		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow("user-1", createdAt, updatedAt))
+		WillReturnRows(mock.NewRows([]string{"id", "slug", "created_at", "updated_at"}).AddRow("user-1", "user-1", createdAt, updatedAt))
 
 	all, err := client.Users().Query().WhereIDEq("user-1").Limit(1).All(ctx)
 	if err != nil {
@@ -122,10 +122,10 @@ func TestUserORMCRUDFlow(t *testing.T) {
 		t.Fatalf("unexpected count: %d", count)
 	}
 
-	mock.ExpectQuery("SELECT id, created_at, updated_at FROM users WHERE id = $1 LIMIT $2").
+	mock.ExpectQuery("SELECT id, slug, created_at, updated_at FROM users WHERE id = $1 LIMIT $2").
 		WithArgs("user-1", 1).
-		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).
-			AddRow("user-1", createdAt, updatedAt))
+		WillReturnRows(mock.NewRows([]string{"id", "slug", "created_at", "updated_at"}).
+			AddRow("user-1", "user-1", createdAt, updatedAt))
 
 	stream, err := client.Users().Query().WhereIDEq("user-1").Limit(1).Stream(ctx)
 	if err != nil {

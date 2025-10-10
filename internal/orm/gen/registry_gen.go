@@ -12,9 +12,10 @@ var Registry = runtime.Registry{
 			Name:  "User",
 			Table: "users",
 			Fields: []runtime.FieldSpec{
-				{Name: "id", Column: "id", GoType: "string", Type: dsl.TypeUUID, Primary: true, Nullable: false, Unique: false, DefaultNow: false, UpdateNow: false, DefaultExpr: "", Annotations: nil},
-				{Name: "created_at", Column: "created_at", GoType: "time.Time", Type: dsl.TypeTimestampTZ, Primary: false, Nullable: false, Unique: false, DefaultNow: true, UpdateNow: false, DefaultExpr: "", Annotations: nil},
-				{Name: "updated_at", Column: "updated_at", GoType: "time.Time", Type: dsl.TypeTimestampTZ, Primary: false, Nullable: false, Unique: false, DefaultNow: false, UpdateNow: true, DefaultExpr: "", Annotations: nil},
+				{Name: "id", Column: "id", GoType: "string", Type: dsl.TypeUUID, Primary: true, Nullable: false, Unique: false, DefaultNow: false, UpdateNow: false, DefaultExpr: "", ReadOnly: false, ComputedSpec: nil, Annotations: nil},
+				{Name: "slug", Column: "slug", GoType: "string", Type: dsl.TypeText, Primary: false, Nullable: false, Unique: false, DefaultNow: false, UpdateNow: false, DefaultExpr: "", ReadOnly: true, ComputedSpec: &dsl.ComputedColumn{Expression: dsl.ExpressionSpec{SQL: "id::text", Dependencies: nil}, Stored: true, ReadOnly: true}, Annotations: nil},
+				{Name: "created_at", Column: "created_at", GoType: "time.Time", Type: dsl.TypeTimestampTZ, Primary: false, Nullable: false, Unique: false, DefaultNow: true, UpdateNow: false, DefaultExpr: "", ReadOnly: false, ComputedSpec: nil, Annotations: nil},
+				{Name: "updated_at", Column: "updated_at", GoType: "time.Time", Type: dsl.TypeTimestampTZ, Primary: false, Nullable: false, Unique: false, DefaultNow: false, UpdateNow: true, DefaultExpr: "", ReadOnly: false, ComputedSpec: nil, Annotations: nil},
 			},
 			Edges:   []runtime.EdgeSpec{},
 			Indexes: []runtime.IndexSpec{},

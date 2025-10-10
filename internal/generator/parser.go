@@ -610,6 +610,34 @@ func executeDSLFunc(name string, args []any) (any, error) {
 		return dsl.Geography(argString(args, 0)), nil
 	case "Vector":
 		return dsl.Vector(argString(args, 0), argInt(args, 1)), nil
+	case "Expression":
+		if len(args) == 0 {
+			return nil, fmt.Errorf("Expression requires SQL argument")
+		}
+		sql := argString(args, 0)
+		deps := make([]string, 0, len(args)-1)
+		for i := 1; i < len(args); i++ {
+			switch v := args[i].(type) {
+			case string:
+				deps = append(deps, v)
+			case []string:
+				deps = append(deps, v...)
+			case nil:
+				continue
+			default:
+				return nil, fmt.Errorf("Expression dependencies must be string or []string, got %T", args[i])
+			}
+		}
+		return dsl.Expression(sql, deps...), nil
+	case "Computed":
+		if len(args) == 0 {
+			return nil, fmt.Errorf("Computed requires expression argument")
+		}
+		expr, ok := args[0].(dsl.ExpressionSpec)
+		if !ok {
+			return nil, fmt.Errorf("Computed expects dsl.ExpressionSpec, got %T", args[0])
+		}
+		return dsl.Computed(expr), nil
 	case "ToOne":
 		return dsl.ToOne(argString(args, 0), argString(args, 1)), nil
 	case "ToMany":
@@ -661,6 +689,21 @@ func executeFieldMethod(f dsl.Field, name string, args []any) (any, error) {
 			return nil, err
 		}
 		return f.ArrayElement(elem), nil
+	case "Computed":
+		if len(args) == 0 {
+			return nil, fmt.Errorf("Computed expects descriptor argument")
+		}
+		switch spec := args[0].(type) {
+		case dsl.ComputedColumn:
+			return f.Computed(spec), nil
+		case *dsl.ComputedColumn:
+			if spec == nil {
+				return nil, fmt.Errorf("Computed descriptor cannot be nil")
+			}
+			return f.Computed(*spec), nil
+		default:
+			return nil, fmt.Errorf("Computed expects dsl.ComputedColumn, got %T", args[0])
+		}
 	default:
 		return nil, fmt.Errorf("unsupported field method %s", name)
 	}

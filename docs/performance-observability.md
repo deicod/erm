@@ -10,6 +10,7 @@ tune to keep latency low, detect N+1 issues, and observe behavior in production.
 - Foreign keys with explicit cascade policies (`OnDeleteCascade`, `OnUpdateRestrict`, etc.) are rendered directly into the SQL migrations. Plan for the additional write amplification on large tables and ensure background workers account for the cascaded deletes.
 - Polymorphic edges only annotate runtime metadata. The generator still emits concrete foreign keys, so keep discriminator predicates lightweight (usually an indexed column).
 - Regenerate migrations after changing cascade semantics—existing databases require manual `ALTER TABLE ... DROP CONSTRAINT ...` before the new clause can be applied.
+- Generated columns are treated as read-only; the diff engine drops and recreates them when the expression changes because PostgreSQL cannot alter the definition in-place. Schedule migrations during maintenance windows or provide a hand-written migration if the table is large.
 
 ## Connection Pooling
 
