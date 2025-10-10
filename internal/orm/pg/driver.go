@@ -2,6 +2,7 @@ package pg
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -59,8 +60,19 @@ func (db *DB) Aggregate(ctx context.Context, spec runtime.AggregateSpec) pgx.Row
 	sql, args := runtime.BuildAggregateSQL(spec)
 	obs := db.Observer.Observe(ctx, runtime.OperationAggregate, spec.Table, sql, args)
 	row := db.Pool.QueryRow(obs.Context(), sql, args...)
-	obs.End(nil)
-	return row
+	return &observedRow{Row: row, obs: obs}
+}
+
+type observedRow struct {
+	pgx.Row
+	obs  runtime.QueryObservation
+	once sync.Once
+}
+
+func (r *observedRow) Scan(dest ...any) error {
+	err := r.Row.Scan(dest...)
+	r.once.Do(func() { r.obs.End(err) })
+	return err
 }
 
 // UseObserver attaches a query observer to the database handle.
