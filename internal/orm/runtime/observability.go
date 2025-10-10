@@ -28,6 +28,7 @@ type QueryLog struct {
 	Duration      time.Duration
 	Err           error
 	CorrelationID string
+	Attributes    []tracing.Attribute
 }
 
 // QueryLogger receives structured query events.
@@ -70,9 +71,26 @@ type QueryObserver struct {
 	Correlator CorrelationProvider
 }
 
+// ObservationOption configures optional behaviours for an observation.
+type ObservationOption func(*observationConfig)
+
+type observationConfig struct {
+	attributes []tracing.Attribute
+}
+
+// WithObservationAttributes attaches additional tracing attributes to the observation.
+func WithObservationAttributes(attrs ...tracing.Attribute) ObservationOption {
+	return func(cfg *observationConfig) {
+		if len(attrs) == 0 {
+			return
+		}
+		cfg.attributes = append(cfg.attributes, attrs...)
+	}
+}
+
 // Observe prepares an observation handle for the provided query. Call End on the
 // returned observation once the driver call completes.
-func (o QueryObserver) Observe(ctx context.Context, op QueryOperation, table, sql string, args []any) QueryObservation {
+func (o QueryObserver) Observe(ctx context.Context, op QueryOperation, table, sql string, args []any, opts ...ObservationOption) QueryObservation {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -86,6 +104,14 @@ func (o QueryObserver) Observe(ctx context.Context, op QueryOperation, table, sq
 		correlation = o.Correlator.CorrelationID(ctx)
 	}
 
+	cfg := observationConfig{}
+	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
+		opt(&cfg)
+	}
+
 	attrs := []tracing.Attribute{
 		tracing.String("orm.table", table),
 		tracing.String("orm.operation", string(op)),
@@ -93,6 +119,9 @@ func (o QueryObserver) Observe(ctx context.Context, op QueryOperation, table, sq
 	}
 	if correlation != "" {
 		attrs = append(attrs, tracing.String("erm.correlation_id", correlation))
+	}
+	if len(cfg.attributes) > 0 {
+		attrs = append(attrs, cfg.attributes...)
 	}
 
 	spanName := fmt.Sprintf("orm.%s.%s", table, op)
@@ -109,6 +138,7 @@ func (o QueryObserver) Observe(ctx context.Context, op QueryOperation, table, sq
 		collector:     o.Collector,
 		logger:        o.Logger,
 		correlationID: correlation,
+		attributes:    attrs,
 	}
 	if o.Logger != nil {
 		obs.args = append([]any(nil), args...)
@@ -129,6 +159,7 @@ type QueryObservation struct {
 	collector     metrics.Collector
 	logger        QueryLogger
 	correlationID string
+	attributes    []tracing.Attribute
 }
 
 // Context returns the context propagated to the driver call.
@@ -161,6 +192,7 @@ func (obs QueryObservation) End(err error) {
 			Duration:      duration,
 			Err:           err,
 			CorrelationID: obs.correlationID,
+			Attributes:    obs.attributes,
 		})
 	}
 }
