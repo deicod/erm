@@ -616,6 +616,8 @@ func executeDSLFunc(name string, args []any) (any, error) {
 		return dsl.ToMany(argString(args, 0), argString(args, 1)), nil
 	case "ManyToMany":
 		return dsl.ManyToMany(argString(args, 0), argString(args, 1)), nil
+	case "PolymorphicTarget":
+		return dsl.PolymorphicTarget(argString(args, 0), argString(args, 1)), nil
 	case "Idx":
 		return dsl.Idx(argString(args, 0)), nil
 	default:
