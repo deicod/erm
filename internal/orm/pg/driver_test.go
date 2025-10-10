@@ -34,24 +34,25 @@ func TestOptionsOverrideConfig(t *testing.T) {
 		WithMaxConnLifetime(2*time.Hour),
 		WithMaxConnIdleTime(15*time.Minute),
 		WithHealthCheckPeriod(time.Minute),
+		WithPoolConfig(PoolConfig{MaxConns: 80, MinConns: 40, MaxConnLifetime: 5 * time.Hour, MaxConnIdleTime: time.Hour, HealthCheckPeriod: 2 * time.Minute}),
 		WithTracer(tTracer),
 	)
 	if err != nil {
 		t.Fatalf("newPoolConfig: %v", err)
 	}
-	if cfg.MaxConns != 42 {
+	if cfg.MaxConns != 80 {
 		t.Fatalf("expected max conns override, got %d", cfg.MaxConns)
 	}
-	if cfg.MinConns != 5 {
+	if cfg.MinConns != 40 {
 		t.Fatalf("expected min conns override, got %d", cfg.MinConns)
 	}
-	if cfg.MaxConnLifetime != 2*time.Hour {
+	if cfg.MaxConnLifetime != 5*time.Hour {
 		t.Fatalf("expected max lifetime override, got %s", cfg.MaxConnLifetime)
 	}
-	if cfg.MaxConnIdleTime != 15*time.Minute {
+	if cfg.MaxConnIdleTime != time.Hour {
 		t.Fatalf("expected max idle override, got %s", cfg.MaxConnIdleTime)
 	}
-	if cfg.HealthCheckPeriod != time.Minute {
+	if cfg.HealthCheckPeriod != 2*time.Minute {
 		t.Fatalf("expected health check override, got %s", cfg.HealthCheckPeriod)
 	}
 	if cfg.ConnConfig.Tracer == nil {

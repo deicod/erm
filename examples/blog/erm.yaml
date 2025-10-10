@@ -1,6 +1,12 @@
 module: "github.com/example/blog"
 database:
   url: "postgres://postgres:postgres@localhost:5432/blog?sslmode=disable"
+  pool:
+    max_conns: 30
+    min_conns: 6
+    max_conn_lifetime: 1h
+    max_conn_idle_time: 15m
+    health_check_period: 45s
 oidc:
   issuer: "https://auth.icod.de/realms/exyu"
   audience: "web-spa"

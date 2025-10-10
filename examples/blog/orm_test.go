@@ -70,6 +70,34 @@ func TestUserORMCRUDFlow(t *testing.T) {
 		t.Fatalf("expected updated timestamp to advance")
 	}
 
+	mock.ExpectQuery("INSERT INTO users (id, created_at, updated_at) VALUES ($1, $2, $3), ($4, $5, $6) RETURNING id, created_at, updated_at").
+		WithArgs("user-2", pgxmock.AnyArg(), pgxmock.AnyArg(), "user-3", pgxmock.AnyArg(), pgxmock.AnyArg()).
+		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).
+			AddRow("user-2", createdAt, updatedAt.Add(3*time.Hour)).
+			AddRow("user-3", createdAt.Add(2*time.Hour), updatedAt.Add(4*time.Hour)))
+
+	bulkCreated, err := client.Users().BulkCreate(ctx, []*gen.User{{ID: "user-2"}, {ID: "user-3"}})
+	if err != nil {
+		t.Fatalf("bulk create: %v", err)
+	}
+	if len(bulkCreated) != 2 {
+		t.Fatalf("expected 2 users from bulk create, got %d", len(bulkCreated))
+	}
+
+	mock.ExpectQuery("WITH data(id, updated_at) AS (VALUES ($1, $2), ($3, $4)) UPDATE users AS t SET updated_at = data.updated_at FROM data WHERE t.id = data.id RETURNING id, created_at, updated_at").
+		WithArgs("user-2", pgxmock.AnyArg(), "user-3", pgxmock.AnyArg()).
+		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).
+			AddRow("user-2", createdAt, updatedAt.Add(5*time.Hour)).
+			AddRow("user-3", createdAt.Add(2*time.Hour), updatedAt.Add(6*time.Hour)))
+
+	bulkUpdated, err := client.Users().BulkUpdate(ctx, []*gen.User{{ID: "user-2"}, {ID: "user-3"}})
+	if err != nil {
+		t.Fatalf("bulk update: %v", err)
+	}
+	if len(bulkUpdated) != 2 {
+		t.Fatalf("expected 2 users from bulk update, got %d", len(bulkUpdated))
+	}
+
 	mock.ExpectQuery("SELECT id, created_at, updated_at FROM users WHERE id = $1 LIMIT $2").
 		WithArgs("user-1", 1).
 		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow("user-1", createdAt, updatedAt))
@@ -92,6 +120,42 @@ func TestUserORMCRUDFlow(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("unexpected count: %d", count)
+	}
+
+	mock.ExpectQuery("SELECT id, created_at, updated_at FROM users WHERE id = $1 LIMIT $2").
+		WithArgs("user-1", 1).
+		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).
+			AddRow("user-1", createdAt, updatedAt))
+
+	stream, err := client.Users().Query().WhereIDEq("user-1").Limit(1).Stream(ctx)
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	defer stream.Close()
+	if !stream.Next() {
+		t.Fatalf("expected stream to yield result")
+	}
+	streamed := stream.Item()
+	if streamed == nil || streamed.ID != "user-1" {
+		t.Fatalf("unexpected streamed user: %+v", streamed)
+	}
+	if stream.Next() {
+		t.Fatalf("expected single element in stream")
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatalf("stream err: %v", err)
+	}
+
+	mock.ExpectExec("DELETE FROM users WHERE id IN ($1, $2)").
+		WithArgs("user-2", "user-3").
+		WillReturnResult(pgxmock.NewResult("DELETE", 2))
+
+	deleted, err := client.Users().BulkDelete(ctx, []string{"user-2", "user-3"})
+	if err != nil {
+		t.Fatalf("bulk delete: %v", err)
+	}
+	if deleted != 2 {
+		t.Fatalf("expected 2 deleted rows, got %d", deleted)
 	}
 
 	mock.ExpectExec("DELETE FROM users WHERE id = $1").
