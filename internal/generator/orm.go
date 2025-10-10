@@ -289,6 +289,7 @@ func writeClients(root string, entities []Entity) error {
 		"github.com/jackc/pgx/v5",
 		"github.com/deicod/erm/internal/orm/pg",
 		"github.com/deicod/erm/internal/orm/runtime",
+		"github.com/deicod/erm/internal/orm/runtime/validation",
 	)
 	if needsID {
 		imports = append(imports, "github.com/deicod/erm/internal/orm/id")
@@ -300,6 +301,8 @@ func writeClients(root string, entities []Entity) error {
 		fmt.Fprintf(buf, "    \"%s\"\n", imp)
 	}
 	fmt.Fprintf(buf, ")\n\n")
+
+	fmt.Fprintf(buf, "var ValidationRegistry = validation.NewRegistry()\n\n")
 
 	sort.Slice(entities, func(i, j int) bool { return entities[i].Name < entities[j].Name })
 
@@ -317,6 +320,10 @@ func writeClients(root string, entities []Entity) error {
 
 	for _, ent := range entities {
 		emitEntityClients(buf, ent, entityIndex)
+	}
+
+	for _, ent := range entities {
+		emitValidationRecordHelper(buf, ent)
 	}
 
 	if hasEdges {
@@ -402,6 +409,8 @@ func emitCreateMethod(buf *bytes.Buffer, ent Entity) {
 		}
 	}
 
+	fmt.Fprintf(buf, "    if err := ValidationRegistry.Validate(ctx, %q, validation.OpCreate, %sValidationRecord(input), input); err != nil {\n        return nil, err\n    }\n", ent.Name, strings.ToLower(ent.Name))
+
 	fmt.Fprintf(buf, "    row := c.db.Pool.QueryRow(ctx, %sInsertQuery", strings.ToLower(ent.Name))
 	for _, field := range ent.Fields {
 		fmt.Fprintf(buf, ", input.%s", exportName(field.Name))
@@ -483,6 +492,8 @@ func emitUpdateMethod(buf *bytes.Buffer, ent Entity) {
 		}
 	}
 
+	fmt.Fprintf(buf, "    if err := ValidationRegistry.Validate(ctx, %q, validation.OpUpdate, %sValidationRecord(input), input); err != nil {\n        return nil, err\n    }\n", ent.Name, strings.ToLower(ent.Name))
+
 	updateCols := updatableColumns(ent)
 	fmt.Fprintf(buf, "    row := c.db.Pool.QueryRow(ctx, %sUpdateQuery", strings.ToLower(ent.Name))
 	for _, col := range updateCols {
@@ -506,6 +517,17 @@ func emitDeleteMethod(buf *bytes.Buffer, ent Entity) {
 	fmt.Fprintf(buf, "func (c *%sClient) Delete(ctx context.Context, id string) error {\n", ent.Name)
 	fmt.Fprintf(buf, "    _, err := c.db.Pool.Exec(ctx, %sDeleteQuery, id)\n", strings.ToLower(ent.Name))
 	fmt.Fprintf(buf, "    return err\n}\n\n")
+}
+
+func emitValidationRecordHelper(buf *bytes.Buffer, ent Entity) {
+	fn := strings.ToLower(ent.Name) + "ValidationRecord"
+	fmt.Fprintf(buf, "func %s(input *%s) validation.Record {\n", fn, ent.Name)
+	fmt.Fprintf(buf, "    if input == nil {\n        return nil\n    }\n")
+	fmt.Fprintf(buf, "    return validation.Record{\n")
+	for _, field := range ent.Fields {
+		fmt.Fprintf(buf, "        %q: input.%s,\n", exportName(field.Name), exportName(field.Name))
+	}
+	fmt.Fprintf(buf, "    }\n}\n\n")
 }
 
 func emitQueryBuilder(buf *bytes.Buffer, ent Entity) {

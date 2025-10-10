@@ -7,9 +7,12 @@ import (
 	"github.com/deicod/erm/internal/orm/id"
 	"github.com/deicod/erm/internal/orm/pg"
 	"github.com/deicod/erm/internal/orm/runtime"
+	"github.com/deicod/erm/internal/orm/runtime/validation"
 	"github.com/jackc/pgx/v5"
 	"time"
 )
+
+var ValidationRegistry = validation.NewRegistry()
 
 type Client struct {
 	db *pg.DB
@@ -50,6 +53,9 @@ func (c *UserClient) Create(ctx context.Context, input *User) (*User, error) {
 		input.CreatedAt = now
 	}
 	input.UpdatedAt = now
+	if err := ValidationRegistry.Validate(ctx, "User", validation.OpCreate, userValidationRecord(input), input); err != nil {
+		return nil, err
+	}
 	row := c.db.Pool.QueryRow(ctx, userInsertQuery, input.ID, input.CreatedAt, input.UpdatedAt)
 	out := new(User)
 	if err := row.Scan(&out.ID, &out.CreatedAt, &out.UpdatedAt); err != nil {
@@ -114,6 +120,9 @@ func (c *UserClient) Update(ctx context.Context, input *User) (*User, error) {
 	}
 	now := time.Now().UTC()
 	input.UpdatedAt = now
+	if err := ValidationRegistry.Validate(ctx, "User", validation.OpUpdate, userValidationRecord(input), input); err != nil {
+		return nil, err
+	}
 	row := c.db.Pool.QueryRow(ctx, userUpdateQuery, input.UpdatedAt, input.ID)
 	out := new(User)
 	if err := row.Scan(&out.ID, &out.CreatedAt, &out.UpdatedAt); err != nil {
@@ -125,6 +134,17 @@ func (c *UserClient) Update(ctx context.Context, input *User) (*User, error) {
 func (c *UserClient) Delete(ctx context.Context, id string) error {
 	_, err := c.db.Pool.Exec(ctx, userDeleteQuery, id)
 	return err
+}
+
+func userValidationRecord(input *User) validation.Record {
+	if input == nil {
+		return nil
+	}
+	return validation.Record{
+		"ID":        input.ID,
+		"CreatedAt": input.CreatedAt,
+		"UpdatedAt": input.UpdatedAt,
+	}
 }
 
 type UserQuery struct {

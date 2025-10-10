@@ -33,6 +33,31 @@ require.Equal(t, "user-1", user.ID)
 The sandbox stays entirely in memory, making it suitable for unit tests and quick feedback loops. When you need to exercise
 multi-row results, pagination, or error branches, set up the appropriate expectations on the returned mock.
 
+### Validation Registry
+
+Validation rules live on the generated `gen.ValidationRegistry`. Reset it inside tests so assertions remain isolated:
+
+```go
+gen.ValidationRegistry = validation.NewRegistry()
+t.Cleanup(func() { gen.ValidationRegistry = validation.NewRegistry() })
+
+gen.ValidationRegistry.Entity("User").
+    OnCreate(validation.String("Email").Required().Matches(emailRegex).Rule()).
+    OnUpdate(validation.RuleFunc(func(_ context.Context, subject validation.Subject) error {
+        created, _ := subject.Record.Time("CreatedAt")
+        updated, _ := subject.Record.Time("UpdatedAt")
+        if updated.Before(created) {
+            return validation.FieldError{Field: "UpdatedAt", Message: "must be after CreatedAt"}
+        }
+        return nil
+    }))
+
+_, err := client.Users().Create(ctx, &gen.User{Email: "bad"})
+require.Error(t, err)
+```
+
+Use the `internal/orm/runtime/validation` helpers to build string, regex, and cross-field checks; they run automatically inside `Create`/`Update` once registered.
+
 ### GraphQL Harness
 
 `testkit.NewGraphQLHarness(tb, testkit.GraphQLHarnessOptions{ORM: client})` wraps the generated executable schema with gqlgen's test
