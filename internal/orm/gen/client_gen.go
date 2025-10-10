@@ -288,7 +288,11 @@ func (c *UserClient) BulkUpdate(ctx context.Context, inputs []*User) ([]*User, e
 	if err != nil {
 		return nil, err
 	}
-	rows, err := c.db.Query(ctx, "users", sql, args...)
+	writer := c.db.Writer()
+	if writer == nil {
+		return nil, errors.New("database writer pool is unavailable")
+	}
+	rows, err := writer.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
