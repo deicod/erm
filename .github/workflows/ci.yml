@@ -36,3 +36,52 @@ jobs:
           go run ./cmd/erm gen
           git diff --exit-code
 
+  migrations:
+    runs-on: ubuntu-latest
+    needs: build
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: erm
+          POSTGRES_PASSWORD: erm
+          POSTGRES_DB: erm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U erm" --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Wait for Postgres
+        run: |
+          for i in {1..30}; do
+            if pg_isready -h 127.0.0.1 -p 5432 -U erm; then
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Plan migrations (ci)
+        env:
+          ERM_DATABASE_URL: postgres://erm:erm@127.0.0.1:5432/erm?sslmode=disable
+          ERM_ENV: ci
+        run: go run ./cmd/erm migrate --mode plan --env ci
+
+      - name: Apply migrations (ci)
+        env:
+          ERM_DATABASE_URL: postgres://erm:erm@127.0.0.1:5432/erm?sslmode=disable
+          ERM_ENV: ci
+        run: go run ./cmd/erm migrate --mode apply --env ci
+
+      - name: Smoke tests
+        env:
+          ERM_DATABASE_URL: postgres://erm:erm@127.0.0.1:5432/erm?sslmode=disable
+          ERM_ENV: ci
+        run: go test ./internal/testing/...
+

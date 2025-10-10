@@ -21,14 +21,16 @@ Relay-compliant APIs, Postgres migrations, OIDC security, and DX-focused tooling
 7. **[CLI Reference](./cli.md)** – Command usage, workflows, and automation tips.
 8. **[Performance & Observability](./performance-observability.md)** – Metrics, tracing, tuning guidance, plus a workspace timeline optimization scenario.
 9. **[Testing](./testing.md)** – Unit, integration, GraphQL, and benchmark strategies.
+10. **[CI/CD Guidance](./ci-cd.md)** – Pipeline patterns, schema validation, and rollback automation.
+11. **[Deployment Playbooks](./deployment.md)** – Environment targeting, secrets management, and rollback procedures.
 
 ### Practices and Troubleshooting
-10. **[Best Practices](./best-practices.md)** – Conventions for schema, GraphQL, security, and collaboration.
-11. **[Troubleshooting](./troubleshooting.md)** – Symptom-based remediation across the stack with a production incident playbook.
-12. **[End-to-End Examples](./examples.md)** – Comprehensive feature walkthroughs you can adapt, including the editorial workspace blog series.
+12. **[Best Practices](./best-practices.md)** – Conventions for schema, GraphQL, security, and collaboration.
+13. **[Troubleshooting](./troubleshooting.md)** – Symptom-based remediation across the stack with a production incident playbook.
+14. **[End-to-End Examples](./examples.md)** – Comprehensive feature walkthroughs you can adapt, including the editorial workspace blog series.
 
 ### Navigation
-13. **[README](./README.md)** – Portal entry point and map of the guides.
+15. **[README](./README.md)** – Portal entry point and map of the guides.
 
 ## Key Highlights
 

@@ -187,9 +187,13 @@ func TestGenCmdRejectsUnknownComponent(t *testing.T) {
 func TestMigrateCmdAppliesMigrations(t *testing.T) {
 	originalOpen := openMigrationConn
 	originalApply := applyMigrations
+	originalPlan := planMigrations
+	originalRollback := rollbackMig
 	defer func() {
 		openMigrationConn = originalOpen
 		applyMigrations = originalApply
+		planMigrations = originalPlan
+		rollbackMig = originalRollback
 	}()
 
 	tmpDir := t.TempDir()
@@ -204,13 +208,24 @@ func TestMigrateCmdAppliesMigrations(t *testing.T) {
 		return conn, nil
 	}
 
-	var applyCalled bool
+	var (
+		planCalled  bool
+		applyCalled bool
+	)
+	planMigrations = func(ctx context.Context, c migrate.TxStarter, fsys fs.FS, opts ...migrate.Option) (migrate.PlanResult, error) {
+		planCalled = true
+		return migrate.PlanResult{Pending: []migrate.FileMigration{{Version: "001", Name: "001_initial.sql"}}}, nil
+	}
 	applyMigrations = func(ctx context.Context, c migrate.TxStarter, fsys fs.FS, opts ...migrate.Option) error {
 		applyCalled = true
 		if c != conn {
 			t.Fatalf("expected connection stub, got %T", c)
 		}
 		return nil
+	}
+	rollbackMig = func(ctx context.Context, c migrate.TxStarter, fsys fs.FS, opts ...migrate.Option) (migrate.FileMigration, error) {
+		t.Fatalf("rollback should not be called in apply mode")
+		return migrate.FileMigration{}, nil
 	}
 
 	wd, err := os.Getwd()
@@ -233,6 +248,9 @@ func TestMigrateCmdAppliesMigrations(t *testing.T) {
 	if capturedDSN != "postgres://localhost/db" {
 		t.Fatalf("expected DSN to be captured, got %q", capturedDSN)
 	}
+	if !planCalled {
+		t.Fatalf("expected planMigrations to be invoked")
+	}
 	if !applyCalled {
 		t.Fatalf("expected applyMigrations to be invoked")
 	}
@@ -241,11 +259,132 @@ func TestMigrateCmdAppliesMigrations(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "migrate: applying migrations") {
+	if !strings.Contains(output, "migrate: applying 1 migration(s)") {
 		t.Fatalf("expected applying message, got:\n%s", output)
 	}
 	if !strings.Contains(output, "migrate: completed successfully") {
 		t.Fatalf("expected success message, got:\n%s", output)
+	}
+}
+
+func TestMigrateCmdPlanMode(t *testing.T) {
+	originalOpen := openMigrationConn
+	originalPlan := planMigrations
+	originalApply := applyMigrations
+	originalRollback := rollbackMig
+	defer func() {
+		openMigrationConn = originalOpen
+		planMigrations = originalPlan
+		applyMigrations = originalApply
+		rollbackMig = originalRollback
+	}()
+
+	tmpDir := t.TempDir()
+	cfg := `module: test
+database:
+  url: postgres://localhost/db
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "erm.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	conn := &stubConn{}
+	openMigrationConn = func(ctx context.Context, url string) (migrationConn, error) {
+		return conn, nil
+	}
+	planMigrations = func(ctx context.Context, c migrate.TxStarter, fsys fs.FS, opts ...migrate.Option) (migrate.PlanResult, error) {
+		return migrate.PlanResult{Pending: []migrate.FileMigration{{Version: "002", Name: "002_more.sql"}}}, nil
+	}
+	applyMigrations = func(context.Context, migrate.TxStarter, fs.FS, ...migrate.Option) error {
+		t.Fatalf("apply should not be called for plan mode")
+		return nil
+	}
+	rollbackMig = func(context.Context, migrate.TxStarter, fs.FS, ...migrate.Option) (migrate.FileMigration, error) {
+		t.Fatalf("rollback should not be called for plan mode")
+		return migrate.FileMigration{}, nil
+	}
+
+	cmd := newMigrateCmd()
+	buf := &bytes.Buffer{}
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"--mode", "plan"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute migrate plan: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "pending: 002 (002_more.sql)") {
+		t.Fatalf("expected plan output, got:\n%s", out)
+	}
+}
+
+func TestMigrateCmdRollbackMode(t *testing.T) {
+	originalOpen := openMigrationConn
+	originalPlan := planMigrations
+	originalApply := applyMigrations
+	originalRollback := rollbackMig
+	defer func() {
+		openMigrationConn = originalOpen
+		planMigrations = originalPlan
+		applyMigrations = originalApply
+		rollbackMig = originalRollback
+	}()
+
+	tmpDir := t.TempDir()
+	cfg := `module: test
+database:
+  url: postgres://localhost/db
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "erm.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	conn := &stubConn{}
+	openMigrationConn = func(ctx context.Context, url string) (migrationConn, error) {
+		return conn, nil
+	}
+	planMigrations = func(ctx context.Context, c migrate.TxStarter, fsys fs.FS, opts ...migrate.Option) (migrate.PlanResult, error) {
+		return migrate.PlanResult{}, nil
+	}
+	applyMigrations = func(context.Context, migrate.TxStarter, fs.FS, ...migrate.Option) error {
+		t.Fatalf("apply should not be called for rollback mode")
+		return nil
+	}
+	rollbackMig = func(ctx context.Context, c migrate.TxStarter, fsys fs.FS, opts ...migrate.Option) (migrate.FileMigration, error) {
+		return migrate.FileMigration{Version: "001", Name: "001_initial_down.sql", Type: migrate.MigrationTypeDown}, nil
+	}
+
+	cmd := newMigrateCmd()
+	buf := &bytes.Buffer{}
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"--mode", "rollback"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute migrate rollback: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "migrate: rolled back 001 (001_initial_down.sql)") {
+		t.Fatalf("expected rollback output, got:\n%s", out)
 	}
 }
 

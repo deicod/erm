@@ -15,8 +15,9 @@ import (
 type projectConfig struct {
 	Module   string `yaml:"module"`
 	Database struct {
-		URL  string     `yaml:"url"`
-		Pool poolConfig `yaml:"pool"`
+		URL          string                         `yaml:"url"`
+		Pool         poolConfig                     `yaml:"pool"`
+		Environments map[string]databaseEnvironment `yaml:"environments"`
 	} `yaml:"database"`
 	Observability struct {
 		ORM struct {
@@ -46,6 +47,10 @@ type poolConfig struct {
 	MaxConnLifetime   time.Duration `yaml:"max_conn_lifetime"`
 	MaxConnIdleTime   time.Duration `yaml:"max_conn_idle_time"`
 	HealthCheckPeriod time.Duration `yaml:"health_check_period"`
+}
+
+type databaseEnvironment struct {
+	URL string `yaml:"url"`
 }
 
 func (pc poolConfig) Option() pg.Option {
