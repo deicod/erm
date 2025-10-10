@@ -9,6 +9,7 @@ func (User) Fields() []dsl.Field {
 		dsl.UUIDv7("id").Primary(),
 		dsl.String("email").Unique().NotEmpty(),
 		dsl.String("name").Optional(),
+		dsl.Text("display_name").Computed(dsl.Computed(dsl.Expression("COALESCE(name, email)", "name", "email"))),
 		dsl.TimestampTZ("created_at").DefaultNow(),
 		dsl.TimestampTZ("updated_at").UpdateNow(),
 	}

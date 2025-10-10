@@ -7,6 +7,7 @@ type User struct{ dsl.Schema }
 func (User) Fields() []dsl.Field {
 	return []dsl.Field{
 		dsl.UUIDv7("id").Primary(),
+		dsl.Text("slug").Computed(dsl.Computed(dsl.Expression("id::text"))),
 		dsl.TimestampTZ("created_at").DefaultNow(),
 		dsl.TimestampTZ("updated_at").UpdateNow(),
 	}

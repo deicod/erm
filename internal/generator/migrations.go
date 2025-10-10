@@ -517,6 +517,13 @@ func joinTableConstraint(table string, col joinTableColumn) string {
 
 func fieldSQLType(field dsl.Field) string {
 	base := sqlTypeLiteral(field)
+	if field.ComputedSpec != nil {
+		expr := strings.TrimSpace(field.ComputedSpec.Expression.SQL)
+		if expr == "" {
+			expr = "NULL"
+		}
+		return fmt.Sprintf("%s GENERATED ALWAYS AS (%s) STORED", base, expr)
+	}
 	if isIdentityColumn(field) {
 		mode := "BY DEFAULT"
 		if m, ok := field.Annotations["identity_mode"].(string); ok && m == string(dsl.IdentityAlways) {

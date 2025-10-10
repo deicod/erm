@@ -435,6 +435,7 @@ func TestFieldSQLType_PostgresFamilies(t *testing.T) {
 		{"bit", dsl.Bit("mask", 8), "bit(8)"},
 		{"array", dsl.Array("tags", dsl.TypeText), "text[]"},
 		{"vector", dsl.Vector("embedding", 3), "vector(3)"},
+		{"computed", dsl.Text("full_name").Computed(dsl.Computed(dsl.Expression("first_name || ' ' || last_name"))), "text GENERATED ALWAYS AS (first_name || ' ' || last_name) STORED"},
 	}
 
 	for _, tt := range tests {
@@ -444,6 +445,29 @@ func TestFieldSQLType_PostgresFamilies(t *testing.T) {
 				t.Fatalf("fieldSQLType(%s) = %q, want %q", tt.name, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDiffColumn_ComputedTriggersDropAdd(t *testing.T) {
+	prev := ColumnSnapshot{
+		Name:          "full_name",
+		Type:          "text GENERATED ALWAYS AS (first_name || ' ' || last_name) STORED",
+		GeneratedExpr: "first_name || ' ' || last_name",
+		ReadOnly:      true,
+	}
+	next := ColumnSnapshot{
+		Name:          "full_name",
+		Type:          "text GENERATED ALWAYS AS (first_name || ' ' || COALESCE(last_name, '')) STORED",
+		GeneratedExpr: "first_name || ' ' || COALESCE(last_name, '')",
+		ReadOnly:      true,
+	}
+
+	ops := diffColumn("users", prev, next)
+	if len(ops) != 2 {
+		t.Fatalf("expected drop/add operations, got %d", len(ops))
+	}
+	if ops[0].Kind != OpDropColumn || ops[1].Kind != OpAddColumn {
+		t.Fatalf("expected drop/add operations, got %+v", ops)
 	}
 }
 

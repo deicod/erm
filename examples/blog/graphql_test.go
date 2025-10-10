@@ -23,9 +23,9 @@ func TestGraphQLUserResolvers(t *testing.T) {
 	updatedAt := createdAt.Add(30 * time.Minute)
 	globalID := relay.ToGlobalID("User", "user-graphql")
 
-	mock.ExpectQuery("INSERT INTO users (id, created_at, updated_at) VALUES ($1, $2, $3) RETURNING id, created_at, updated_at").
+	mock.ExpectQuery("INSERT INTO users (id, created_at, updated_at) VALUES ($1, $2, $3) RETURNING id, slug, created_at, updated_at").
 		WithArgs("user-graphql", pgxmock.AnyArg(), pgxmock.AnyArg()).
-		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow("user-graphql", createdAt, updatedAt))
+		WillReturnRows(mock.NewRows([]string{"id", "slug", "created_at", "updated_at"}).AddRow("user-graphql", "user-graphql", createdAt, updatedAt))
 
 	var createResp struct {
 		CreateUser struct {
@@ -43,9 +43,9 @@ func TestGraphQLUserResolvers(t *testing.T) {
 		t.Fatalf("unexpected global id: %s", createResp.CreateUser.User.ID)
 	}
 
-	mock.ExpectQuery("SELECT id, created_at, updated_at FROM users WHERE id = $1").
+	mock.ExpectQuery("SELECT id, slug, created_at, updated_at FROM users WHERE id = $1").
 		WithArgs("user-graphql").
-		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow("user-graphql", createdAt, updatedAt))
+		WillReturnRows(mock.NewRows([]string{"id", "slug", "created_at", "updated_at"}).AddRow("user-graphql", "user-graphql", createdAt, updatedAt))
 
 	var userResp struct {
 		User *struct {
@@ -61,11 +61,11 @@ func TestGraphQLUserResolvers(t *testing.T) {
 
 	mock.ExpectQuery("SELECT COUNT(*) FROM users").
 		WillReturnRows(mock.NewRows([]string{"count"}).AddRow(1))
-	mock.ExpectQuery("SELECT id, created_at, updated_at FROM users ORDER BY id LIMIT $1 OFFSET $2").
+	mock.ExpectQuery("SELECT id, slug, created_at, updated_at FROM users ORDER BY id LIMIT $1 OFFSET $2").
 		WithArgs(2, 0).
-		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).
-			AddRow("user-graphql", createdAt, updatedAt).
-			AddRow("user-other", createdAt.Add(time.Minute), updatedAt.Add(time.Minute)))
+		WillReturnRows(mock.NewRows([]string{"id", "slug", "created_at", "updated_at"}).
+			AddRow("user-graphql", "user-graphql", createdAt, updatedAt).
+			AddRow("user-other", "user-other", createdAt.Add(time.Minute), updatedAt.Add(time.Minute)))
 
 	var listResp struct {
 		Users struct {
@@ -90,9 +90,9 @@ func TestGraphQLUserResolvers(t *testing.T) {
 		t.Fatalf("expected 2 edges, got %d", len(listResp.Users.Edges))
 	}
 
-	mock.ExpectQuery("UPDATE users SET updated_at = $1 WHERE id = $2 RETURNING id, created_at, updated_at").
+	mock.ExpectQuery("UPDATE users SET updated_at = $1 WHERE id = $2 RETURNING id, slug, created_at, updated_at").
 		WithArgs(pgxmock.AnyArg(), "user-graphql").
-		WillReturnRows(mock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow("user-graphql", createdAt, updatedAt.Add(time.Hour)))
+		WillReturnRows(mock.NewRows([]string{"id", "slug", "created_at", "updated_at"}).AddRow("user-graphql", "user-graphql", createdAt, updatedAt.Add(time.Hour)))
 
 	var updateResp struct {
 		UpdateUser struct {

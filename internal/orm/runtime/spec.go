@@ -3,17 +3,19 @@ package runtime
 import "github.com/deicod/erm/internal/orm/dsl"
 
 type FieldSpec struct {
-	Name        string
-	Column      string
-	GoType      string
-	Type        dsl.FieldType
-	Primary     bool
-	Nullable    bool
-	Unique      bool
-	DefaultNow  bool
-	UpdateNow   bool
-	DefaultExpr string
-	Annotations map[string]any
+	Name         string
+	Column       string
+	GoType       string
+	Type         dsl.FieldType
+	Primary      bool
+	Nullable     bool
+	Unique       bool
+	DefaultNow   bool
+	UpdateNow    bool
+	DefaultExpr  string
+	ReadOnly     bool
+	ComputedSpec *dsl.ComputedColumn
+	Annotations  map[string]any
 }
 
 type EdgeSpec struct {

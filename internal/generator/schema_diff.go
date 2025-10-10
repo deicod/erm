@@ -226,6 +226,22 @@ func diffColumns(prev, next TableSnapshot) []Operation {
 
 func diffColumn(table string, prev, next ColumnSnapshot) []Operation {
 	ops := make([]Operation, 0)
+	if prev.GeneratedExpr != "" || next.GeneratedExpr != "" || prev.ReadOnly || next.ReadOnly {
+		if prev.GeneratedExpr != next.GeneratedExpr || prev.Type != next.Type || prev.Nullable != next.Nullable || prev.Unique != next.Unique || prev.ReadOnly != next.ReadOnly {
+			drop := Operation{
+				Kind:   OpDropColumn,
+				Target: fmt.Sprintf("%s.%s", table, prev.Name),
+				SQL:    fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s;", table, prev.Name),
+			}
+			add := Operation{
+				Kind:   OpAddColumn,
+				Target: fmt.Sprintf("%s.%s", table, next.Name),
+				SQL:    fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s;", table, renderColumnDefinition(next)),
+			}
+			return []Operation{drop, add}
+		}
+		return ops
+	}
 	if prev.Type != next.Type {
 		ops = append(ops, Operation{
 			Kind:   OpAlterColumn,

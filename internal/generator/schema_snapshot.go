@@ -25,13 +25,16 @@ type TableSnapshot struct {
 }
 
 type ColumnSnapshot struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Nullable    bool   `json:"nullable"`
-	Unique      bool   `json:"unique,omitempty"`
-	DefaultExpr string `json:"default_expr,omitempty"`
-	DefaultNow  bool   `json:"default_now,omitempty"`
-	Identity    bool   `json:"identity,omitempty"`
+	Name          string   `json:"name"`
+	Type          string   `json:"type"`
+	Nullable      bool     `json:"nullable"`
+	Unique        bool     `json:"unique,omitempty"`
+	DefaultExpr   string   `json:"default_expr,omitempty"`
+	DefaultNow    bool     `json:"default_now,omitempty"`
+	Identity      bool     `json:"identity,omitempty"`
+	GeneratedExpr string   `json:"generated_expr,omitempty"`
+	Dependencies  []string `json:"dependencies,omitempty"`
+	ReadOnly      bool     `json:"read_only,omitempty"`
 }
 
 type IndexSnapshot struct {
@@ -102,6 +105,9 @@ func normalizeSnapshot(snap *SchemaSnapshot) {
 		tbl := &snap.Tables[i]
 		sort.Slice(tbl.Indexes, func(i, j int) bool { return tbl.Indexes[i].Name < tbl.Indexes[j].Name })
 		sort.Slice(tbl.ForeignKeys, func(i, j int) bool { return tbl.ForeignKeys[i].Constraint < tbl.ForeignKeys[j].Constraint })
+		for j := range tbl.Columns {
+			sort.Strings(tbl.Columns[j].Dependencies)
+		}
 	}
 }
 
@@ -125,6 +131,15 @@ func buildSchemaSnapshot(entities []Entity, flags extensionFlags) SchemaSnapshot
 				DefaultNow:  field.HasDefaultNow,
 				DefaultExpr: field.DefaultExpr,
 				Identity:    isIdentityColumn(field),
+			}
+			if field.ComputedSpec != nil {
+				col.GeneratedExpr = field.ComputedSpec.Expression.SQL
+				if deps := field.ComputedSpec.Expression.Dependencies; len(deps) > 0 {
+					col.Dependencies = append([]string(nil), deps...)
+				}
+				col.ReadOnly = true
+			} else if field.ReadOnly {
+				col.ReadOnly = true
 			}
 			if field.IsPrimary {
 				table.PrimaryKey = append(table.PrimaryKey, column)
@@ -218,6 +233,9 @@ func fkConstraintName(table, column string) string {
 }
 
 func columnDefaultExpr(col ColumnSnapshot) (string, bool) {
+	if col.GeneratedExpr != "" {
+		return "", false
+	}
 	if col.DefaultNow {
 		return "now()", true
 	}

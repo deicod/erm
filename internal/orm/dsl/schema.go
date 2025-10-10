@@ -94,6 +94,15 @@ const (
 	TypeBytes  FieldType = TypeBytea
 )
 
+type ExpressionSpec struct {
+	SQL          string
+	Dependencies []string
+}
+
+func Expression(sql string, deps ...string) ExpressionSpec {
+	return ExpressionSpec{SQL: sql, Dependencies: append([]string(nil), deps...)}
+}
+
 type IdentityMode string
 
 const (
@@ -112,7 +121,19 @@ type Field struct {
 	HasDefaultNow bool
 	HasUpdateNow  bool
 	DefaultExpr   string
+	ComputedSpec  *ComputedColumn
+	ReadOnly      bool
 	Annotations   map[string]any
+}
+
+type ComputedColumn struct {
+	Expression ExpressionSpec
+	Stored     bool
+	ReadOnly   bool
+}
+
+func Computed(expr ExpressionSpec) ComputedColumn {
+	return ComputedColumn{Expression: expr, Stored: true, ReadOnly: true}
 }
 
 func (f Field) Primary() Field                { f.IsPrimary = true; return f }
@@ -154,6 +175,15 @@ func (f Field) Scale(s int) Field {
 }
 func (f Field) ArrayElement(elem FieldType) Field {
 	return f.annotate("array_element", elem)
+}
+
+func (f Field) Computed(spec ComputedColumn) Field {
+	copy := spec
+	f.ComputedSpec = &copy
+	if copy.ReadOnly {
+		f.ReadOnly = true
+	}
+	return f
 }
 func (f Field) annotate(key string, val any) Field {
 	if f.Annotations == nil {
