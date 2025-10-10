@@ -85,7 +85,7 @@ func generateMigrations(root string, entities []Entity, opts generatorOptions) (
 	slug = slugify(slug)
 	filename := fmt.Sprintf("%s_%s.sql", timestamp, slug)
 	path := filepath.Join(dir, filename)
-	if err := writeFile(path, []byte(sql)); err != nil {
+	if _, err := writeFile(path, []byte(sql)); err != nil {
 		return result, err
 	}
 	if err := writeSchemaSnapshot(root, next); err != nil {

@@ -33,9 +33,9 @@ func TestGenCmdForwardsOptions(t *testing.T) {
 	defer func() { runGenerator = original }()
 
 	var capturedOpts generator.GenerateOptions
-	runGenerator = func(root string, opts generator.GenerateOptions) (generator.MigrationResult, error) {
+	runGenerator = func(root string, opts generator.GenerateOptions) (generator.RunResult, error) {
 		capturedOpts = opts
-		return generator.MigrationResult{}, nil
+		return generator.RunResult{}, nil
 	}
 
 	cmd := newGenCmd()
@@ -77,16 +77,21 @@ func TestGenCmdForwardsOptions(t *testing.T) {
 			t.Fatalf("component[%d] = %q, want %q", i, capturedOpts.Components[i], comp)
 		}
 	}
+	if capturedOpts.StagingDir != "" {
+		t.Fatalf("expected StagingDir to be empty, got %q", capturedOpts.StagingDir)
+	}
 }
 
 func TestGenCmdDryRunPrintsSQL(t *testing.T) {
 	original := runGenerator
 	defer func() { runGenerator = original }()
 
-	runGenerator = func(root string, opts generator.GenerateOptions) (generator.MigrationResult, error) {
-		return generator.MigrationResult{
-			Operations: []generator.Operation{{Kind: generator.OpCreateTable, SQL: "CREATE TABLE users (...)"}},
-			SQL:        "-- migration preview\nCREATE TABLE users (...);",
+	runGenerator = func(root string, opts generator.GenerateOptions) (generator.RunResult, error) {
+		return generator.RunResult{
+			Migration: generator.MigrationResult{
+				Operations: []generator.Operation{{Kind: generator.OpCreateTable, SQL: "CREATE TABLE users (...)"}},
+				SQL:        "-- migration preview\nCREATE TABLE users (...);",
+			},
 		}, nil
 	}
 
@@ -121,10 +126,12 @@ func TestGenCmdDryRunDiffSummary(t *testing.T) {
 	original := runGenerator
 	defer func() { runGenerator = original }()
 
-	runGenerator = func(root string, opts generator.GenerateOptions) (generator.MigrationResult, error) {
-		return generator.MigrationResult{
-			Operations: []generator.Operation{{Kind: generator.OpCreateTable, Target: "users", SQL: "CREATE TABLE users (...);"}},
-			SQL:        "-- preview\nCREATE TABLE users (...);",
+	runGenerator = func(root string, opts generator.GenerateOptions) (generator.RunResult, error) {
+		return generator.RunResult{
+			Migration: generator.MigrationResult{
+				Operations: []generator.Operation{{Kind: generator.OpCreateTable, Target: "users", SQL: "CREATE TABLE users (...);"}},
+				SQL:        "-- preview\nCREATE TABLE users (...);",
+			},
 		}, nil
 	}
 

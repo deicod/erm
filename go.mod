@@ -5,6 +5,7 @@ go 1.25.2
 require (
 	github.com/99designs/gqlgen v0.17.80
 	github.com/coreos/go-oidc/v3 v3.16.0
+	github.com/fsnotify/fsnotify v1.7.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/lestrrat-go/jwx/v2 v2.1.6

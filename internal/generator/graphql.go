@@ -31,7 +31,8 @@ func writeGraphQLSchema(root string, entities []Entity) error {
 	buf.WriteString(buildGraphQLGeneratedSection(entities))
 	buf.WriteString("\n# END GENERATED\n")
 	path := filepath.Join(root, "internal", "graphql", "schema.graphqls")
-	return writeFile(path, buf.Bytes())
+	_, err := writeFile(path, buf.Bytes())
+	return err
 }
 
 func buildGraphQLGeneratedSection(entities []Entity) string {
