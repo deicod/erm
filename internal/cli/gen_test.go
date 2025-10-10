@@ -48,6 +48,9 @@ func TestGenCmdForwardsOptions(t *testing.T) {
 	if err := cmd.Flags().Set("name", "custom_slug"); err != nil {
 		t.Fatalf("set name: %v", err)
 	}
+	if err := cmd.Flags().Set("only", "orm,graphql"); err != nil {
+		t.Fatalf("set only: %v", err)
+	}
 
 	buf := &bytes.Buffer{}
 	cmd.SetOut(buf)
@@ -64,6 +67,15 @@ func TestGenCmdForwardsOptions(t *testing.T) {
 	}
 	if capturedOpts.MigrationName != "custom_slug" {
 		t.Fatalf("expected MigrationName to be custom_slug, got %q", capturedOpts.MigrationName)
+	}
+	want := []string{"graphql", "orm"}
+	if len(capturedOpts.Components) != len(want) {
+		t.Fatalf("expected %d components, got %d", len(want), len(capturedOpts.Components))
+	}
+	for i, comp := range want {
+		if capturedOpts.Components[i] != comp {
+			t.Fatalf("component[%d] = %q, want %q", i, capturedOpts.Components[i], comp)
+		}
 	}
 }
 
@@ -94,11 +106,74 @@ func TestGenCmdDryRunPrintsSQL(t *testing.T) {
 	if !strings.Contains(output, "generator: dry-run - no files were written") {
 		t.Fatalf("expected dry-run message, got:\n%s", output)
 	}
+	if !strings.Contains(output, "generator: application artifacts would be refreshed") {
+		t.Fatalf("expected application artifact message, got:\n%s", output)
+	}
 	if !strings.Contains(output, "generator: migration dry-run preview") {
 		t.Fatalf("expected preview header, got:\n%s", output)
 	}
 	if !strings.Contains(output, "CREATE TABLE users (...);") {
 		t.Fatalf("expected SQL preview, got:\n%s", output)
+	}
+}
+
+func TestGenCmdDryRunDiffSummary(t *testing.T) {
+	original := runGenerator
+	defer func() { runGenerator = original }()
+
+	runGenerator = func(root string, opts generator.GenerateOptions) (generator.MigrationResult, error) {
+		return generator.MigrationResult{
+			Operations: []generator.Operation{{Kind: generator.OpCreateTable, Target: "users", SQL: "CREATE TABLE users (...);"}},
+			SQL:        "-- preview\nCREATE TABLE users (...);",
+		}, nil
+	}
+
+	cmd := newGenCmd()
+	if err := cmd.Flags().Set("dry-run", "true"); err != nil {
+		t.Fatalf("set dry-run: %v", err)
+	}
+	if err := cmd.Flags().Set("diff", "true"); err != nil {
+		t.Fatalf("set diff: %v", err)
+	}
+
+	buf := &bytes.Buffer{}
+	cmd.SetOut(buf)
+
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("run gen: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "generator: diff summary") {
+		t.Fatalf("expected diff summary header, got:\n%s", output)
+	}
+	if !strings.Contains(output, "+ create_table users") {
+		t.Fatalf("expected diff entry, got:\n%s", output)
+	}
+}
+
+func TestGenCmdRejectsUnknownComponent(t *testing.T) {
+	cmd := newGenCmd()
+	if err := cmd.Flags().Set("only", "foo"); err != nil {
+		t.Fatalf("set only: %v", err)
+	}
+
+	err := cmd.RunE(cmd, []string{})
+	if err == nil {
+		t.Fatalf("expected error for unknown component")
+	}
+	var cerr CommandError
+	if !errors.As(err, &cerr) {
+		t.Fatalf("expected CommandError, got %T", err)
+	}
+	if !strings.Contains(cerr.Message, "unknown component") {
+		t.Fatalf("expected unknown component message, got %q", cerr.Message)
+	}
+	if cerr.Suggestion == "" {
+		t.Fatalf("expected suggestion to be populated")
+	}
+	if cerr.ExitStatus() != 2 {
+		t.Fatalf("expected exit code 2, got %d", cerr.ExitStatus())
 	}
 }
 
@@ -187,8 +262,18 @@ func TestMigrateCmdRequiresDSN(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error when DSN missing")
 	}
-	if !strings.Contains(err.Error(), "database.url") {
-		t.Fatalf("expected error to mention database.url, got %v", err)
+	var cerr CommandError
+	if !errors.As(err, &cerr) {
+		t.Fatalf("expected CommandError, got %T", err)
+	}
+	if !strings.Contains(cerr.Message, "database.url") {
+		t.Fatalf("expected error to mention database.url, got %q", cerr.Message)
+	}
+	if cerr.Suggestion == "" {
+		t.Fatalf("expected suggestion to be present")
+	}
+	if cerr.ExitStatus() != 2 {
+		t.Fatalf("expected exit status 2, got %d", cerr.ExitStatus())
 	}
 }
 
@@ -202,5 +287,8 @@ func TestRootRegistersGenAndMigrate(t *testing.T) {
 		if _, ok := names[name]; !ok {
 			t.Fatalf("expected %s command to be registered", name)
 		}
+	}
+	if flag := cmd.PersistentFlags().Lookup("verbose"); flag == nil {
+		t.Fatalf("expected verbose flag to be registered")
 	}
 }

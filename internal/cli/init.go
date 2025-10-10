@@ -13,6 +13,7 @@ func newInitCmd() *cobra.Command {
 		Use:   "init",
 		Short: "Initialize erm in the current workspace",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
 			files := []struct{ path, content string }{
 				{"erm.yaml", defaultConfig},
 				{"schema/.gitkeep", ""},
@@ -21,16 +22,16 @@ func newInitCmd() *cobra.Command {
 			}
 			for _, f := range files {
 				if err := os.MkdirAll(filepath.Dir(f.path), 0o755); err != nil {
-					return err
+					return wrapError(fmt.Sprintf("init: create directory %s", filepath.Dir(f.path)), err, "Check directory permissions or run the command from a writable workspace.", 1)
 				}
 				if _, err := os.Stat(f.path); err == nil {
 					continue // idempotent
 				}
 				if err := os.WriteFile(f.path, []byte(f.content), 0o644); err != nil {
-					return err
+					return wrapError(fmt.Sprintf("init: write file %s", f.path), err, "Ensure the path is writable and not protected by source control attributes.", 1)
 				}
 			}
-			fmt.Println("Initialized erm workspace.")
+			fmt.Fprintln(out, "Initialized erm workspace.")
 			return nil
 		},
 	}

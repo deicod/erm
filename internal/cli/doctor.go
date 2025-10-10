@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"runtime"
 
 	"github.com/spf13/cobra"
@@ -23,7 +22,11 @@ func newDoctorCmd() *cobra.Command {
 			}
 			printer.Summary(results)
 			if doctor.HasFailures(results) {
-				return fmt.Errorf("one or more checks failed")
+				return CommandError{
+					Message:    "doctor: one or more checks failed",
+					Suggestion: "Resolve the failing checks above and rerun `erm doctor`.",
+					ExitCode:   3,
+				}
 			}
 			return nil
 		},

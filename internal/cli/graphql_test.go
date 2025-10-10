@@ -22,16 +22,15 @@ func TestGraphQLInitCmdGeneratesResolverConfig(t *testing.T) {
 		t.Fatalf("chdir temp dir: %v", err)
 	}
 
-	graphqlDir := filepath.Join("internal", "graphql")
-	if err := os.MkdirAll(graphqlDir, 0o755); err != nil {
-		t.Fatalf("mkdir graphql dir: %v", err)
-	}
-
 	cmd := newGraphQLInitCmd()
 	if err := cmd.RunE(cmd, []string{}); err != nil {
 		t.Fatalf("execute graphql init: %v", err)
 	}
 
+	graphqlDir := filepath.Join("internal", "graphql")
+	if _, err := os.Stat(graphqlDir); err != nil {
+		t.Fatalf("graphql directory missing after init: %v", err)
+	}
 	contents, err := os.ReadFile(filepath.Join(graphqlDir, "gqlgen.yml"))
 	if err != nil {
 		t.Fatalf("read gqlgen.yml: %v", err)

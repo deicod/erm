@@ -25,20 +25,11 @@ and which files you may edit next.
 
 ## Global Options
 
-All commands support a consistent set of flags:
+The root command exposes a single persistent flag that you can use with any sub-command:
 
 | Flag | Description |
 |------|-------------|
-| `--config <path>` | Override the default `erm.yaml` location. |
-| `--dry-run` | Print the actions that would be taken without writing files. |
-| `--verbose` | Emit detailed logs, including resolved paths and diff summaries. |
-| `--no-color` | Disable ANSI colors for CI pipelines. |
-
-Environment variables:
-
-- `ERM_ENV` – Switch between `development`, `staging`, or `production` contexts defined in `erm.yaml`.
-- `ERM_DATABASE_URL` – Override the Postgres DSN for generation-time checks (useful in CI).
-- `ERM_OIDC_ISSUER` – Override issuer discovery URL without editing configuration files.
+| `-v, --verbose` | Print diagnostic logs and include wrapped error details alongside remediation hints. |
 
 ---
 
@@ -75,15 +66,20 @@ Use `.Mixins()` to embed reusable behaviors like `AuditMixin` or `SoftDeleteMixi
 Runs the full generation pipeline with explicit controls for migrations and output writes.
 
 ```bash
-erm gen --dry-run               # Print the migration SQL diff without touching the filesystem
-erm gen --name add_users_email  # Override the generated migration slug
-erm gen --force                 # Rewrite generated files even if contents are unchanged
+erm gen --dry-run                  # Print the migration SQL without touching the filesystem
+erm gen --only orm,graphql         # Regenerate application code without creating migrations
+erm gen --dry-run --diff           # Show a summarized schema diff along with the SQL preview
+erm gen --name add_users_email     # Override the generated migration slug
+erm gen --force                    # Rewrite generated files even if contents are unchanged
 ```
 
-- **Dry run** leaves ORM/GraphQL artifacts untouched and prints the SQL diff calculated from the schema snapshot so you can
-  review pending changes before writing migrations.
-- **Name** customizes the slug appended to the timestamp in the generated migration filename.
-- **Force** bypasses on-disk equality checks, rewriting artifacts when you need to regenerate after upgrading dependencies.
+Key flags:
+
+- `--only` limits generation to `orm`, `graphql`, or `migrations`. Omit the flag to run the full pipeline.
+- `--dry-run` previews the work without writing to disk. Combine it with `--diff` to emit a concise change summary.
+- `--diff` formats each migration operation with `+`, `-`, or `~` prefixes so you can skim structural changes quickly.
+- `--name` customizes the slug appended to the timestamp in the generated migration filename.
+- `--force` bypasses on-disk equality checks, rewriting artifacts when you need to regenerate after upgrading dependencies.
 
 Generation outputs when not running in dry-run mode:
 
