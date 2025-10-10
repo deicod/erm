@@ -83,6 +83,32 @@ Enable metrics endpoint by default at `/metrics`. Lock it down via reverse proxy
 
 ---
 
+## ORM Query Instrumentation
+
+`internal/orm/runtime.QueryObserver` fans structured logs, tracing spans, and metrics events into the observability stack. The observer cooperates with `internal/observability/metrics` and `internal/observability/tracing`, so you can opt into telemetry features by wiring the components together in one place:
+
+```go
+observer := runtime.QueryObserver{
+    Logger: runtime.QueryLoggerFunc(func(ctx context.Context, entry runtime.QueryLog) {
+        logger.Infow("orm query", "table", entry.Table, "operation", entry.Operation, "duration", entry.Duration, "error", entry.Err, "correlation_id", entry.CorrelationID)
+    }),
+    Tracer:    tracing.WithTracer(tracing.NewOTelTracer(provider, "my-service")),
+    Collector: metrics.WithCollector(appCollector),
+    Correlator: runtime.CorrelationProviderFunc(func(ctx context.Context) string {
+        return requestid.FromContext(ctx)
+    }),
+}
+db.UseObserver(observer)
+```
+
+- **Query logging** – Controlled by `observability.orm.query_logging`. Leave the logger `nil` when disabled to avoid allocations.
+- **Span emission** – Toggle via `observability.orm.emit_spans`. When `false`, the tracer can remain `nil` and no spans are produced.
+- **Correlation IDs** – Enable `observability.orm.correlation_ids` to enrich logs/spans with request identifiers. Provide a `CorrelationProvider` that extracts the value from your context chain.
+
+Because the observer copies SQL arguments before logging, downstream mutations cannot leak secrets or identifiers by accident. The span attributes always include `orm.table`, `orm.operation`, and `orm.arg_count` so trace backends can filter by entity without parsing log lines.
+
+---
+
 ## Logging
 
 - Structured logging uses `zap` with fields for request ID, viewer ID, and GraphQL operation name.
@@ -163,6 +189,10 @@ observability:
     format: json
   metrics:
     enabled: true
+  orm:
+    query_logging: true
+    emit_spans: true
+    correlation_ids: true
   dataloader:
     log_n_plus_one: true
 ```
@@ -199,6 +229,8 @@ Run `erm gen` to propagate changes into `internal/observability` packages.
 | Database connection exhaustion | Increase `max_conns`, ensure dataloaders do not spawn concurrent goroutines without limits. |
 | Persistent N+1 warnings | Verify resolvers call the generated dataloader helpers and avoid manual ORM queries inside loops. |
 | Missing metrics | Ensure `/metrics` endpoint is registered and not blocked by middleware. |
+| Query logs missing correlation IDs | Enable `observability.orm.correlation_ids` and provide a `runtime.CorrelationProvider` that reads your request ID from context. |
+| Spans not appearing in backend | Check that `observability.orm.emit_spans` is true and a tracer (e.g. `tracing.NewOTelTracer`) is supplied to the query observer. |
 
 ---
 

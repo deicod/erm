@@ -19,6 +19,8 @@ func (c *testCollector) RecordDataloaderBatch(_ string, size int, _ time.Duratio
 	atomic.AddInt32(&c.total, int32(size))
 }
 
+func (testCollector) RecordQuery(string, string, time.Duration, error) {}
+
 func TestEntityLoaderCachesResults(t *testing.T) {
 	var fetchCalls int32
 	collector := &testCollector{}

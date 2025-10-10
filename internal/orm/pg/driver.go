@@ -2,6 +2,7 @@ package pg
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -20,7 +21,10 @@ type Pool interface {
 	Close()
 }
 
-type DB struct{ Pool Pool }
+type DB struct {
+	Pool     Pool
+	Observer runtime.QueryObserver
+}
 
 // Option configures pgx connections.
 type Option func(*pgxpool.Config)
@@ -46,12 +50,37 @@ func (db *DB) Close() {
 
 func (db *DB) Select(ctx context.Context, spec runtime.SelectSpec) (pgx.Rows, error) {
 	sql, args := runtime.BuildSelectSQL(spec)
-	return db.Pool.Query(ctx, sql, args...)
+	obs := db.Observer.Observe(ctx, runtime.OperationSelect, spec.Table, sql, args)
+	rows, err := db.Pool.Query(obs.Context(), sql, args...)
+	obs.End(err)
+	return rows, err
 }
 
 func (db *DB) Aggregate(ctx context.Context, spec runtime.AggregateSpec) pgx.Row {
 	sql, args := runtime.BuildAggregateSQL(spec)
-	return db.Pool.QueryRow(ctx, sql, args...)
+	obs := db.Observer.Observe(ctx, runtime.OperationAggregate, spec.Table, sql, args)
+	row := db.Pool.QueryRow(obs.Context(), sql, args...)
+	return &observedRow{Row: row, obs: obs}
+}
+
+type observedRow struct {
+	pgx.Row
+	obs  runtime.QueryObservation
+	once sync.Once
+}
+
+func (r *observedRow) Scan(dest ...any) error {
+	err := r.Row.Scan(dest...)
+	r.once.Do(func() { r.obs.End(err) })
+	return err
+}
+
+// UseObserver attaches a query observer to the database handle.
+func (db *DB) UseObserver(observer runtime.QueryObserver) {
+	if db == nil {
+		return
+	}
+	db.Observer = observer
 }
 
 func newPoolConfig(url string, opts ...Option) (*pgxpool.Config, error) {

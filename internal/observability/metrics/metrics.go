@@ -5,6 +5,7 @@ import "time"
 // Collector captures lightweight instrumentation for ORM/GraphQL operations.
 type Collector interface {
 	RecordDataloaderBatch(name string, size int, duration time.Duration)
+	RecordQuery(table string, operation string, duration time.Duration, err error)
 }
 
 // NoopCollector discards all metrics.
@@ -12,6 +13,9 @@ type NoopCollector struct{}
 
 // RecordDataloaderBatch implements Collector.
 func (NoopCollector) RecordDataloaderBatch(string, int, time.Duration) {}
+
+// RecordQuery implements Collector.
+func (NoopCollector) RecordQuery(string, string, time.Duration, error) {}
 
 // MultiCollector fan-outs events to multiple collectors.
 type MultiCollector []Collector
@@ -23,6 +27,16 @@ func (mc MultiCollector) RecordDataloaderBatch(name string, size int, duration t
 			continue
 		}
 		c.RecordDataloaderBatch(name, size, duration)
+	}
+}
+
+// RecordQuery implements Collector.
+func (mc MultiCollector) RecordQuery(table string, operation string, duration time.Duration, err error) {
+	for _, c := range mc {
+		if c == nil {
+			continue
+		}
+		c.RecordQuery(table, operation, duration, err)
 	}
 }
 
