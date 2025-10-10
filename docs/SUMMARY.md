@@ -10,27 +10,29 @@ Relay-compliant APIs, Postgres migrations, OIDC security, and DX-focused tooling
 ### Core Concepts
 1. **[Overview](./overview.md)** – Architecture, request lifecycle, and configuration surfaces.
 2. **[Quickstart Guide](./quickstart.md)** – Bootstrap a project from schema to running server.
-3. **[Schema Definition Guide](./schema-definition.md)** – DSL reference with advanced patterns, including the new complex relationship playbook.
-4. **[GraphQL API](./graphql-api.md)** – Relay implementation details, resolvers, and extensions.
+3. **[Getting Started with the App Skeleton](./getting-started-app.md)** – Explore the files created by `erm init`, development workflows, and how to run the generated server.
+4. **[Getting Started with the Schema Skeleton](./getting-started-schema.md)** – Walkthrough of the generated schema template, defaults, and iteration workflow.
+5. **[Schema Definition Guide](./schema-definition.md)** – DSL reference with advanced patterns, including the new complex relationship playbook.
+6. **[GraphQL API](./graphql-api.md)** – Relay implementation details, resolvers, and extensions.
 
 ### Security and Integration
-5. **[Authentication & Authorization](./authentication.md)** – OIDC middleware, claims mapping, and directives.
-6. **[Extensions Support](./extensions.md)** – PostGIS, pgvector, TimescaleDB, and custom extensions.
+7. **[Authentication & Authorization](./authentication.md)** – OIDC middleware, claims mapping, and directives.
+8. **[Extensions Support](./extensions.md)** – PostGIS, pgvector, TimescaleDB, and custom extensions.
 
 ### Tools and Operations
-7. **[CLI Reference](./cli.md)** – Command usage, workflows, and automation tips.
-8. **[Performance & Observability](./performance-observability.md)** – Metrics, tracing, tuning guidance, plus a workspace timeline optimization scenario.
-9. **[Testing](./testing.md)** – Unit, integration, GraphQL, and benchmark strategies.
-10. **[CI/CD Guidance](./ci-cd.md)** – Pipeline patterns, schema validation, and rollback automation.
-11. **[Deployment Playbooks](./deployment.md)** – Environment targeting, secrets management, and rollback procedures.
+9. **[CLI Reference](./cli.md)** – Command usage, workflows, and automation tips.
+10. **[Performance & Observability](./performance-observability.md)** – Metrics, tracing, tuning guidance, plus a workspace timeline optimization scenario.
+11. **[Testing](./testing.md)** – Unit, integration, GraphQL, and benchmark strategies.
+12. **[CI/CD Guidance](./ci-cd.md)** – Pipeline patterns, schema validation, and rollback automation.
+13. **[Deployment Playbooks](./deployment.md)** – Environment targeting, secrets management, and rollback procedures.
 
 ### Practices and Troubleshooting
-12. **[Best Practices](./best-practices.md)** – Conventions for schema, GraphQL, security, and collaboration.
-13. **[Troubleshooting](./troubleshooting.md)** – Symptom-based remediation across the stack with a production incident playbook.
-14. **[End-to-End Examples](./examples.md)** – Comprehensive feature walkthroughs you can adapt, including the editorial workspace blog series.
+14. **[Best Practices](./best-practices.md)** – Conventions for schema, GraphQL, security, and collaboration.
+15. **[Troubleshooting](./troubleshooting.md)** – Symptom-based remediation across the stack with a production incident playbook.
+16. **[End-to-End Examples](./examples.md)** – Comprehensive feature walkthroughs you can adapt, including the editorial workspace blog series.
 
 ### Navigation
-15. **[README](./README.md)** – Portal entry point and map of the guides.
+17. **[README](./README.md)** – Portal entry point and map of the guides.
 
 ## Key Highlights
 

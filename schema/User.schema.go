@@ -2,6 +2,7 @@ package schema
 
 import "github.com/deicod/erm/internal/orm/dsl"
 
+// User models the User domain entity used in generator examples.
 type User struct{ dsl.Schema }
 
 func (User) Fields() []dsl.Field {
@@ -13,8 +14,13 @@ func (User) Fields() []dsl.Field {
 	}
 }
 
-func (User) Edges() []dsl.Edge    { return nil }
-func (User) Indexes() []dsl.Index { return nil }
+func (User) Edges() []dsl.Edge {
+	return nil
+}
+
+func (User) Indexes() []dsl.Index {
+	return nil
+}
 
 func (User) Query() dsl.QuerySpec {
 	return dsl.Query().

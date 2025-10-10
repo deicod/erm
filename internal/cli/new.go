@@ -38,16 +38,53 @@ var schemaTemplate = `package schema
 
 import "github.com/deicod/erm/internal/orm/dsl"
 
+// {{Entity}} models the {{Entity}} domain entity.
 type {{Entity}} struct{ dsl.Schema }
 
 func ({{Entity}}) Fields() []dsl.Field {
-    return []dsl.Field{
-        dsl.UUIDv7("id").Primary(),
-        dsl.TimestampTZ("created_at").DefaultNow(),
-        dsl.TimestampTZ("updated_at").UpdateNow(),
-    }
+        return []dsl.Field{
+                dsl.UUIDv7("id").Primary(),
+                dsl.Text("slug").
+                        Computed(dsl.Computed(dsl.Expression("id::text"))),
+                dsl.TimestampTZ("created_at").DefaultNow(),
+                dsl.TimestampTZ("updated_at").UpdateNow(),
+        }
 }
 
-func ({{Entity}}) Edges() []dsl.Edge { return nil }
-func ({{Entity}}) Indexes() []dsl.Index { return nil }
+// TODO: add relationships (ToOne/ToMany/etc) once other schemas exist.
+func ({{Entity}}) Edges() []dsl.Edge {
+        return nil
+}
+
+// TODO: add secondary indexes (Idx(...)) to support lookups beyond PK.
+func ({{Entity}}) Indexes() []dsl.Index {
+        return nil
+}
+
+// Query exposes reusable predicates, ordering, and aggregate helpers for the entity.
+func ({{Entity}}) Query() dsl.QuerySpec {
+        return dsl.Query().
+                WithPredicates(
+                        dsl.NewPredicate("id", dsl.OpEqual).Named("IDEq"),
+                ).
+                WithOrders(
+                        dsl.OrderBy("created_at", dsl.SortAsc).Named("CreatedAtAsc"),
+                ).
+                WithAggregates(
+                        dsl.CountAggregate("Count"),
+                )
+}
+
+// Annotations enable code generators like GraphQL to understand additional metadata.
+func ({{Entity}}) Annotations() []dsl.Annotation {
+        return []dsl.Annotation{
+                dsl.GraphQL("{{Entity}}",
+                        dsl.GraphQLSubscriptions(
+                                dsl.SubscriptionEventCreate,
+                                dsl.SubscriptionEventUpdate,
+                                dsl.SubscriptionEventDelete,
+                        ),
+                ),
+        }
+}
 `
