@@ -4,9 +4,11 @@ package gen
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/deicod/erm/internal/orm/id"
 	"github.com/deicod/erm/internal/orm/pg"
 	"github.com/deicod/erm/internal/orm/runtime"
+	"github.com/deicod/erm/internal/orm/runtime/cache"
 	"github.com/deicod/erm/internal/orm/runtime/validation"
 	"github.com/jackc/pgx/v5"
 	"time"
@@ -15,15 +17,37 @@ import (
 var ValidationRegistry = validation.NewRegistry()
 
 type Client struct {
-	db *pg.DB
+	db    *pg.DB
+	cache cache.Store
 }
 
 func NewClient(db *pg.DB) *Client {
-	return &Client{db: db}
+	return &Client{db: db, cache: cache.Nop()}
+}
+
+func (c *Client) UseCache(store cache.Store) {
+	if c == nil {
+		return
+	}
+	if store == nil {
+		store = cache.Nop()
+	}
+	c.cache = store
+}
+
+func (c *Client) cacheStore() cache.Store {
+	if c == nil || c.cache == nil {
+		return cache.Nop()
+	}
+	return c.cache
+}
+
+func makeCacheKey(entity string, id any) string {
+	return "orm:" + entity + ":" + fmt.Sprint(id)
 }
 
 func (c *Client) Users() *UserClient {
-	return &UserClient{db: c.db}
+	return &UserClient{db: c.db, cache: c.cacheStore()}
 }
 
 const userInsertQuery = `INSERT INTO users (id, created_at, updated_at) VALUES ($1, $2, $3) RETURNING id, created_at, updated_at`
@@ -34,7 +58,8 @@ const userCountQuery = `SELECT COUNT(*) FROM users`
 const userDeleteQuery = `DELETE FROM users WHERE id = $1`
 
 type UserClient struct {
-	db *pg.DB
+	db    *pg.DB
+	cache cache.Store
 }
 
 func (c *UserClient) Create(ctx context.Context, input *User) (*User, error) {
@@ -61,10 +86,83 @@ func (c *UserClient) Create(ctx context.Context, input *User) (*User, error) {
 	if err := row.Scan(&out.ID, &out.CreatedAt, &out.UpdatedAt); err != nil {
 		return nil, err
 	}
+	if c.cache != nil {
+		_ = c.cache.Set(ctx, makeCacheKey("User", out.ID), out)
+	}
 	return out, nil
 }
 
+func (c *UserClient) BulkCreate(ctx context.Context, inputs []*User) ([]*User, error) {
+	if len(inputs) == 0 {
+		return []*User{}, nil
+	}
+	rowsSpec := make([][]any, 0, len(inputs))
+	for _, input := range inputs {
+		if input == nil {
+			return nil, errors.New("input cannot be nil")
+		}
+		now := time.Now().UTC()
+		if input.ID == "" {
+			v, err := id.NewV7()
+			if err != nil {
+				return nil, err
+			}
+			input.ID = v
+		}
+		if input.CreatedAt.IsZero() {
+			input.CreatedAt = now
+		}
+		input.UpdatedAt = now
+		if err := ValidationRegistry.Validate(ctx, "User", validation.OpCreate, userValidationRecord(input), input); err != nil {
+			return nil, err
+		}
+		row := []any{input.ID, input.CreatedAt, input.UpdatedAt}
+		rowsSpec = append(rowsSpec, row)
+	}
+	spec := runtime.BulkInsertSpec{
+		Table:     "users",
+		Columns:   []string{"id", "created_at", "updated_at"},
+		Returning: []string{"id", "created_at", "updated_at"},
+		Rows:      rowsSpec,
+	}
+	sql, args, err := runtime.BuildBulkInsertSQL(spec)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := c.db.Pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var created []*User
+	for rows.Next() {
+		item := new(User)
+		if err := rows.Scan(&item.ID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		created = append(created, item)
+		if c.cache != nil {
+			_ = c.cache.Set(ctx, makeCacheKey("User", item.ID), item)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return created, nil
+}
+
 func (c *UserClient) ByID(ctx context.Context, id string) (*User, error) {
+	var cachedKey string
+	if c.cache != nil {
+		cachedKey = makeCacheKey("User", id)
+		if value, ok, err := c.cache.Get(ctx, cachedKey); err != nil {
+			return nil, err
+		} else if ok {
+			if entity, ok := value.(*User); ok {
+				return entity, nil
+			}
+		}
+	}
 	row := c.db.Pool.QueryRow(ctx, userSelectQuery, id)
 	out := new(User)
 	if err := row.Scan(&out.ID, &out.CreatedAt, &out.UpdatedAt); err != nil {
@@ -72,6 +170,10 @@ func (c *UserClient) ByID(ctx context.Context, id string) (*User, error) {
 			return nil, nil
 		}
 		return nil, err
+	}
+	if c.cache != nil {
+		cachedKey = makeCacheKey("User", out.ID)
+		_ = c.cache.Set(ctx, cachedKey, out)
 	}
 	return out, nil
 }
@@ -128,23 +230,104 @@ func (c *UserClient) Update(ctx context.Context, input *User) (*User, error) {
 	if err := row.Scan(&out.ID, &out.CreatedAt, &out.UpdatedAt); err != nil {
 		return nil, err
 	}
+	if c.cache != nil {
+		_ = c.cache.Set(ctx, makeCacheKey("User", out.ID), out)
+	}
 	return out, nil
 }
 
-func (c *UserClient) Delete(ctx context.Context, id string) error {
-	_, err := c.db.Pool.Exec(ctx, userDeleteQuery, id)
-	return err
+func (c *UserClient) BulkUpdate(ctx context.Context, inputs []*User) ([]*User, error) {
+	if len(inputs) == 0 {
+		return []*User{}, nil
+	}
+	specs := make([]runtime.BulkUpdateRow, 0, len(inputs))
+	for _, input := range inputs {
+		if input == nil {
+			return nil, errors.New("input cannot be nil")
+		}
+		if input.ID == "" {
+			return nil, errors.New("id is required")
+		}
+		now := time.Now().UTC()
+		input.UpdatedAt = now
+		if err := ValidationRegistry.Validate(ctx, "User", validation.OpUpdate, userValidationRecord(input), input); err != nil {
+			return nil, err
+		}
+		row := runtime.BulkUpdateRow{
+			Primary: input.ID,
+			Values:  []any{input.UpdatedAt},
+		}
+		specs = append(specs, row)
+	}
+	spec := runtime.BulkUpdateSpec{
+		Table:         "users",
+		PrimaryColumn: "id",
+		Columns:       []string{"updated_at"},
+		Returning:     []string{"id", "created_at", "updated_at"},
+		Rows:          specs,
+	}
+	sql, args, err := runtime.BuildBulkUpdateSQL(spec)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := c.db.Pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var updated []*User
+	for rows.Next() {
+		item := new(User)
+		if err := rows.Scan(&item.ID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		updated = append(updated, item)
+		if c.cache != nil {
+			_ = c.cache.Set(ctx, makeCacheKey("User", item.ID), item)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return updated, nil
 }
 
-func userValidationRecord(input *User) validation.Record {
-	if input == nil {
-		return nil
+func (c *UserClient) Delete(ctx context.Context, id string) error {
+	if _, err := c.db.Pool.Exec(ctx, userDeleteQuery, id); err != nil {
+		return err
 	}
-	return validation.Record{
-		"ID":        input.ID,
-		"CreatedAt": input.CreatedAt,
-		"UpdatedAt": input.UpdatedAt,
+	if c.cache != nil {
+		_ = c.cache.Delete(ctx, makeCacheKey("User", id))
 	}
+	return nil
+}
+
+func (c *UserClient) BulkDelete(ctx context.Context, ids []string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	spec := runtime.BulkDeleteSpec{
+		Table:         "users",
+		PrimaryColumn: "id",
+		IDs:           make([]any, len(ids)),
+	}
+	for i, id := range ids {
+		spec.IDs[i] = id
+	}
+	sql, args, err := runtime.BuildBulkDeleteSQL(spec)
+	if err != nil {
+		return 0, err
+	}
+	tag, err := c.db.Pool.Exec(ctx, sql, args...)
+	if err != nil {
+		return 0, err
+	}
+	if c.cache != nil {
+		for _, id := range ids {
+			_ = c.cache.Delete(ctx, makeCacheKey("User", id))
+		}
+	}
+	return int64(tag.RowsAffected()), nil
 }
 
 type UserQuery struct {
@@ -183,8 +366,8 @@ func (q *UserQuery) WhereIDEq(value string) *UserQuery {
 	return q
 }
 
-func (q *UserQuery) OrderByIDAsc() *UserQuery {
-	q.orders = append(q.orders, runtime.Order{Column: "id", Direction: runtime.SortAsc})
+func (q *UserQuery) OrderByCreatedAtAsc() *UserQuery {
+	q.orders = append(q.orders, runtime.Order{Column: "created_at", Direction: runtime.SortAsc})
 	return q
 }
 
@@ -214,6 +397,29 @@ func (q *UserQuery) All(ctx context.Context) ([]*User, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+func (q *UserQuery) Stream(ctx context.Context) (*runtime.Stream[*User], error) {
+	spec := runtime.SelectSpec{
+		Table:      "users",
+		Columns:    []string{"id", "created_at", "updated_at"},
+		Predicates: q.predicates,
+		Orders:     q.orders,
+		Limit:      q.effectiveLimit(),
+		Offset:     q.offset,
+	}
+	rows, err := q.db.Select(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	stream := runtime.NewStream[*User](rows, func(rows pgx.Rows) (*User, error) {
+		item := new(User)
+		if err := rows.Scan(&item.ID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		return item, nil
+	})
+	return stream, nil
 }
 
 func (q *UserQuery) First(ctx context.Context) (*User, error) {
@@ -275,4 +481,14 @@ func (q *UserQuery) effectiveLimit() int {
 		return q.maxLimit
 	}
 	return limit
+}
+func userValidationRecord(input *User) validation.Record {
+	if input == nil {
+		return nil
+	}
+	return validation.Record{
+		"ID":        input.ID,
+		"CreatedAt": input.CreatedAt,
+		"UpdatedAt": input.UpdatedAt,
+	}
 }

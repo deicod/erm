@@ -2,6 +2,12 @@
 module: ""
 database:
   url: "postgres://user:pass@localhost:5432/app?sslmode=disable"
+  pool:
+    max_conns: 20
+    min_conns: 4
+    max_conn_lifetime: 45m
+    max_conn_idle_time: 10m
+    health_check_period: 1m
 oidc:
   issuer: "https://auth.example.com/realms/app"
   audience: "web-spa"

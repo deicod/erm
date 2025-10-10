@@ -26,6 +26,15 @@ type DB struct {
 	Observer runtime.QueryObserver
 }
 
+// PoolConfig describes connection pool tuning knobs exposed via configuration.
+type PoolConfig struct {
+	MaxConns          int32
+	MinConns          int32
+	MaxConnLifetime   time.Duration
+	MaxConnIdleTime   time.Duration
+	HealthCheckPeriod time.Duration
+}
+
 // Option configures pgx connections.
 type Option func(*pgxpool.Config)
 
@@ -131,6 +140,27 @@ func WithMaxConnIdleTime(d time.Duration) Option {
 // WithHealthCheckPeriod configures the background health check period.
 func WithHealthCheckPeriod(d time.Duration) Option {
 	return func(cfg *pgxpool.Config) { cfg.HealthCheckPeriod = d }
+}
+
+// WithPoolConfig applies a group of pool settings derived from configuration.
+func WithPoolConfig(pc PoolConfig) Option {
+	return func(cfg *pgxpool.Config) {
+		if pc.MaxConns > 0 {
+			cfg.MaxConns = pc.MaxConns
+		}
+		if pc.MinConns > 0 {
+			cfg.MinConns = pc.MinConns
+		}
+		if pc.MaxConnLifetime > 0 {
+			cfg.MaxConnLifetime = pc.MaxConnLifetime
+		}
+		if pc.MaxConnIdleTime > 0 {
+			cfg.MaxConnIdleTime = pc.MaxConnIdleTime
+		}
+		if pc.HealthCheckPeriod > 0 {
+			cfg.HealthCheckPeriod = pc.HealthCheckPeriod
+		}
+	}
 }
 
 // WithTracer enables pgx tracing using the provided tracer abstraction.

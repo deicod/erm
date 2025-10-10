@@ -18,14 +18,18 @@ tune to keep latency low, detect N+1 issues, and observe behavior in production.
 ```yaml
 database:
   url: postgres://...
-  max_conns: 50
-  min_conns: 5
-  max_conn_lifetime: 30m
-  health_check_period: 30s
+  pool:
+    max_conns: 50
+    min_conns: 5
+    max_conn_lifetime: 30m
+    max_conn_idle_time: 5m
+    health_check_period: 30s
 ```
 
 - Use annotations to override per-entity transaction isolation if necessary (`dsl.TransactionIsolation(...)`).
 - Monitor pool stats via the `internal/observability/metrics` package (exported to Prometheus by default).
+
+The pgx wrapper now exposes a consolidated `pg.WithPoolConfig` option, so CLI consumers can translate the YAML block into runtime tuning without sprinkling individual setters throughout the codebase.
 
 ---
 
@@ -42,6 +46,22 @@ dsl.ToMany("comments", "Comment").
 - Enable N+1 logging by setting `ERM_OBSERVABILITY_DEBUG=1`. The resolver layer reports when an edge is loaded without using the
   dataloader.
 - Use the generated benchmark stubs in `benchmarks/` to profile dataloader behavior under load.
+
+## Bulk Operations & Streaming
+
+- Generated ORM clients include `BulkCreate`, `BulkUpdate`, and `BulkDelete` helpers. They rely on new runtime builders to issue
+  `INSERT ... VALUES (...)` and `UPDATE ... FROM data` statements with predictable placeholder ordering.
+- Pair the helpers with the streaming iterator API: `Query().Stream(ctx)` returns a `runtime.Stream[T]` that scans rows lazily so
+  long-running exports can process records without holding the entire result set in memory.
+- Benchmarks under `benchmarks/orm` cover the SQL builders—run `go test -bench BuildBulk ./benchmarks/orm` to measure planner
+  throughput as you tune batch sizes.
+
+## Cache Pluggability
+
+- ORM clients expose `Client.UseCache(cache.Store)`. Implement the `Store` interface from `internal/orm/runtime/cache` to plug
+  in Redis, in-memory LRU, or a no-op adapter. Primary-key lookups automatically populate or invalidate the cache across
+  create/update/delete (including bulk APIs).
+- Keep TTL logic inside your `Store` implementation; the ORM only deals with keys shaped like `orm:<Entity>:<id>`.
 
 ---
 

@@ -278,9 +278,9 @@ func writeClients(root string, entities []Entity) error {
 		}
 	}
 
-	imports := []string{"context", "errors"}
+	imports := []string{"context", "errors", "fmt"}
 	if hasEdges {
-		imports = append(imports, "fmt", "strings")
+		imports = append(imports, "strings")
 	}
 	if needsTime {
 		imports = append(imports, "time")
@@ -289,6 +289,7 @@ func writeClients(root string, entities []Entity) error {
 		"github.com/jackc/pgx/v5",
 		"github.com/deicod/erm/internal/orm/pg",
 		"github.com/deicod/erm/internal/orm/runtime",
+		"github.com/deicod/erm/internal/orm/runtime/cache",
 		"github.com/deicod/erm/internal/orm/runtime/validation",
 	)
 	if needsID {
@@ -306,8 +307,16 @@ func writeClients(root string, entities []Entity) error {
 
 	sort.Slice(entities, func(i, j int) bool { return entities[i].Name < entities[j].Name })
 
-	fmt.Fprintf(buf, "type Client struct {\n    db *pg.DB\n}\n\n")
-	fmt.Fprintf(buf, "func NewClient(db *pg.DB) *Client {\n    return &Client{db: db}\n}\n\n")
+	fmt.Fprintf(buf, "type Client struct {\n    db *pg.DB\n    cache cache.Store\n}\n\n")
+	fmt.Fprintf(buf, "func NewClient(db *pg.DB) *Client {\n    return &Client{db: db, cache: cache.Nop()}\n}\n\n")
+	fmt.Fprintf(buf, "func (c *Client) UseCache(store cache.Store) {\n")
+	fmt.Fprintf(buf, "    if c == nil {\n        return\n    }\n")
+	fmt.Fprintf(buf, "    if store == nil {\n        store = cache.Nop()\n    }\n")
+	fmt.Fprintf(buf, "    c.cache = store\n}\n\n")
+	fmt.Fprintf(buf, "func (c *Client) cacheStore() cache.Store {\n")
+	fmt.Fprintf(buf, "    if c == nil || c.cache == nil {\n        return cache.Nop()\n    }\n")
+	fmt.Fprintf(buf, "    return c.cache\n}\n\n")
+	fmt.Fprintf(buf, "func makeCacheKey(entity string, id any) string {\n    return \"orm:\" + entity + \":\" + fmt.Sprint(id)\n}\n\n")
 
 	entityIndex := make(map[string]Entity, len(entities))
 	for _, ent := range entities {
@@ -315,7 +324,7 @@ func writeClients(root string, entities []Entity) error {
 	}
 
 	for _, ent := range entities {
-		fmt.Fprintf(buf, "func (c *Client) %s() *%sClient {\n    return &%sClient{db: c.db}\n}\n\n", exportName(pluralize(ent.Name)), ent.Name, ent.Name)
+		fmt.Fprintf(buf, "func (c *Client) %s() *%sClient {\n    return &%sClient{db: c.db, cache: c.cacheStore()}\n}\n\n", exportName(pluralize(ent.Name)), ent.Name, ent.Name)
 	}
 
 	for _, ent := range entities {
@@ -362,16 +371,19 @@ func emitEntityClients(buf *bytes.Buffer, ent Entity, entityIndex map[string]Ent
 	fmt.Fprintf(buf, "const %sCountQuery = `%s`\n", lower, countSQL)
 	fmt.Fprintf(buf, "const %sDeleteQuery = `DELETE FROM %s WHERE %s = $1`\n\n", lower, pluralize(name), primaryColumn(ent))
 
-	fmt.Fprintf(buf, "type %sClient struct {\n    db *pg.DB\n}\n\n", name)
+	fmt.Fprintf(buf, "type %sClient struct {\n    db *pg.DB\n    cache cache.Store\n}\n\n", name)
 
 	emitCreateMethod(buf, ent)
+	emitBulkCreateMethod(buf, ent)
 	emitByIDMethod(buf, ent)
 	emitListMethod(buf, ent)
 	emitCountMethod(buf, ent)
 	if updateSQL != "" {
 		emitUpdateMethod(buf, ent)
+		emitBulkUpdateMethod(buf, ent, updateCols)
 	}
 	emitDeleteMethod(buf, ent)
+	emitBulkDeleteMethod(buf, ent)
 	emitQueryBuilder(buf, ent)
 	emitEdgeLoaders(buf, ent, entityIndex)
 }
@@ -425,11 +437,84 @@ func emitCreateMethod(buf *bytes.Buffer, ent Entity) {
 		fmt.Fprintf(buf, "&out.%s", exportName(field.Name))
 	}
 	fmt.Fprintf(buf, "); err != nil {\n        return nil, err\n    }\n")
+	fmt.Fprintf(buf, "    if c.cache != nil {\n        _ = c.cache.Set(ctx, makeCacheKey(%q, out.%s), out)\n    }\n", ent.Name, exportName(primaryField(ent).Name))
 	fmt.Fprintf(buf, "    return out, nil\n}\n\n")
+}
+
+func emitBulkCreateMethod(buf *bytes.Buffer, ent Entity) {
+	fmt.Fprintf(buf, "func (c *%sClient) BulkCreate(ctx context.Context, inputs []*%s) ([]*%s, error) {\n", ent.Name, ent.Name, ent.Name)
+	fmt.Fprintf(buf, "    if len(inputs) == 0 {\n        return []*%s{}, nil\n    }\n", ent.Name)
+	fmt.Fprintf(buf, "    rowsSpec := make([][]any, 0, len(inputs))\n")
+	needsNow := false
+	for _, field := range ent.Fields {
+		if field.HasDefaultNow || field.HasUpdateNow {
+			needsNow = true
+			break
+		}
+	}
+	fmt.Fprintf(buf, "    for _, input := range inputs {\n")
+	fmt.Fprintf(buf, "        if input == nil {\n            return nil, errors.New(\"input cannot be nil\")\n        }\n")
+	if needsNow {
+		fmt.Fprintf(buf, "        now := time.Now().UTC()\n")
+	}
+	for _, field := range ent.Fields {
+		fieldName := exportName(field.Name)
+		switch {
+		case field.IsPrimary && field.Type == dsl.TypeUUID:
+			fmt.Fprintf(buf, "        if input.%s == \"\" {\n", fieldName)
+			fmt.Fprintf(buf, "            v, err := id.NewV7()\n")
+			fmt.Fprintf(buf, "            if err != nil { return nil, err }\n")
+			fmt.Fprintf(buf, "            input.%s = v\n", fieldName)
+			fmt.Fprintf(buf, "        }\n")
+		}
+		if field.HasDefaultNow {
+			fmt.Fprintf(buf, "        if input.%s.IsZero() { input.%s = now }\n", fieldName, fieldName)
+		}
+		if field.HasUpdateNow {
+			fmt.Fprintf(buf, "        input.%s = now\n", fieldName)
+		}
+	}
+	fmt.Fprintf(buf, "        if err := ValidationRegistry.Validate(ctx, %q, validation.OpCreate, %sValidationRecord(input), input); err != nil {\n            return nil, err\n        }\n", ent.Name, strings.ToLower(ent.Name))
+	fmt.Fprintf(buf, "        row := []any{")
+	for i, field := range ent.Fields {
+		if i > 0 {
+			fmt.Fprintf(buf, ", ")
+		}
+		fmt.Fprintf(buf, "input.%s", exportName(field.Name))
+	}
+	fmt.Fprintf(buf, "}\n")
+	fmt.Fprintf(buf, "        rowsSpec = append(rowsSpec, row)\n")
+	fmt.Fprintf(buf, "    }\n")
+	columns := entityColumns(ent)
+	fmt.Fprintf(buf, "    spec := runtime.BulkInsertSpec{\n")
+	fmt.Fprintf(buf, "        Table: %q,\n", pluralize(ent.Name))
+	fmt.Fprintf(buf, "        Columns: %s,\n", quoteStringSlice(columns))
+	fmt.Fprintf(buf, "        Returning: %s,\n", quoteStringSlice(columns))
+	fmt.Fprintf(buf, "        Rows: rowsSpec,\n")
+	fmt.Fprintf(buf, "    }\n")
+	fmt.Fprintf(buf, "    sql, args, err := runtime.BuildBulkInsertSQL(spec)\n")
+	fmt.Fprintf(buf, "    if err != nil {\n        return nil, err\n    }\n")
+	fmt.Fprintf(buf, "    rows, err := c.db.Pool.Query(ctx, sql, args...)\n")
+	fmt.Fprintf(buf, "    if err != nil {\n        return nil, err\n    }\n")
+	fmt.Fprintf(buf, "    defer rows.Close()\n")
+	fmt.Fprintf(buf, "    var created []*%s\n", ent.Name)
+	fmt.Fprintf(buf, "    for rows.Next() {\n")
+	fmt.Fprintf(buf, "        item := new(%s)\n", ent.Name)
+	fmt.Fprintf(buf, "        if err := rows.Scan(%s); err != nil {\n            return nil, err\n        }\n", scanArgs(ent))
+	fmt.Fprintf(buf, "        created = append(created, item)\n")
+	fmt.Fprintf(buf, "        if c.cache != nil {\n            _ = c.cache.Set(ctx, makeCacheKey(%q, item.%s), item)\n        }\n", ent.Name, exportName(primaryField(ent).Name))
+	fmt.Fprintf(buf, "    }\n")
+	fmt.Fprintf(buf, "    if err := rows.Err(); err != nil {\n        return nil, err\n    }\n")
+	fmt.Fprintf(buf, "    return created, nil\n}\n\n")
 }
 
 func emitByIDMethod(buf *bytes.Buffer, ent Entity) {
 	fmt.Fprintf(buf, "func (c *%sClient) ByID(ctx context.Context, id string) (*%s, error) {\n", ent.Name, ent.Name)
+	fmt.Fprintf(buf, "    var cachedKey string\n")
+	fmt.Fprintf(buf, "    if c.cache != nil {\n")
+	fmt.Fprintf(buf, "        cachedKey = makeCacheKey(%q, id)\n", ent.Name)
+	fmt.Fprintf(buf, "        if value, ok, err := c.cache.Get(ctx, cachedKey); err != nil {\n            return nil, err\n        } else if ok {\n            if entity, ok := value.(*%s); ok {\n                return entity, nil\n            }\n        }\n", ent.Name)
+	fmt.Fprintf(buf, "    }\n")
 	fmt.Fprintf(buf, "    row := c.db.Pool.QueryRow(ctx, %sSelectQuery, id)\n", strings.ToLower(ent.Name))
 	fmt.Fprintf(buf, "    out := new(%s)\n", ent.Name)
 	fmt.Fprintf(buf, "    if err := row.Scan(")
@@ -440,6 +525,7 @@ func emitByIDMethod(buf *bytes.Buffer, ent Entity) {
 		fmt.Fprintf(buf, "&out.%s", exportName(field.Name))
 	}
 	fmt.Fprintf(buf, "); err != nil {\n        if errors.Is(err, pgx.ErrNoRows) {\n            return nil, nil\n        }\n        return nil, err\n    }\n")
+	fmt.Fprintf(buf, "    if c.cache != nil {\n        cachedKey = makeCacheKey(%q, out.%s)\n        _ = c.cache.Set(ctx, cachedKey, out)\n    }\n", ent.Name, exportName(primaryField(ent).Name))
 	fmt.Fprintf(buf, "    return out, nil\n}\n\n")
 }
 
@@ -510,13 +596,100 @@ func emitUpdateMethod(buf *bytes.Buffer, ent Entity) {
 		fmt.Fprintf(buf, "&out.%s", exportName(field.Name))
 	}
 	fmt.Fprintf(buf, "); err != nil {\n        return nil, err\n    }\n")
+	fmt.Fprintf(buf, "    if c.cache != nil {\n        _ = c.cache.Set(ctx, makeCacheKey(%q, out.%s), out)\n    }\n", ent.Name, exportName(primaryField(ent).Name))
 	fmt.Fprintf(buf, "    return out, nil\n}\n\n")
+}
+
+func emitBulkUpdateMethod(buf *bytes.Buffer, ent Entity, updateCols []string) {
+	if len(updateCols) == 0 {
+		return
+	}
+	updateFields := make([]dsl.Field, len(updateCols))
+	for i, col := range updateCols {
+		updateFields[i] = findFieldByColumn(ent, col)
+	}
+	fmt.Fprintf(buf, "func (c *%sClient) BulkUpdate(ctx context.Context, inputs []*%s) ([]*%s, error) {\n", ent.Name, ent.Name, ent.Name)
+	fmt.Fprintf(buf, "    if len(inputs) == 0 {\n        return []*%s{}, nil\n    }\n", ent.Name)
+	fmt.Fprintf(buf, "    specs := make([]runtime.BulkUpdateRow, 0, len(inputs))\n")
+	needsNow := false
+	for _, field := range ent.Fields {
+		if field.HasUpdateNow {
+			needsNow = true
+			break
+		}
+	}
+	primaryFieldName := exportName(primaryField(ent).Name)
+	fmt.Fprintf(buf, "    for _, input := range inputs {\n")
+	fmt.Fprintf(buf, "        if input == nil {\n            return nil, errors.New(\"input cannot be nil\")\n        }\n")
+	fmt.Fprintf(buf, "        if input.%s == \"\" {\n            return nil, errors.New(\"id is required\")\n        }\n", primaryFieldName)
+	if needsNow {
+		fmt.Fprintf(buf, "        now := time.Now().UTC()\n")
+	}
+	for _, field := range ent.Fields {
+		if field.HasUpdateNow {
+			fmt.Fprintf(buf, "        input.%s = now\n", exportName(field.Name))
+		}
+	}
+	fmt.Fprintf(buf, "        if err := ValidationRegistry.Validate(ctx, %q, validation.OpUpdate, %sValidationRecord(input), input); err != nil {\n            return nil, err\n        }\n", ent.Name, strings.ToLower(ent.Name))
+	fmt.Fprintf(buf, "        row := runtime.BulkUpdateRow{\n")
+	fmt.Fprintf(buf, "            Primary: input.%s,\n", primaryFieldName)
+	fmt.Fprintf(buf, "            Values: []any{")
+	for i, field := range updateFields {
+		if i > 0 {
+			fmt.Fprintf(buf, ", ")
+		}
+		fmt.Fprintf(buf, "input.%s", exportName(field.Name))
+	}
+	fmt.Fprintf(buf, "},\n")
+	fmt.Fprintf(buf, "        }\n")
+	fmt.Fprintf(buf, "        specs = append(specs, row)\n")
+	fmt.Fprintf(buf, "    }\n")
+	columns := entityColumns(ent)
+	fmt.Fprintf(buf, "    spec := runtime.BulkUpdateSpec{\n")
+	fmt.Fprintf(buf, "        Table: %q,\n", pluralize(ent.Name))
+	fmt.Fprintf(buf, "        PrimaryColumn: %q,\n", primaryColumn(ent))
+	fmt.Fprintf(buf, "        Columns: %s,\n", quoteStringSlice(updateCols))
+	fmt.Fprintf(buf, "        Returning: %s,\n", quoteStringSlice(columns))
+	fmt.Fprintf(buf, "        Rows: specs,\n")
+	fmt.Fprintf(buf, "    }\n")
+	fmt.Fprintf(buf, "    sql, args, err := runtime.BuildBulkUpdateSQL(spec)\n")
+	fmt.Fprintf(buf, "    if err != nil {\n        return nil, err\n    }\n")
+	fmt.Fprintf(buf, "    rows, err := c.db.Pool.Query(ctx, sql, args...)\n")
+	fmt.Fprintf(buf, "    if err != nil {\n        return nil, err\n    }\n")
+	fmt.Fprintf(buf, "    defer rows.Close()\n")
+	fmt.Fprintf(buf, "    var updated []*%s\n", ent.Name)
+	fmt.Fprintf(buf, "    for rows.Next() {\n")
+	fmt.Fprintf(buf, "        item := new(%s)\n", ent.Name)
+	fmt.Fprintf(buf, "        if err := rows.Scan(%s); err != nil {\n            return nil, err\n        }\n", scanArgs(ent))
+	fmt.Fprintf(buf, "        updated = append(updated, item)\n")
+	fmt.Fprintf(buf, "        if c.cache != nil {\n            _ = c.cache.Set(ctx, makeCacheKey(%q, item.%s), item)\n        }\n", ent.Name, primaryFieldName)
+	fmt.Fprintf(buf, "    }\n")
+	fmt.Fprintf(buf, "    if err := rows.Err(); err != nil {\n        return nil, err\n    }\n")
+	fmt.Fprintf(buf, "    return updated, nil\n}\n\n")
 }
 
 func emitDeleteMethod(buf *bytes.Buffer, ent Entity) {
 	fmt.Fprintf(buf, "func (c *%sClient) Delete(ctx context.Context, id string) error {\n", ent.Name)
-	fmt.Fprintf(buf, "    _, err := c.db.Pool.Exec(ctx, %sDeleteQuery, id)\n", strings.ToLower(ent.Name))
-	fmt.Fprintf(buf, "    return err\n}\n\n")
+	fmt.Fprintf(buf, "    if _, err := c.db.Pool.Exec(ctx, %sDeleteQuery, id); err != nil {\n        return err\n    }\n", strings.ToLower(ent.Name))
+	fmt.Fprintf(buf, "    if c.cache != nil {\n        _ = c.cache.Delete(ctx, makeCacheKey(%q, id))\n    }\n", ent.Name)
+	fmt.Fprintf(buf, "    return nil\n}\n\n")
+}
+
+func emitBulkDeleteMethod(buf *bytes.Buffer, ent Entity) {
+	fmt.Fprintf(buf, "func (c *%sClient) BulkDelete(ctx context.Context, ids []string) (int64, error) {\n", ent.Name)
+	fmt.Fprintf(buf, "    if len(ids) == 0 {\n        return 0, nil\n    }\n")
+	fmt.Fprintf(buf, "    spec := runtime.BulkDeleteSpec{\n")
+	fmt.Fprintf(buf, "        Table: %q,\n", pluralize(ent.Name))
+	fmt.Fprintf(buf, "        PrimaryColumn: %q,\n", primaryColumn(ent))
+	fmt.Fprintf(buf, "        IDs: make([]any, len(ids)),\n")
+	fmt.Fprintf(buf, "    }\n")
+	fmt.Fprintf(buf, "    for i, id := range ids {\n        spec.IDs[i] = id\n    }\n")
+	fmt.Fprintf(buf, "    sql, args, err := runtime.BuildBulkDeleteSQL(spec)\n")
+	fmt.Fprintf(buf, "    if err != nil {\n        return 0, err\n    }\n")
+	fmt.Fprintf(buf, "    tag, err := c.db.Pool.Exec(ctx, sql, args...)\n")
+	fmt.Fprintf(buf, "    if err != nil {\n        return 0, err\n    }\n")
+	fmt.Fprintf(buf, "    if c.cache != nil {\n        for _, id := range ids {\n            _ = c.cache.Delete(ctx, makeCacheKey(%q, id))\n        }\n    }\n", ent.Name)
+	fmt.Fprintf(buf, "    return int64(tag.RowsAffected()), nil\n}\n\n")
 }
 
 func emitValidationRecordHelper(buf *bytes.Buffer, ent Entity) {
@@ -578,6 +751,7 @@ func emitQueryBuilder(buf *bytes.Buffer, ent Entity) {
 	}
 
 	emitQueryAll(buf, ent, columns)
+	emitQueryStream(buf, ent, columns)
 	emitQueryFirst(buf, ent)
 
 	for _, agg := range spec.Aggregates {
@@ -619,6 +793,25 @@ func emitQueryAll(buf *bytes.Buffer, ent Entity, columns []string) {
 	fmt.Fprintf(buf, "        result = append(result, item)\n    }\n")
 	fmt.Fprintf(buf, "    if err := rows.Err(); err != nil {\n        return nil, err\n    }\n")
 	fmt.Fprintf(buf, "    return result, nil\n}\n\n")
+}
+
+func emitQueryStream(buf *bytes.Buffer, ent Entity, columns []string) {
+	fmt.Fprintf(buf, "func (q *%sQuery) Stream(ctx context.Context) (*runtime.Stream[*%s], error) {\n", ent.Name, ent.Name)
+	fmt.Fprintf(buf, "    spec := runtime.SelectSpec{\n")
+	fmt.Fprintf(buf, "        Table: %q,\n", pluralize(ent.Name))
+	fmt.Fprintf(buf, "        Columns: %s,\n", quoteStringSlice(columns))
+	fmt.Fprintf(buf, "        Predicates: q.predicates,\n")
+	fmt.Fprintf(buf, "        Orders: q.orders,\n")
+	fmt.Fprintf(buf, "        Limit: q.effectiveLimit(),\n")
+	fmt.Fprintf(buf, "        Offset: q.offset,\n")
+	fmt.Fprintf(buf, "    }\n")
+	fmt.Fprintf(buf, "    rows, err := q.db.Select(ctx, spec)\n")
+	fmt.Fprintf(buf, "    if err != nil {\n        return nil, err\n    }\n")
+	fmt.Fprintf(buf, "    stream := runtime.NewStream[*%s](rows, func(rows pgx.Rows) (*%s, error) {\n", ent.Name, ent.Name)
+	fmt.Fprintf(buf, "        item := new(%s)\n", ent.Name)
+	fmt.Fprintf(buf, "        if err := rows.Scan(%s); err != nil {\n            return nil, err\n        }\n", scanArgs(ent))
+	fmt.Fprintf(buf, "        return item, nil\n    })\n")
+	fmt.Fprintf(buf, "    return stream, nil\n}\n\n")
 }
 
 func emitQueryFirst(buf *bytes.Buffer, ent Entity) {
