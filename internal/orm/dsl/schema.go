@@ -2,6 +2,54 @@ package dsl
 
 type Schema struct{}
 
+type Annotation struct {
+	Name    string
+	Payload map[string]any
+}
+
+const AnnotationGraphQL = "graphql"
+
+type GraphQLOption struct {
+	Key   string
+	Value any
+}
+
+type SubscriptionEvent string
+
+const (
+	SubscriptionEventCreate SubscriptionEvent = "create"
+	SubscriptionEventUpdate SubscriptionEvent = "update"
+	SubscriptionEventDelete SubscriptionEvent = "delete"
+)
+
+func GraphQL(name string, opts ...GraphQLOption) Annotation {
+	payload := map[string]any{}
+	if name != "" {
+		payload["name"] = name
+	}
+	for _, opt := range opts {
+		if opt.Key == "" {
+			continue
+		}
+		payload[opt.Key] = opt.Value
+	}
+	return Annotation{Name: AnnotationGraphQL, Payload: payload}
+}
+
+func GraphQLSubscriptions(events ...SubscriptionEvent) GraphQLOption {
+	if len(events) == 0 {
+		return GraphQLOption{Key: "subscriptions", Value: []string{}}
+	}
+	values := make([]string, 0, len(events))
+	for _, event := range events {
+		if event == "" {
+			continue
+		}
+		values = append(values, string(event))
+	}
+	return GraphQLOption{Key: "subscriptions", Value: values}
+}
+
 type ComparisonOperator string
 
 const (

@@ -9,20 +9,34 @@ import (
 	"github.com/deicod/erm/internal/graphql/dataloaders"
 	"github.com/deicod/erm/internal/graphql/directives"
 	"github.com/deicod/erm/internal/graphql/resolvers"
+	"github.com/deicod/erm/internal/graphql/subscriptions"
 	"github.com/deicod/erm/internal/observability/metrics"
 	"github.com/deicod/erm/internal/orm/gen"
 )
 
 // Options configures the executable schema and request scaffolding.
 type Options struct {
-	ORM       *gen.Client
-	Collector metrics.Collector
+	ORM           *gen.Client
+	Collector     metrics.Collector
+	Subscriptions SubscriptionOptions
+}
+
+type SubscriptionOptions struct {
+	Enabled    bool
+	Broker     subscriptions.Broker
+	Transports SubscriptionTransports
+}
+
+type SubscriptionTransports struct {
+	Websocket bool
+	GraphQLWS bool
 }
 
 // NewExecutableSchema builds a gqlgen executable schema with default directives wired in.
 func NewExecutableSchema(opts Options) gql.ExecutableSchema {
+	opts = normaliseOptions(opts)
 	collector := metrics.WithCollector(opts.Collector)
-	resolver := resolvers.NewWithOptions(resolvers.Options{ORM: opts.ORM, Collector: collector})
+	resolver := resolvers.NewWithOptions(resolvers.Options{ORM: opts.ORM, Collector: collector, Subscriptions: opts.Subscriptions.Broker})
 	cfg := graphql.Config{
 		Resolvers: resolver,
 		Directives: graphql.DirectiveRoot{
@@ -42,7 +56,22 @@ func NewExecutableSchema(opts Options) gql.ExecutableSchema {
 
 // WithLoaders decorates the provided context with request-scoped dataloaders.
 func WithLoaders(ctx context.Context, opts Options) context.Context {
+	opts = normaliseOptions(opts)
 	collector := metrics.WithCollector(opts.Collector)
 	loaders := dataloaders.New(opts.ORM, collector)
 	return dataloaders.ToContext(ctx, loaders)
+}
+
+func normaliseOptions(opts Options) Options {
+	subs := opts.Subscriptions
+	if subs.Enabled && subs.Broker == nil {
+		subs.Broker = subscriptions.NewInMemoryBroker()
+	}
+	if subs.Enabled {
+		if !subs.Transports.Websocket && !subs.Transports.GraphQLWS {
+			subs.Transports.Websocket = true
+		}
+	}
+	opts.Subscriptions = subs
+	return opts
 }

@@ -162,10 +162,12 @@ func (r *mutationResolver) CreateUser(ctx context.Context, input graphql.CreateU
 	if err != nil {
 		return nil, err
 	}
+	gqlRecord := toGraphQLUser(record)
 	r.primeUser(ctx, record)
+	publishSubscriptionEvent(ctx, r.subscriptionBroker(), "User", SubscriptionTriggerCreated, gqlRecord)
 	return &graphql.CreateUserPayload{
 		ClientMutationID: input.ClientMutationID,
-		User:             toGraphQLUser(record),
+		User:             gqlRecord,
 	}, nil
 }
 
@@ -188,10 +190,12 @@ func (r *mutationResolver) UpdateUser(ctx context.Context, input graphql.UpdateU
 	if err != nil {
 		return nil, err
 	}
+	gqlRecord := toGraphQLUser(record)
 	r.primeUser(ctx, record)
+	publishSubscriptionEvent(ctx, r.subscriptionBroker(), "User", SubscriptionTriggerUpdated, gqlRecord)
 	return &graphql.UpdateUserPayload{
 		ClientMutationID: input.ClientMutationID,
-		User:             toGraphQLUser(record),
+		User:             gqlRecord,
 	}, nil
 }
 
@@ -206,8 +210,112 @@ func (r *mutationResolver) DeleteUser(ctx context.Context, input graphql.DeleteU
 	if err := r.ORM.Users().Delete(ctx, nativeID); err != nil {
 		return nil, err
 	}
+	deletedID := relay.ToGlobalID("User", nativeID)
+	publishSubscriptionEvent(ctx, r.subscriptionBroker(), "User", SubscriptionTriggerDeleted, deletedID)
 	return &graphql.DeleteUserPayload{
 		ClientMutationID: input.ClientMutationID,
-		DeletedUserID:    relay.ToGlobalID("User", nativeID),
+		DeletedUserID:    deletedID,
 	}, nil
+}
+
+func (r *subscriptionResolver) UserCreated(ctx context.Context) (<-chan *graphql.User, error) {
+	stream, stop, err := subscribeToEntity(ctx, r.subscriptionBroker(), "User", SubscriptionTriggerCreated)
+	if err != nil {
+		return nil, err
+	}
+	out := make(chan *graphql.User, 1)
+	go func() {
+		defer close(out)
+		if stop != nil {
+			defer stop()
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case payload, ok := <-stream:
+				if !ok {
+					return
+				}
+				record, ok := payload.(*graphql.User)
+				if !ok || record == nil {
+					continue
+				}
+				select {
+				case out <- record:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return out, nil
+}
+
+func (r *subscriptionResolver) UserUpdated(ctx context.Context) (<-chan *graphql.User, error) {
+	stream, stop, err := subscribeToEntity(ctx, r.subscriptionBroker(), "User", SubscriptionTriggerUpdated)
+	if err != nil {
+		return nil, err
+	}
+	out := make(chan *graphql.User, 1)
+	go func() {
+		defer close(out)
+		if stop != nil {
+			defer stop()
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case payload, ok := <-stream:
+				if !ok {
+					return
+				}
+				record, ok := payload.(*graphql.User)
+				if !ok || record == nil {
+					continue
+				}
+				select {
+				case out <- record:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return out, nil
+}
+
+func (r *subscriptionResolver) UserDeleted(ctx context.Context) (<-chan string, error) {
+	stream, stop, err := subscribeToEntity(ctx, r.subscriptionBroker(), "User", SubscriptionTriggerDeleted)
+	if err != nil {
+		return nil, err
+	}
+	out := make(chan string, 1)
+	go func() {
+		defer close(out)
+		if stop != nil {
+			defer stop()
+		}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case payload, ok := <-stream:
+				if !ok {
+					return
+				}
+				id, ok := payload.(string)
+				if !ok || id == "" {
+					continue
+				}
+				select {
+				case out <- id:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return out, nil
 }

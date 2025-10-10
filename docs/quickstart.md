@@ -221,14 +221,32 @@ mutation {
 
 ---
 
-## 7. Add Authentication
+## 7. Enable Subscriptions
+
+Opt in by flipping `graphql.subscriptions.enabled` to `true` in `erm.yaml` and annotating entities with `dsl.GraphQLSubscriptions`. The generator adds `userCreated`, `userUpdated`, and `userDeleted` fields (mirroring the triggers you request) plus resolver stubs that publish after ORM mutations succeed. Swap `handler.NewDefaultServer` for `server.NewServer` so websocket transports are registered automatically, or supply your own `subscriptions.Broker` implementation when you need Redis/Kafka fan-out.
+
+```go
+func (User) Annotations() []dsl.Annotation {
+    return []dsl.Annotation{
+        dsl.GraphQL("User",
+            dsl.GraphQLSubscriptions(dsl.SubscriptionEventCreate, dsl.SubscriptionEventUpdate),
+        ),
+    }
+}
+```
+
+Background jobs can deliver events manually via `resolvers.Publish(ctx, broker, "User", resolvers.SubscriptionTriggerUpdated, gqlUser)`—consumers receive hydrated GraphQL objects without polling.
+
+---
+
+## 8. Add Authentication
 
 Set up Keycloak (or your provider) and update `erm.yaml` `oidc` block. Restart the server to pick up configuration. Use
 `scripts/get-token.sh` to fetch tokens for Playground.
 
 ---
 
-## 8. Run Tests
+## 9. Run Tests
 
 ```bash
 go test ./...
@@ -238,7 +256,7 @@ Use `internal/testing` helpers (sandbox + GraphQL harness) to create targeted te
 
 ---
 
-## 9. Next Steps
+## 10. Next Steps
 
 - Explore [schema-definition.md](./schema-definition.md) for advanced DSL patterns.
 - Configure tracing and metrics per [performance-observability.md](./performance-observability.md).

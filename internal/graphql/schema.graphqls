@@ -20,6 +20,10 @@ type Mutation {
   _noop: Boolean
 }
 
+type Subscription {
+  _noop: Boolean
+}
+
 # BEGIN GENERATED
 scalar Timestamptz
 
@@ -83,6 +87,12 @@ extend type Mutation {
   createUser(input: CreateUserInput!): CreateUserPayload!
   updateUser(input: UpdateUserInput!): UpdateUserPayload!
   deleteUser(input: DeleteUserInput!): DeleteUserPayload!
+}
+
+extend type Subscription {
+  userCreated: User!
+  userUpdated: User!
+  userDeleted: ID!
 }
 
 # END GENERATED

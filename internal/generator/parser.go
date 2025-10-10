@@ -14,11 +14,12 @@ import (
 )
 
 type Entity struct {
-	Name    string
-	Fields  []dsl.Field
-	Edges   []dsl.Edge
-	Indexes []dsl.Index
-	Query   dsl.QuerySpec
+	Name        string
+	Fields      []dsl.Field
+	Edges       []dsl.Edge
+	Indexes     []dsl.Index
+	Query       dsl.QuerySpec
+	Annotations []dsl.Annotation
 }
 
 func loadEntities(root string) ([]Entity, error) {
@@ -101,6 +102,12 @@ func loadEntities(root string) ([]Entity, error) {
 					return nil, fmt.Errorf("%s.%s: %w", recv, fn.Name.Name, err)
 				}
 				ent.Query = spec
+			case "Annotations":
+				annotations, err := evaluator.evalAnnotationSlice(fn)
+				if err != nil {
+					return nil, fmt.Errorf("%s.%s: %w", recv, fn.Name.Name, err)
+				}
+				ent.Annotations = annotations
 			}
 		}
 	}
@@ -175,10 +182,13 @@ func findEntity(entities []Entity, name string) Entity {
 			if ent.Indexes == nil {
 				ent.Indexes = []dsl.Index{}
 			}
+			if ent.Annotations == nil {
+				ent.Annotations = []dsl.Annotation{}
+			}
 			return ent
 		}
 	}
-	return Entity{Name: name, Fields: []dsl.Field{}, Edges: []dsl.Edge{}, Indexes: []dsl.Index{}}
+	return Entity{Name: name, Fields: []dsl.Field{}, Edges: []dsl.Edge{}, Indexes: []dsl.Index{}, Annotations: []dsl.Annotation{}}
 }
 
 func ensureDefaultField(ent *Entity) {
@@ -312,6 +322,31 @@ func (e *exprEvaluator) evalQuerySpec(fn *ast.FuncDecl) (dsl.QuerySpec, error) {
 	return dsl.QuerySpec{}, errors.New("no return statement found")
 }
 
+func (e *exprEvaluator) evalAnnotationSlice(fn *ast.FuncDecl) ([]dsl.Annotation, error) {
+	if fn.Body == nil {
+		return nil, errors.New("missing body")
+	}
+	for _, stmt := range fn.Body.List {
+		ret, ok := stmt.(*ast.ReturnStmt)
+		if !ok || len(ret.Results) == 0 {
+			continue
+		}
+		val, err := e.evalExpr(ret.Results[0])
+		if err != nil {
+			return nil, err
+		}
+		if val == nil {
+			return nil, nil
+		}
+		annotations, ok := val.([]dsl.Annotation)
+		if !ok {
+			return nil, fmt.Errorf("expected []dsl.Annotation, got %T", val)
+		}
+		return annotations, nil
+	}
+	return nil, errors.New("no return statement found")
+}
+
 func (e *exprEvaluator) evalExpr(expr ast.Expr) (any, error) {
 	switch exp := expr.(type) {
 	case *ast.BasicLit:
@@ -410,6 +445,20 @@ func (e *exprEvaluator) evalCompositeLit(lit *ast.CompositeLit) (any, error) {
 					indexes = append(indexes, index)
 				}
 				return indexes, nil
+			case "Annotation":
+				var annotations []dsl.Annotation
+				for _, elt := range lit.Elts {
+					val, err := e.evalExpr(elt)
+					if err != nil {
+						return nil, err
+					}
+					annotation, ok := val.(dsl.Annotation)
+					if !ok {
+						return nil, fmt.Errorf("expected dsl.Annotation, got %T", val)
+					}
+					annotations = append(annotations, annotation)
+				}
+				return annotations, nil
 			}
 		}
 	}
@@ -604,6 +653,26 @@ func executeDSLFunc(name string, args []any) (any, error) {
 		return dsl.NewAggregate(argString(args, 0), fn), nil
 	case "CountAggregate":
 		return dsl.CountAggregate(argString(args, 0)), nil
+	case "GraphQL":
+		opts := make([]dsl.GraphQLOption, 0, len(args)-1)
+		for i := 1; i < len(args); i++ {
+			opt, ok := args[i].(dsl.GraphQLOption)
+			if !ok {
+				return nil, fmt.Errorf("GraphQL expects dsl.GraphQLOption, got %T", args[i])
+			}
+			opts = append(opts, opt)
+		}
+		return dsl.GraphQL(argString(args, 0), opts...), nil
+	case "GraphQLSubscriptions":
+		events := make([]dsl.SubscriptionEvent, 0, len(args))
+		for i := range args {
+			event, err := argSubscriptionEvent(args, i)
+			if err != nil {
+				return nil, err
+			}
+			events = append(events, event)
+		}
+		return dsl.GraphQLSubscriptions(events...), nil
 	case "Geometry":
 		return dsl.Geometry(argString(args, 0)), nil
 	case "Geography":
@@ -1033,6 +1102,36 @@ func argFieldType(args []any, idx int) (dsl.FieldType, error) {
 var identityModeLookup = map[string]dsl.IdentityMode{
 	"IdentityByDefault": dsl.IdentityByDefault,
 	"IdentityAlways":    dsl.IdentityAlways,
+}
+
+func argSubscriptionEvent(args []any, idx int) (dsl.SubscriptionEvent, error) {
+	if idx >= len(args) {
+		return "", fmt.Errorf("missing subscription event")
+	}
+	switch v := args[idx].(type) {
+	case dsl.SubscriptionEvent:
+		if v == "" {
+			return "", fmt.Errorf("invalid subscription event")
+		}
+		return v, nil
+	case string:
+		if evt, ok := subscriptionEventLookup[v]; ok {
+			return evt, nil
+		}
+		if evt, ok := subscriptionEventLookup[strings.TrimPrefix(v, "dsl.")]; ok {
+			return evt, nil
+		}
+	}
+	return "", fmt.Errorf("unsupported subscription event %v", args[idx])
+}
+
+var subscriptionEventLookup = map[string]dsl.SubscriptionEvent{
+	"SubscriptionEventCreate": dsl.SubscriptionEventCreate,
+	"SubscriptionEventUpdate": dsl.SubscriptionEventUpdate,
+	"SubscriptionEventDelete": dsl.SubscriptionEventDelete,
+	"create":                  dsl.SubscriptionEventCreate,
+	"update":                  dsl.SubscriptionEventUpdate,
+	"delete":                  dsl.SubscriptionEventDelete,
 }
 
 func argComparisonOperator(args []any, idx int) (dsl.ComparisonOperator, error) {
