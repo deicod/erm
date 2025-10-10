@@ -60,6 +60,102 @@ func TestDiscoverOrdersMigrations(t *testing.T) {
 	}
 }
 
+func TestPlanIdentifiesPendingMigrations(t *testing.T) {
+	mock, err := pgxmock.NewConn(pgxmock.QueryMatcherOption(pgxmock.QueryMatcherEqual))
+	if err != nil {
+		t.Fatalf("pgxmock.NewConn: %v", err)
+	}
+	defer mock.Close(context.Background())
+
+	fsys := fstest.MapFS{
+		"migrations/001_first.sql": &fstest.MapFile{Mode: 0o644, Data: []byte("create table first;")},
+	}
+
+	mock.ExpectBeginTx(pgx.TxOptions{})
+	mock.ExpectExec("SELECT pg_advisory_xact_lock($1)").WithArgs(defaultAdvisoryLock).WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	pgErr := &pgconn.PgError{Code: "42P01"}
+	mock.ExpectQuery("SELECT version FROM erm_schema_migrations ORDER BY applied_at").WillReturnError(pgErr)
+
+	plan, err := Plan(context.Background(), mock, fsys)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if len(plan.Pending) != 1 || plan.Pending[0].Version != "001" {
+		t.Fatalf("unexpected plan: %+v", plan)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("expectations: %v", err)
+	}
+}
+
+func TestPlanDetectsSchemaDrift(t *testing.T) {
+	mock, err := pgxmock.NewConn(pgxmock.QueryMatcherOption(pgxmock.QueryMatcherEqual))
+	if err != nil {
+		t.Fatalf("pgxmock.NewConn: %v", err)
+	}
+	defer mock.Close(context.Background())
+
+	fsys := fstest.MapFS{
+		"migrations/001_first.sql": &fstest.MapFile{Mode: 0o644, Data: []byte("-- noop")},
+	}
+
+	mock.ExpectBeginTx(pgx.TxOptions{})
+	mock.ExpectExec("SELECT pg_advisory_xact_lock($1)").WithArgs(defaultAdvisoryLock).WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	rows := mock.NewRows([]string{"version"}).AddRow("999")
+	mock.ExpectQuery("SELECT version FROM erm_schema_migrations ORDER BY applied_at").WillReturnRows(rows)
+
+	_, err = Plan(context.Background(), mock, fsys)
+	if err == nil {
+		t.Fatal("expected schema drift error")
+	}
+	var driftErr SchemaDriftError
+	if !errors.As(err, &driftErr) {
+		t.Fatalf("expected SchemaDriftError, got %T", err)
+	}
+	if len(driftErr.Missing) != 1 || driftErr.Missing[0] != "999" {
+		t.Fatalf("unexpected drift details: %+v", driftErr.Missing)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("expectations: %v", err)
+	}
+}
+
+func TestRollbackExecutesDownMigration(t *testing.T) {
+	mock, err := pgxmock.NewConn(pgxmock.QueryMatcherOption(pgxmock.QueryMatcherEqual))
+	if err != nil {
+		t.Fatalf("pgxmock.NewConn: %v", err)
+	}
+	defer mock.Close(context.Background())
+
+	fsys := fstest.MapFS{
+		"migrations/001_first.sql":      &fstest.MapFile{Mode: 0o644, Data: []byte("create table first;")},
+		"migrations/001_first_down.sql": &fstest.MapFile{Mode: 0o644, Data: []byte("drop table first;")},
+	}
+
+	mock.ExpectBeginTx(pgx.TxOptions{})
+	mock.ExpectExec("SELECT pg_advisory_xact_lock($1)").WithArgs(defaultAdvisoryLock).WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	mock.ExpectExec("CREATE TABLE IF NOT EXISTS erm_schema_migrations (\n        version    text PRIMARY KEY,\n        applied_at timestamptz NOT NULL DEFAULT now()\n    )").WillReturnResult(pgxmock.NewResult("CREATE", 0))
+	rows := mock.NewRows([]string{"version"}).AddRow("001")
+	mock.ExpectQuery("SELECT version FROM erm_schema_migrations ORDER BY applied_at DESC LIMIT 1").WillReturnRows(rows)
+	mock.ExpectExec("drop table first;").WillReturnResult(pgxmock.NewResult("SELECT", 1))
+	mock.ExpectExec("DELETE FROM erm_schema_migrations WHERE version = $1").WithArgs("001").WillReturnResult(pgxmock.NewResult("DELETE", 1))
+	mock.ExpectCommit()
+
+	rolled, err := Rollback(context.Background(), mock, fsys)
+	if err != nil {
+		t.Fatalf("Rollback: %v", err)
+	}
+	if rolled.Type != MigrationTypeDown || rolled.Version != "001" {
+		t.Fatalf("unexpected rolled back migration: %+v", rolled)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("expectations: %v", err)
+	}
+}
+
 func TestApplyExecutesPendingMigrations(t *testing.T) {
 	mock, err := pgxmock.NewConn(pgxmock.QueryMatcherOption(pgxmock.QueryMatcherEqual))
 	if err != nil {

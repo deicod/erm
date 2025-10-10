@@ -8,6 +8,13 @@ database:
     max_conn_lifetime: 45m
     max_conn_idle_time: 10m
     health_check_period: 1m
+  environments:
+    dev:
+      url: "postgres://user:pass@localhost:5432/app_dev?sslmode=disable"
+    staging:
+      url: "postgres://user:pass@staging-db:5432/app_stage?sslmode=disable"
+    prod:
+      url: "postgres://user:pass@prod-db:5432/app_prod?sslmode=require"
 oidc:
   issuer: "https://auth.example.com/realms/app"
   audience: "web-spa"

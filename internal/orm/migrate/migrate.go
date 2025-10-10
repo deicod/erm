@@ -18,6 +18,16 @@ const (
 	defaultAdvisoryLock = int64(0x65726d)
 )
 
+// MigrationType differentiates forward (up) migrations from rollback (down) scripts.
+type MigrationType int
+
+const (
+	// MigrationTypeUp represents a forward migration that applies schema changes.
+	MigrationTypeUp MigrationType = iota
+	// MigrationTypeDown represents a rollback script that reverts a previously applied migration.
+	MigrationTypeDown
+)
+
 // TxStarter abstracts pgx connections capable of starting a transaction.
 type TxStarter interface {
 	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
@@ -79,6 +89,18 @@ type FileMigration struct {
 	Name string
 	// Path is the path relative to the root of the provided fs.FS.
 	Path string
+	// Type identifies whether the migration is an up (forward) or down (rollback) script.
+	Type MigrationType
+}
+
+// String implements fmt.Stringer.
+func (mt MigrationType) String() string {
+	switch mt {
+	case MigrationTypeDown:
+		return "down"
+	default:
+		return "up"
+	}
 }
 
 // ParseVersion extracts the version identifier from a migration filename. The
@@ -136,7 +158,7 @@ func Discover(ctx context.Context, fsys fs.FS, dir string) ([]FileMigration, err
 		if err != nil {
 			return fmt.Errorf("migrate: %s: %w", p, err)
 		}
-		files = append(files, FileMigration{Version: version, Name: d.Name(), Path: p})
+		files = append(files, FileMigration{Version: version, Name: d.Name(), Path: p, Type: classifyMigration(d.Name())})
 		return nil
 	})
 	if err != nil {
@@ -152,6 +174,9 @@ func Discover(ctx context.Context, fsys fs.FS, dir string) ([]FileMigration, err
 
 	versions := make(map[string]string, len(files))
 	for _, f := range files {
+		if f.Type == MigrationTypeDown {
+			continue
+		}
 		if prev, ok := versions[f.Version]; ok {
 			return nil, fmt.Errorf("migrate: duplicate version %q in %s and %s", f.Version, prev, f.Path)
 		}
@@ -159,6 +184,119 @@ func Discover(ctx context.Context, fsys fs.FS, dir string) ([]FileMigration, err
 	}
 
 	return files, nil
+}
+
+// PlanResult summarises the outcome of inspecting migrations without executing them.
+type PlanResult struct {
+	// Pending lists unapplied up migrations in execution order.
+	Pending []FileMigration
+	// Applied lists versions recorded in erm_schema_migrations.
+	Applied []string
+}
+
+// SchemaDriftError signals that the database has recorded migrations whose SQL files
+// are no longer present in the migrations directory.
+type SchemaDriftError struct {
+	Missing []string
+}
+
+func (e SchemaDriftError) Error() string {
+	return fmt.Sprintf("migrate: schema drift detected: %s", strings.Join(e.Missing, ", "))
+}
+
+// ErrNoAppliedMigrations indicates that rollback could not run because no migrations
+// have been recorded in erm_schema_migrations.
+var ErrNoAppliedMigrations = errors.New("migrate: no applied migrations to rollback")
+
+// Plan inspects the migrations directory and erm_schema_migrations to determine which
+// forward migrations remain unapplied. It performs validation to ensure recorded
+// migrations still exist on disk.
+func Plan(ctx context.Context, conn TxStarter, fsys fs.FS, opts ...Option) (PlanResult, error) {
+	if conn == nil {
+		return PlanResult{}, errors.New("migrate: nil connection")
+	}
+	if fsys == nil {
+		return PlanResult{}, errors.New("migrate: nil filesystem")
+	}
+
+	settings := resolveOptions(opts...)
+	migrations, err := Discover(ctx, fsys, settings.Directory)
+	if err != nil {
+		return PlanResult{}, err
+	}
+
+	upMigrations := make([]FileMigration, 0, len(migrations))
+	upByVersion := make(map[string]FileMigration, len(migrations))
+	for _, mig := range migrations {
+		if mig.Type != MigrationTypeUp {
+			continue
+		}
+		upMigrations = append(upMigrations, mig)
+		upByVersion[mig.Version] = mig
+	}
+
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return PlanResult{}, fmt.Errorf("migrate: begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", settings.AdvisoryLockID); err != nil {
+		return PlanResult{}, fmt.Errorf("migrate: acquire advisory lock: %w", err)
+	}
+
+	rows, err := tx.Query(ctx, "SELECT version FROM erm_schema_migrations ORDER BY applied_at")
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "42P01" {
+			// Tracking table absent implies no applied migrations yet.
+			if settings.BatchSize > 0 && len(upMigrations) > settings.BatchSize {
+				upMigrations = upMigrations[:settings.BatchSize]
+			}
+			return PlanResult{Pending: upMigrations}, nil
+		}
+		return PlanResult{}, fmt.Errorf("migrate: list applied versions: %w", err)
+	}
+	defer rows.Close()
+
+	var (
+		appliedOrder []string
+		appliedSet   = make(map[string]struct{})
+	)
+	for rows.Next() {
+		var version string
+		if scanErr := rows.Scan(&version); scanErr != nil {
+			return PlanResult{}, fmt.Errorf("migrate: read applied versions: %w", scanErr)
+		}
+		appliedOrder = append(appliedOrder, version)
+		appliedSet[version] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return PlanResult{}, fmt.Errorf("migrate: read applied versions: %w", err)
+	}
+
+	var missing []string
+	for _, version := range appliedOrder {
+		if _, ok := upByVersion[version]; !ok {
+			missing = append(missing, version)
+		}
+	}
+	if len(missing) > 0 {
+		return PlanResult{}, SchemaDriftError{Missing: missing}
+	}
+
+	var pending []FileMigration
+	for _, mig := range upMigrations {
+		if _, ok := appliedSet[mig.Version]; ok {
+			continue
+		}
+		pending = append(pending, mig)
+		if settings.BatchSize > 0 && len(pending) == settings.BatchSize {
+			break
+		}
+	}
+
+	return PlanResult{Pending: pending, Applied: appliedOrder}, nil
 }
 
 // Apply discovers SQL migration files in fsys, executes unapplied migrations, and
@@ -172,15 +310,7 @@ func Apply(ctx context.Context, conn TxStarter, fsys fs.FS, opts ...Option) erro
 		return errors.New("migrate: nil filesystem")
 	}
 
-	settings := Options{
-		Directory:      defaultDirectory,
-		AdvisoryLockID: defaultAdvisoryLock,
-	}
-	for _, opt := range opts {
-		if opt != nil {
-			opt(&settings)
-		}
-	}
+	settings := resolveOptions(opts...)
 
 	migrations, err := Discover(ctx, fsys, settings.Directory)
 	if err != nil {
@@ -228,6 +358,9 @@ func Apply(ctx context.Context, conn TxStarter, fsys fs.FS, opts ...Option) erro
 
 	var toApply []FileMigration
 	for _, mig := range migrations {
+		if mig.Type != MigrationTypeUp {
+			continue
+		}
 		if _, ok := applied[mig.Version]; ok {
 			continue
 		}
@@ -255,6 +388,114 @@ func Apply(ctx context.Context, conn TxStarter, fsys fs.FS, opts ...Option) erro
 	}
 	committed = true
 	return nil
+}
+
+// Rollback executes the rollback script for the most recently applied migration and
+// removes the corresponding version from erm_schema_migrations.
+func Rollback(ctx context.Context, conn TxStarter, fsys fs.FS, opts ...Option) (FileMigration, error) {
+	if conn == nil {
+		return FileMigration{}, errors.New("migrate: nil connection")
+	}
+	if fsys == nil {
+		return FileMigration{}, errors.New("migrate: nil filesystem")
+	}
+
+	settings := resolveOptions(opts...)
+	migrations, err := Discover(ctx, fsys, settings.Directory)
+	if err != nil {
+		return FileMigration{}, err
+	}
+
+	upByVersion := make(map[string]FileMigration, len(migrations))
+	downByVersion := make(map[string]FileMigration, len(migrations))
+	for _, mig := range migrations {
+		switch mig.Type {
+		case MigrationTypeUp:
+			upByVersion[mig.Version] = mig
+		case MigrationTypeDown:
+			downByVersion[mig.Version] = mig
+		}
+	}
+
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return FileMigration{}, fmt.Errorf("migrate: begin transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", settings.AdvisoryLockID); err != nil {
+		return FileMigration{}, fmt.Errorf("migrate: acquire advisory lock: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS erm_schema_migrations (
+        version    text PRIMARY KEY,
+        applied_at timestamptz NOT NULL DEFAULT now()
+    )`); err != nil {
+		return FileMigration{}, fmt.Errorf("migrate: ensure tracking table: %w", err)
+	}
+
+	row := tx.QueryRow(ctx, "SELECT version FROM erm_schema_migrations ORDER BY applied_at DESC LIMIT 1")
+	var latest string
+	if err := row.Scan(&latest); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return FileMigration{}, ErrNoAppliedMigrations
+		}
+		return FileMigration{}, fmt.Errorf("migrate: inspect applied migrations: %w", err)
+	}
+
+	if _, ok := upByVersion[latest]; !ok {
+		return FileMigration{}, SchemaDriftError{Missing: []string{latest}}
+	}
+
+	down, ok := downByVersion[latest]
+	if !ok {
+		return FileMigration{}, fmt.Errorf("migrate: no rollback script for version %s", latest)
+	}
+
+	raw, err := fs.ReadFile(fsys, down.Path)
+	if err != nil {
+		return FileMigration{}, fmt.Errorf("migrate: %s: %w", down.Path, err)
+	}
+	if _, err := tx.Exec(ctx, string(raw)); err != nil {
+		return FileMigration{}, wrapExecError(down.Path, string(raw), err)
+	}
+	if _, err := tx.Exec(ctx, "DELETE FROM erm_schema_migrations WHERE version = $1", latest); err != nil {
+		return FileMigration{}, fmt.Errorf("migrate: remove %s: %w", latest, err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return FileMigration{}, fmt.Errorf("migrate: commit transaction: %w", err)
+	}
+	committed = true
+	return down, nil
+}
+
+func resolveOptions(opts ...Option) Options {
+	settings := Options{
+		Directory:      defaultDirectory,
+		AdvisoryLockID: defaultAdvisoryLock,
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&settings)
+		}
+	}
+	return settings
+}
+
+func classifyMigration(name string) MigrationType {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.Contains(lower, ".down."), strings.HasSuffix(lower, ".down.sql"), strings.HasSuffix(lower, "_down.sql"), strings.HasSuffix(lower, "-down.sql"), strings.Contains(lower, ".rollback."):
+		return MigrationTypeDown
+	default:
+		return MigrationTypeUp
+	}
 }
 
 func wrapExecError(path, sql string, execErr error) error {
