@@ -265,18 +265,36 @@ Selected modifiers:
 ### Validators and Hooks
 
 Attach validation logic directly to fields using `.Validate(func(value T) error)` or the shorthand `.Min()`, `.Max()`, `.Match()`.
-Validation runs before hooks and before hitting the database. For cross-field validation, use entity-level hooks instead.
+Validation runs before hooks and before hitting the database. Cross-field checks and complex predicates can be registered through the runtime validation registry that ships with the ORM generator.
 
-Example:
+#### Runtime rules
+
+Generated packages export `gen.ValidationRegistry`, an instance of `internal/orm/runtime/validation.Registry`. Register rules during package init (or application startup) to apply additional constraints without editing generated files. Rules run prior to hitting the database for both `Create` and `Update` mutations.
 
 ```go
-dsl.String("password").Sensitive().Validate(func(p string) error {
-    if len(p) < 14 {
-        return errors.New("password must be at least 14 characters")
-    }
-    return nil
-})
+var emailRegex = regexp.MustCompile(`^[^@]+@example.com$`)
+
+func init() {
+    gen.ValidationRegistry.Entity("User").
+        OnCreate(
+            validation.String("Email").Required().Matches(emailRegex).Rule(),
+        ).
+        OnUpdate(validation.RuleFunc(func(_ context.Context, subject validation.Subject) error {
+            created, _ := subject.Record.Time("CreatedAt")
+            updated, _ := subject.Record.Time("UpdatedAt")
+            if updated.Before(created) {
+                return validation.FieldError{Field: "UpdatedAt", Message: "must be after CreatedAt"}
+            }
+            return nil
+        }))
+}
 ```
+
+- `validation.String(field)` supplies fluent helpers for string length and regex checks.
+- `validation.RuleFunc` supports custom logic (including cross-field access through `subject.Record`).
+- `subject.Input` exposes the raw struct pointer if you prefer typed assertions.
+
+To override rules in tests or sandboxes, reassign `gen.ValidationRegistry = validation.NewRegistry()` before registering replacements.
 
 ---
 
