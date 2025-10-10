@@ -8,7 +8,7 @@ import (
 func ensureGQLGenConfig(root string) (string, error) {
 	path := filepath.Join(root, "internal", "graphql", "gqlgen.yml")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if err := writeFile(path, []byte(defaultGQLGenConfig)); err != nil {
+		if _, err := writeFile(path, []byte(defaultGQLGenConfig)); err != nil {
 			return "", err
 		}
 	} else if err != nil {
