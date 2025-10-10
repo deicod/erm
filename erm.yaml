@@ -20,6 +20,12 @@ oidc:
   audience: "web-spa"
 graphql:
   path: "/graphql"
+  subscriptions:
+    enabled: true
+    broker: inmemory
+    transports:
+      websocket: true
+      graphql_ws: false
 extensions:
   postgis: true
   pgvector: true

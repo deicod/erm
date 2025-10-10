@@ -28,3 +28,15 @@ func (User) Query() dsl.QuerySpec {
 			dsl.CountAggregate("Count"),
 		)
 }
+
+func (User) Annotations() []dsl.Annotation {
+	return []dsl.Annotation{
+		dsl.GraphQL("User",
+			dsl.GraphQLSubscriptions(
+				dsl.SubscriptionEventCreate,
+				dsl.SubscriptionEventUpdate,
+				dsl.SubscriptionEventDelete,
+			),
+		),
+	}
+}

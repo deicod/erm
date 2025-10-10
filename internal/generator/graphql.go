@@ -52,6 +52,7 @@ func buildGraphQLGeneratedSection(entities []Entity) string {
 
 	queryFields := make([]string, 0, len(entities)*2)
 	mutationFields := make([]string, 0, len(entities)*3)
+	subscriptionFields := make([]string, 0, len(entities)*3)
 	for _, ent := range entities {
 		builder.WriteString(renderEntityType(ent))
 		builder.WriteString("\n")
@@ -61,6 +62,7 @@ func buildGraphQLGeneratedSection(entities []Entity) string {
 		builder.WriteString("\n")
 		queryFields = append(queryFields, renderEntityQueryFields(ent)...)
 		mutationFields = append(mutationFields, renderEntityMutationFields(ent)...)
+		subscriptionFields = append(subscriptionFields, renderEntitySubscriptionFields(ent)...)
 	}
 	if len(queryFields) > 0 {
 		builder.WriteString("extend type Query {\n")
@@ -72,6 +74,13 @@ func buildGraphQLGeneratedSection(entities []Entity) string {
 	if len(mutationFields) > 0 {
 		builder.WriteString("\nextend type Mutation {\n")
 		for _, field := range mutationFields {
+			builder.WriteString(fmt.Sprintf("  %s\n", field))
+		}
+		builder.WriteString("}\n")
+	}
+	if len(subscriptionFields) > 0 {
+		builder.WriteString("\nextend type Subscription {\n")
+		for _, field := range subscriptionFields {
 			builder.WriteString(fmt.Sprintf("  %s\n", field))
 		}
 		builder.WriteString("}\n")
@@ -177,6 +186,94 @@ func renderEntityMutationFields(ent Entity) []string {
 		fmt.Sprintf("update%s(input: Update%sInput!): Update%sPayload!", ent.Name, ent.Name, ent.Name),
 		fmt.Sprintf("delete%s(input: Delete%sInput!): Delete%sPayload!", ent.Name, ent.Name, ent.Name),
 	}
+}
+
+func renderEntitySubscriptionFields(ent Entity) []string {
+	events := entitySubscriptionEvents(ent)
+	if len(events) == 0 {
+		return nil
+	}
+	fields := make([]string, 0, len(events))
+	prefix := lowerCamel(ent.Name)
+	for _, event := range events {
+		switch event {
+		case dsl.SubscriptionEventCreate:
+			fields = append(fields, fmt.Sprintf("%sCreated: %s!", prefix, ent.Name))
+		case dsl.SubscriptionEventUpdate:
+			fields = append(fields, fmt.Sprintf("%sUpdated: %s!", prefix, ent.Name))
+		case dsl.SubscriptionEventDelete:
+			fields = append(fields, fmt.Sprintf("%sDeleted: ID!", prefix))
+		}
+	}
+	return fields
+}
+
+func entitySubscriptionEvents(ent Entity) []dsl.SubscriptionEvent {
+	if len(ent.Annotations) == 0 {
+		return nil
+	}
+	events := make([]dsl.SubscriptionEvent, 0, 3)
+	seen := map[dsl.SubscriptionEvent]struct{}{}
+	for _, ann := range ent.Annotations {
+		if strings.ToLower(ann.Name) != dsl.AnnotationGraphQL {
+			continue
+		}
+		raw, ok := ann.Payload["subscriptions"]
+		if !ok {
+			continue
+		}
+		switch vals := raw.(type) {
+		case []string:
+			for _, val := range vals {
+				if event, ok := normalizeSubscriptionEvent(val); ok {
+					if _, exists := seen[event]; !exists {
+						seen[event] = struct{}{}
+						events = append(events, event)
+					}
+				}
+			}
+		case []any:
+			for _, item := range vals {
+				if event, ok := normalizeSubscriptionEvent(item); ok {
+					if _, exists := seen[event]; !exists {
+						seen[event] = struct{}{}
+						events = append(events, event)
+					}
+				}
+			}
+		}
+	}
+	return events
+}
+
+func normalizeSubscriptionEvent(val any) (dsl.SubscriptionEvent, bool) {
+	switch v := val.(type) {
+	case dsl.SubscriptionEvent:
+		if v == "" {
+			return "", false
+		}
+		return v, true
+	case string:
+		key := strings.ToLower(v)
+		switch key {
+		case string(dsl.SubscriptionEventCreate), "subscriptioneventcreate":
+			return dsl.SubscriptionEventCreate, true
+		case string(dsl.SubscriptionEventUpdate), "subscriptioneventupdate":
+			return dsl.SubscriptionEventUpdate, true
+		case string(dsl.SubscriptionEventDelete), "subscriptioneventdelete":
+			return dsl.SubscriptionEventDelete, true
+		}
+	}
+	return "", false
+}
+
+func hasSubscriptionEvent(ent Entity, event dsl.SubscriptionEvent) bool {
+	for _, candidate := range entitySubscriptionEvents(ent) {
+		if candidate == event {
+			return true
+		}
+	}
+	return false
 }
 
 func fieldGraphQLType(field dsl.Field) string {
@@ -334,6 +431,8 @@ func writeGraphQLResolvers(root string, entities []Entity) error {
 			buf.WriteString("\n")
 			buf.WriteString(renderEntityMutationResolvers(ent))
 			buf.WriteString("\n")
+			buf.WriteString(renderEntitySubscriptionResolvers(ent))
+			buf.WriteString("\n")
 		}
 	}
 
@@ -465,10 +564,14 @@ func renderEntityMutationResolvers(ent Entity) string {
 	}
 	fmt.Fprintf(builder, "    record, err := r.ORM.%s().Create(ctx, model)\n", pluralName)
 	fmt.Fprintf(builder, "    if err != nil {\n        return nil, err\n    }\n")
+	fmt.Fprintf(builder, "    gqlRecord := toGraphQL%[1]s(record)\n", ent.Name)
 	fmt.Fprintf(builder, "    r.prime%[1]s(ctx, record)\n", ent.Name)
+	if hasSubscriptionEvent(ent, dsl.SubscriptionEventCreate) {
+		fmt.Fprintf(builder, "    publishSubscriptionEvent(ctx, r.subscriptionBroker(), \"%s\", SubscriptionTriggerCreated, gqlRecord)\n", ent.Name)
+	}
 	fmt.Fprintf(builder, "    return &graphql.Create%[1]sPayload{\n", ent.Name)
 	fmt.Fprintf(builder, "        ClientMutationID: input.ClientMutationID,\n")
-	fmt.Fprintf(builder, "        %s: toGraphQL%s(record),\n", exportName(ent.Name), ent.Name)
+	fmt.Fprintf(builder, "        %s: gqlRecord,\n", exportName(ent.Name))
 	fmt.Fprintf(builder, "    }, nil\n}\n\n")
 
 	fmt.Fprintf(builder, "func (r *mutationResolver) Update%[1]s(ctx context.Context, input graphql.Update%[1]sInput) (*graphql.Update%[1]sPayload, error) {\n", ent.Name)
@@ -484,10 +587,14 @@ func renderEntityMutationResolvers(ent Entity) string {
 	}
 	fmt.Fprintf(builder, "    record, err := r.ORM.%s().Update(ctx, model)\n", pluralName)
 	fmt.Fprintf(builder, "    if err != nil {\n        return nil, err\n    }\n")
+	fmt.Fprintf(builder, "    gqlRecord := toGraphQL%[1]s(record)\n", ent.Name)
 	fmt.Fprintf(builder, "    r.prime%[1]s(ctx, record)\n", ent.Name)
+	if hasSubscriptionEvent(ent, dsl.SubscriptionEventUpdate) {
+		fmt.Fprintf(builder, "    publishSubscriptionEvent(ctx, r.subscriptionBroker(), \"%s\", SubscriptionTriggerUpdated, gqlRecord)\n", ent.Name)
+	}
 	fmt.Fprintf(builder, "    return &graphql.Update%[1]sPayload{\n", ent.Name)
 	fmt.Fprintf(builder, "        ClientMutationID: input.ClientMutationID,\n")
-	fmt.Fprintf(builder, "        %s: toGraphQL%s(record),\n", exportName(ent.Name), ent.Name)
+	fmt.Fprintf(builder, "        %s: gqlRecord,\n", exportName(ent.Name))
 	fmt.Fprintf(builder, "    }, nil\n}\n\n")
 
 	fmt.Fprintf(builder, "func (r *mutationResolver) Delete%[1]s(ctx context.Context, input graphql.Delete%[1]sInput) (*graphql.Delete%[1]sPayload, error) {\n", ent.Name)
@@ -495,12 +602,81 @@ func renderEntityMutationResolvers(ent Entity) string {
 	fmt.Fprintf(builder, "    nativeID, err := decode%[1]sID(input.ID)\n", ent.Name)
 	fmt.Fprintf(builder, "    if err != nil {\n        return nil, err\n    }\n")
 	fmt.Fprintf(builder, "    if err := r.ORM.%s().Delete(ctx, nativeID); err != nil {\n        return nil, err\n    }\n", pluralName)
+	fmt.Fprintf(builder, "    deletedID := relay.ToGlobalID(\"%[1]s\", nativeID)\n", ent.Name)
+	if hasSubscriptionEvent(ent, dsl.SubscriptionEventDelete) {
+		fmt.Fprintf(builder, "    publishSubscriptionEvent(ctx, r.subscriptionBroker(), \"%s\", SubscriptionTriggerDeleted, deletedID)\n", ent.Name)
+	}
 	fmt.Fprintf(builder, "    return &graphql.Delete%[1]sPayload{\n", ent.Name)
 	fmt.Fprintf(builder, "        ClientMutationID: input.ClientMutationID,\n")
-	fmt.Fprintf(builder, "        Deleted%[1]sID: relay.ToGlobalID(\"%[1]s\", nativeID),\n", ent.Name)
+	fmt.Fprintf(builder, "        Deleted%[1]sID: deletedID,\n", ent.Name)
 	fmt.Fprintf(builder, "    }, nil\n}\n\n")
 
 	return builder.String()
+}
+
+func renderEntitySubscriptionResolvers(ent Entity) string {
+	events := entitySubscriptionEvents(ent)
+	if len(events) == 0 {
+		return ""
+	}
+	builder := &strings.Builder{}
+	for _, event := range events {
+		switch event {
+		case dsl.SubscriptionEventCreate:
+			writeEntitySubscriptionResolver(builder, ent, event, fmt.Sprintf("%sCreated", exportName(ent.Name)), fmt.Sprintf("*graphql.%s", ent.Name))
+		case dsl.SubscriptionEventUpdate:
+			writeEntitySubscriptionResolver(builder, ent, event, fmt.Sprintf("%sUpdated", exportName(ent.Name)), fmt.Sprintf("*graphql.%s", ent.Name))
+		case dsl.SubscriptionEventDelete:
+			writeEntitySubscriptionResolver(builder, ent, event, fmt.Sprintf("%sDeleted", exportName(ent.Name)), "string")
+		}
+	}
+	return builder.String()
+}
+
+func writeEntitySubscriptionResolver(builder *strings.Builder, ent Entity, event dsl.SubscriptionEvent, methodName, channelType string) {
+	fmt.Fprintf(builder, "func (r *subscriptionResolver) %s(ctx context.Context) (<-chan %s, error) {\n", methodName, channelType)
+	fmt.Fprintf(builder, "    stream, stop, err := subscribeToEntity(ctx, r.subscriptionBroker(), \"%s\", %s)\n", ent.Name, subscriptionTriggerLiteral(event))
+	fmt.Fprintf(builder, "    if err != nil {\n        return nil, err\n    }\n")
+	fmt.Fprintf(builder, "    out := make(chan %s, 1)\n", channelType)
+	fmt.Fprintf(builder, "    go func() {\n")
+	fmt.Fprintf(builder, "        defer close(out)\n")
+	fmt.Fprintf(builder, "        if stop != nil {\n            defer stop()\n        }\n")
+	fmt.Fprintf(builder, "        for {\n")
+	fmt.Fprintf(builder, "            select {\n")
+	fmt.Fprintf(builder, "            case <-ctx.Done():\n                return\n")
+	fmt.Fprintf(builder, "            case payload, ok := <-stream:\n")
+	fmt.Fprintf(builder, "                if !ok {\n                    return\n                }\n")
+	switch event {
+	case dsl.SubscriptionEventDelete:
+		fmt.Fprintf(builder, "                value, ok := payload.(string)\n")
+		fmt.Fprintf(builder, "                if !ok || value == \"\" {\n                    continue\n                }\n")
+	default:
+		fmt.Fprintf(builder, "                obj, ok := payload.(%s)\n", channelType)
+		fmt.Fprintf(builder, "                if !ok || obj == nil {\n                    continue\n                }\n")
+	}
+	fmt.Fprintf(builder, "                select {\n")
+	switch event {
+	case dsl.SubscriptionEventDelete:
+		fmt.Fprintf(builder, "                case out <- value:\n                    continue\n")
+	default:
+		fmt.Fprintf(builder, "                case out <- obj:\n                    continue\n")
+	}
+	fmt.Fprintf(builder, "                case <-ctx.Done():\n                    return\n                }\n")
+	fmt.Fprintf(builder, "            }\n        }\n    }()\n")
+	fmt.Fprintf(builder, "    return out, nil\n}\n\n")
+}
+
+func subscriptionTriggerLiteral(event dsl.SubscriptionEvent) string {
+	switch event {
+	case dsl.SubscriptionEventCreate:
+		return "SubscriptionTriggerCreated"
+	case dsl.SubscriptionEventUpdate:
+		return "SubscriptionTriggerUpdated"
+	case dsl.SubscriptionEventDelete:
+		return "SubscriptionTriggerDeleted"
+	default:
+		return "SubscriptionTriggerCreated"
+	}
 }
 
 func renderInputAssignment(inputVar, targetVar string, field dsl.Field, includeID bool) string {
@@ -653,5 +829,9 @@ type Query {
 }
 
 type Mutation {
+  _noop: Boolean
+}
+
+type Subscription {
   _noop: Boolean
 }`

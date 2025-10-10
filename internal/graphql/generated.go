@@ -41,6 +41,7 @@ type Config struct {
 type ResolverRoot interface {
 	Mutation() MutationResolver
 	Query() QueryResolver
+	Subscription() SubscriptionResolver
 }
 
 type DirectiveRoot struct {
@@ -79,6 +80,13 @@ type ComplexityRoot struct {
 		Users  func(childComplexity int, first *int, after *string, last *int, before *string) int
 	}
 
+	Subscription struct {
+		Noop        func(childComplexity int) int
+		UserCreated func(childComplexity int) int
+		UserDeleted func(childComplexity int) int
+		UserUpdated func(childComplexity int) int
+	}
+
 	UpdateUserPayload struct {
 		ClientMutationID func(childComplexity int) int
 		User             func(childComplexity int) int
@@ -113,6 +121,12 @@ type QueryResolver interface {
 	Health(ctx context.Context) (string, error)
 	User(ctx context.Context, id string) (*User, error)
 	Users(ctx context.Context, first *int, after *string, last *int, before *string) (*UserConnection, error)
+}
+type SubscriptionResolver interface {
+	Noop(ctx context.Context) (<-chan *bool, error)
+	UserCreated(ctx context.Context) (<-chan *User, error)
+	UserUpdated(ctx context.Context) (<-chan *User, error)
+	UserDeleted(ctx context.Context) (<-chan string, error)
 }
 
 type executableSchema struct {
@@ -265,6 +279,31 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Query.Users(childComplexity, args["first"].(*int), args["after"].(*string), args["last"].(*int), args["before"].(*string)), true
 
+	case "Subscription._noop":
+		if e.complexity.Subscription.Noop == nil {
+			break
+		}
+
+		return e.complexity.Subscription.Noop(childComplexity), true
+	case "Subscription.userCreated":
+		if e.complexity.Subscription.UserCreated == nil {
+			break
+		}
+
+		return e.complexity.Subscription.UserCreated(childComplexity), true
+	case "Subscription.userDeleted":
+		if e.complexity.Subscription.UserDeleted == nil {
+			break
+		}
+
+		return e.complexity.Subscription.UserDeleted(childComplexity), true
+	case "Subscription.userUpdated":
+		if e.complexity.Subscription.UserUpdated == nil {
+			break
+		}
+
+		return e.complexity.Subscription.UserUpdated(childComplexity), true
+
 	case "UpdateUserPayload.clientMutationId":
 		if e.complexity.UpdateUserPayload.ClientMutationID == nil {
 			break
@@ -383,6 +422,23 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 			ctx = graphql.WithUnmarshalerMap(ctx, inputUnmarshalMap)
 			data := ec._Mutation(ctx, opCtx.Operation.SelectionSet)
 			var buf bytes.Buffer
+			data.MarshalGQL(&buf)
+
+			return &graphql.Response{
+				Data: buf.Bytes(),
+			}
+		}
+	case ast.Subscription:
+		next := ec._Subscription(ctx, opCtx.Operation.SelectionSet)
+
+		var buf bytes.Buffer
+		return func(ctx context.Context) *graphql.Response {
+			buf.Reset()
+			data := next(ctx)
+
+			if data == nil {
+				return nil
+			}
 			data.MarshalGQL(&buf)
 
 			return &graphql.Response{
@@ -1292,6 +1348,138 @@ func (ec *executionContext) fieldContext_Query___schema(_ context.Context, field
 				return ec.fieldContext___Schema_directives(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type __Schema", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Subscription__noop(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
+	return graphql.ResolveFieldStream(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Subscription__noop,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Subscription().Noop(ctx)
+		},
+		nil,
+		ec.marshalOBoolean2ᚖbool,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_Subscription__noop(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Subscription",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Subscription_userCreated(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
+	return graphql.ResolveFieldStream(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Subscription_userCreated,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Subscription().UserCreated(ctx)
+		},
+		nil,
+		ec.marshalNUser2ᚖgithubᚗcomᚋdeicodᚋermᚋinternalᚋgraphqlᚐUser,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Subscription_userCreated(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Subscription",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_User_id(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_User_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_User_updatedAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Subscription_userUpdated(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
+	return graphql.ResolveFieldStream(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Subscription_userUpdated,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Subscription().UserUpdated(ctx)
+		},
+		nil,
+		ec.marshalNUser2ᚖgithubᚗcomᚋdeicodᚋermᚋinternalᚋgraphqlᚐUser,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Subscription_userUpdated(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Subscription",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_User_id(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_User_createdAt(ctx, field)
+			case "updatedAt":
+				return ec.fieldContext_User_updatedAt(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Subscription_userDeleted(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
+	return graphql.ResolveFieldStream(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Subscription_userDeleted,
+		func(ctx context.Context) (any, error) {
+			return ec.resolvers.Subscription().UserDeleted(ctx)
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Subscription_userDeleted(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Subscription",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
 		},
 	}
 	return fc, nil
@@ -3545,6 +3733,32 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 	return out
 }
 
+var subscriptionImplementors = []string{"Subscription"}
+
+func (ec *executionContext) _Subscription(ctx context.Context, sel ast.SelectionSet) func(ctx context.Context) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, subscriptionImplementors)
+	ctx = graphql.WithFieldContext(ctx, &graphql.FieldContext{
+		Object: "Subscription",
+	})
+	if len(fields) != 1 {
+		ec.Errorf(ctx, "must subscribe to exactly one stream")
+		return nil
+	}
+
+	switch fields[0].Name {
+	case "_noop":
+		return ec._Subscription__noop(ctx, fields[0])
+	case "userCreated":
+		return ec._Subscription_userCreated(ctx, fields[0])
+	case "userUpdated":
+		return ec._Subscription_userUpdated(ctx, fields[0])
+	case "userDeleted":
+		return ec._Subscription_userDeleted(ctx, fields[0])
+	default:
+		panic("unknown field " + strconv.Quote(fields[0].Name))
+	}
+}
+
 var updateUserPayloadImplementors = []string{"UpdateUserPayload"}
 
 func (ec *executionContext) _UpdateUserPayload(ctx context.Context, sel ast.SelectionSet, obj *UpdateUserPayload) graphql.Marshaler {
@@ -4195,6 +4409,20 @@ func (ec *executionContext) marshalNUpdateUserPayload2ᚖgithubᚗcomᚋdeicod�
 		return graphql.Null
 	}
 	return ec._UpdateUserPayload(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNUser2githubᚗcomᚋdeicodᚋermᚋinternalᚋgraphqlᚐUser(ctx context.Context, sel ast.SelectionSet, v User) graphql.Marshaler {
+	return ec._User(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNUser2ᚖgithubᚗcomᚋdeicodᚋermᚋinternalᚋgraphqlᚐUser(ctx context.Context, sel ast.SelectionSet, v *User) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			ec.Errorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._User(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNUserConnection2githubᚗcomᚋdeicodᚋermᚋinternalᚋgraphqlᚐUserConnection(ctx context.Context, sel ast.SelectionSet, v UserConnection) graphql.Marshaler {

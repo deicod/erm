@@ -46,6 +46,9 @@ type PageInfo struct {
 type Query struct {
 }
 
+type Subscription struct {
+}
+
 type UpdateUserInput struct {
 	ClientMutationID *string    `json:"clientMutationId,omitempty"`
 	ID               string     `json:"id"`

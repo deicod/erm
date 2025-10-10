@@ -203,6 +203,22 @@ mutation CompleteTask($id: ID!) {
 }
 ```
 
+### Step 6 – Stream Task Updates
+
+Enable realtime dashboards by annotating entities with `dsl.GraphQLSubscriptions` and turning on the in-memory broker in `erm.yaml`. The generator adds subscription fields such as `taskCreated`, `taskUpdated`, and `taskDeleted` alongside typed resolver stubs. Wire your HTTP server with `server.NewServer` to enable the websocket transport, or provide a custom `subscriptions.Broker` implementation if you already emit change events to Redis/Kafka.
+
+```graphql
+subscription TaskCreated($project: ID!) {
+  taskCreated(projectID: $project) {
+    id
+    title
+    completed
+  }
+}
+```
+
+Publish events from background workers by calling `resolvers.Publish(ctx, broker, "Task", resolvers.SubscriptionTriggerCreated, gqlTask)` after persisting changes. Clients receive a hydrated `Task` object without polling, keeping kanban boards up to date.
+
 ---
 
 ## Example 2: Editorial Workspace Blog

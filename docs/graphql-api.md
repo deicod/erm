@@ -158,8 +158,38 @@ optional fields map to pointer types in Go, allowing you to distinguish between 
 
 ### Subscriptions (Optional)
 
-If you enable subscriptions in `erm.yaml`, the generator adds stub definitions and resolver scaffolding. Wire them up using your
-preferred pub/sub implementation.
+If you enable subscriptions in `erm.yaml`, the generator adds schema fields and resolver scaffolding for each entity annotated with `dsl.GraphQLSubscriptions`. Declare the triggers you care about (create/update/delete) and erm wires typed channels to your broker:
+
+```go
+func (User) Annotations() []dsl.Annotation {
+    return []dsl.Annotation{
+        dsl.GraphQL("User",
+            dsl.GraphQLSubscriptions(
+                dsl.SubscriptionEventCreate,
+                dsl.SubscriptionEventUpdate,
+                dsl.SubscriptionEventDelete,
+            ),
+        ),
+    }
+}
+```
+
+Subscribers receive strongly typed payloads—`userCreated` and `userUpdated` streams yield `User` objects, while `userDeleted` emits the global Relay ID that was removed. The generated mutation resolvers publish to the broker automatically once ORM mutations succeed, so subscribers stay in sync without extra code.
+
+Configure transports and the backing broker in `erm.yaml`:
+
+```yaml
+graphql:
+  path: "/graphql"
+  subscriptions:
+    enabled: true
+    broker: inmemory
+    transports:
+      websocket: true
+      graphql_ws: false
+```
+
+The default in-memory broker works for tests and local development. For production plug in your own adapter by passing a custom `subscriptions.Broker` to `server.NewServer` / `resolvers.NewWithOptions` (Redis, NATS, Kafka, etc.). The helpers in `internal/graphql/resolvers/subscriptions.go` expose consistent topic naming (`user:created`, `user:updated`, `user:deleted`) so your producer can emit events independently if needed.
 
 ---
 
