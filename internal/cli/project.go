@@ -14,7 +14,20 @@ type projectConfig struct {
 	Database struct {
 		URL string `yaml:"url"`
 	} `yaml:"database"`
+	Observability struct {
+		ORM struct {
+			QueryLogging   bool `yaml:"query_logging"`
+			EmitSpans      bool `yaml:"emit_spans"`
+			CorrelationIDs bool `yaml:"correlation_ids"`
+		} `yaml:"orm"`
+	} `yaml:"observability"`
 }
+
+func (cfg projectConfig) QueryLoggingEnabled() bool { return cfg.Observability.ORM.QueryLogging }
+
+func (cfg projectConfig) QuerySpansEnabled() bool { return cfg.Observability.ORM.EmitSpans }
+
+func (cfg projectConfig) QueryCorrelationEnabled() bool { return cfg.Observability.ORM.CorrelationIDs }
 
 func loadProjectConfig(root string) (projectConfig, error) {
 	path := filepath.Join(root, "erm.yaml")

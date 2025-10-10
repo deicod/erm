@@ -10,3 +10,8 @@ extensions:
   postgis: false
   pgvector: false
   timescaledb: false
+observability:
+  orm:
+    query_logging: true
+    emit_spans: true
+    correlation_ids: true

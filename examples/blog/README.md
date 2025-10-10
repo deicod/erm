@@ -24,3 +24,37 @@ Each schema lives under [`schema/`](./schema) so you can copy/paste into a real 
 
 Each walkthrough provides commands you can run directly from the repository root. Adjust DSNs, flags, or mock data as needed
 for your environment.
+
+## ORM Observability Wiring
+
+`erm.yaml` now carries feature flags under `observability.orm` so you can toggle query logs, tracing spans, and correlation IDs without editing Go code. The example project enables all three so the pgx driver streams telemetry into your logging/metrics pipeline:
+
+```go
+observer := runtime.QueryObserver{
+    Logger: runtime.QueryLoggerFunc(func(ctx context.Context, entry runtime.QueryLog) {
+        fields := []any{
+            "table", entry.Table,
+            "operation", entry.Operation,
+            "duration", entry.Duration,
+        }
+        if entry.CorrelationID != "" {
+            fields = append(fields, "correlation_id", entry.CorrelationID)
+        }
+        if entry.Err != nil {
+            fields = append(fields, "error", entry.Err)
+        }
+        slog.Log(ctx, slog.LevelInfo, entry.SQL, fields...)
+    }),
+    Tracer:    tracing.WithTracer(tracing.NewOTelTracer(provider, "examples/blog")),
+    Collector: metrics.WithCollector(promCollector),
+    Correlator: runtime.CorrelationProviderFunc(func(ctx context.Context) string {
+        if id, ok := requestid.FromContext(ctx); ok {
+            return id
+        }
+        return ""
+    }),
+}
+db.UseObserver(observer)
+```
+
+When `observability.orm.query_logging` is disabled the logger can be left `nil`. Likewise, set `emit_spans` or `correlation_ids` to `false` to skip span emission or context lookups. The defaults keep behaviour backwards compatible for teams that prefer minimal telemetry.
