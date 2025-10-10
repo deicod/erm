@@ -100,7 +100,8 @@ func TestQueryObserverEmitsTelemetry(t *testing.T) {
 	}
 
 	args := []any{"tenant", 5}
-	obs := observer.Observe(ctx, OperationSelect, "posts", "SELECT * FROM posts WHERE slug = $1", args)
+        obs := observer.Observe(ctx, OperationSelect, "posts", "SELECT * FROM posts WHERE slug = $1", args,
+                WithObservationAttributes(tracing.String("orm.target", "replica")))
 	if obs.Context().Value(ctxKey{}) != "span-started" {
 		t.Fatalf("expected tracer-provided context value, got %v", obs.Context().Value(ctxKey{}))
 	}
@@ -141,21 +142,24 @@ func TestQueryObserverEmitsTelemetry(t *testing.T) {
 	if entry.Err != err {
 		t.Fatalf("log error mismatch: got %v want %v", entry.Err, err)
 	}
-	if len(entry.Args) != 2 || entry.Args[0] != "tenant" {
-		t.Fatalf("expected immutable args copy, got %+v", entry.Args)
-	}
-	if entry.Duration <= 0 {
-		t.Fatalf("log duration must be positive, got %v", entry.Duration)
-	}
+        if len(entry.Args) != 2 || entry.Args[0] != "tenant" {
+                t.Fatalf("expected immutable args copy, got %+v", entry.Args)
+        }
+        if entry.Duration <= 0 {
+                t.Fatalf("log duration must be positive, got %v", entry.Duration)
+        }
+        if len(entry.Attributes) == 0 {
+                t.Fatalf("expected attributes to be forwarded")
+        }
 }
 
 func TestQueryObserverZeroValue(t *testing.T) {
-	ctx := context.Background()
-	obs := (QueryObserver{}).Observe(ctx, OperationAggregate, "users", "SELECT COUNT(*) FROM users", nil)
-	if obs.Context() == nil {
-		t.Fatalf("expected non-nil context")
-	}
-	obs.End(nil)
+        ctx := context.Background()
+        obs := (QueryObserver{}).Observe(ctx, OperationAggregate, "users", "SELECT COUNT(*) FROM users", nil)
+        if obs.Context() == nil {
+                t.Fatalf("expected non-nil context")
+        }
+        obs.End(nil)
 }
 
 type ctxKey struct{}

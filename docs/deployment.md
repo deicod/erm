@@ -23,6 +23,13 @@ go run ./cmd/erm migrate --mode apply --env prod
 go run ./cmd/erm migrate --mode rollback --env dev
 ```
 
+## Read Replicas
+
+- Add replica connection strings under `database.replicas` in `erm.yaml`. Each entry can declare `name`, `url`, `read_only`, and `max_follower_lag` to describe the target node.
+- Optional `database.routing.policies` map friendly names to routing preferences (lag thresholds, fallback behaviour). Call `db.UseReplicaPolicies(defaultPolicy, policies)` after `pg.ConnectCluster` to register them.
+- At call sites, use `pg.WithReplicaRead(ctx, pg.ReplicaReadOptions{MaxLag: 5 * time.Second})` or `pg.WithReplicaPolicy(ctx, "reporting")` to opt in to read scaling. Mutations and explicit transactions continue to hit the primary via `db.Writer()`.
+- CI and local workflows that do not provision replicas can keep the section empty—`ConnectCluster` gracefully operates in primary-only mode.
+
 ## Release Checklist
 
 1. **Cut a release branch.** Regenerate code (`erm gen`) and ensure `go test ./...` passes.

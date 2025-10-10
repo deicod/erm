@@ -17,6 +17,8 @@ type projectConfig struct {
 	Database struct {
 		URL          string                         `yaml:"url"`
 		Pool         poolConfig                     `yaml:"pool"`
+		Replicas     []replicaConfig                `yaml:"replicas"`
+		Routing      replicaRoutingConfig           `yaml:"routing"`
 		Environments map[string]databaseEnvironment `yaml:"environments"`
 	} `yaml:"database"`
 	Observability struct {
@@ -41,6 +43,37 @@ func (cfg projectConfig) PoolOption() pg.Option {
 	return nil
 }
 
+func (cfg projectConfig) ReplicaConfigs() []pg.ReplicaConfig {
+	if len(cfg.Database.Replicas) == 0 {
+		return nil
+	}
+	replicas := make([]pg.ReplicaConfig, 0, len(cfg.Database.Replicas))
+	for _, replica := range cfg.Database.Replicas {
+		replicas = append(replicas, pg.ReplicaConfig{
+			Name:           replica.Name,
+			URL:            replica.URL,
+			ReadOnly:       replica.ReadOnly,
+			MaxFollowerLag: replica.MaxFollowerLag,
+		})
+	}
+	return replicas
+}
+
+func (cfg projectConfig) ReplicaPolicies() (string, map[string]pg.ReplicaReadOptions) {
+	if len(cfg.Database.Routing.Policies) == 0 {
+		return cfg.Database.Routing.DefaultPolicy, nil
+	}
+	policies := make(map[string]pg.ReplicaReadOptions, len(cfg.Database.Routing.Policies))
+	for name, policy := range cfg.Database.Routing.Policies {
+		policies[name] = pg.ReplicaReadOptions{
+			MaxLag:          policy.MaxFollowerLag,
+			RequireReadOnly: policy.ReadOnly,
+			DisableFallback: policy.DisableFallback,
+		}
+	}
+	return cfg.Database.Routing.DefaultPolicy, policies
+}
+
 type poolConfig struct {
 	MaxConns          int32         `yaml:"max_conns"`
 	MinConns          int32         `yaml:"min_conns"`
@@ -51,6 +84,24 @@ type poolConfig struct {
 
 type databaseEnvironment struct {
 	URL string `yaml:"url"`
+}
+
+type replicaConfig struct {
+	Name           string        `yaml:"name"`
+	URL            string        `yaml:"url"`
+	ReadOnly       bool          `yaml:"read_only"`
+	MaxFollowerLag time.Duration `yaml:"max_follower_lag"`
+}
+
+type replicaRoutingConfig struct {
+	DefaultPolicy string                         `yaml:"default_policy"`
+	Policies      map[string]replicaPolicyConfig `yaml:"policies"`
+}
+
+type replicaPolicyConfig struct {
+	ReadOnly        bool          `yaml:"read_only"`
+	MaxFollowerLag  time.Duration `yaml:"max_follower_lag"`
+	DisableFallback bool          `yaml:"disable_fallback"`
 }
 
 func (pc poolConfig) Option() pg.Option {

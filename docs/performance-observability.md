@@ -32,6 +32,14 @@ database:
 
 The pgx wrapper now exposes a consolidated `pg.WithPoolConfig` option, so CLI consumers can translate the YAML block into runtime tuning without sprinkling individual setters throughout the codebase.
 
+## Replica Routing & Health Checks
+
+- Declare replicas in `erm.yaml` under `database.replicas` and optionally name routing policies under `database.routing`. The CLI loads the definitions so your bootstrap code can call `db.UseReplicaPolicies(default, policies)` after connecting.
+- Use `pg.WithReplicaRead(ctx, pg.ReplicaReadOptions{MaxLag: 5 * time.Second})` to opt an individual request into replica reads. Combine with `pg.WithReplicaPolicy(ctx, "reporting")` to reuse policy definitions, or `pg.WithPrimary(ctx)` to pin a specific call to the writer even when a default policy is active.
+- The driver keeps distinct pools for writer and replicas. Health probes (`SELECT pg_is_in_recovery()...`) run on demand and respect both the replica-level `max_follower_lag` and per-read `MaxLag` settings. Override the interval with `db.SetReplicaHealthInterval` or the probe implementation with `db.UseReplicaHealthCheck` when targeting managed services that expose custom views.
+- Telemetry now includes span/log attributes: `orm.target` (primary/replica name), `orm.replica` (boolean), `orm.failover`, `orm.failover_reason`, and `orm.health_check`. Metrics fan out through the existing `runtime.QueryObserver`, so failovers show up as additional query events tagged with `orm.failover=true`.
+- When a replica errors or violates lag/read-only guarantees, the driver retries against the writer unless `ReplicaReadOptions.DisableFallback` is set. Aggregates handle retry within the returned row wrapper so callers simply invoke `Scan`.
+
 ---
 
 ## Dataloaders & N+1 Detection

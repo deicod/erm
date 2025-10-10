@@ -84,7 +84,11 @@ func (c *UserClient) Create(ctx context.Context, input *User) (*User, error) {
 	if err := ValidationRegistry.Validate(ctx, "User", validation.OpCreate, userValidationRecord(input), input); err != nil {
 		return nil, err
 	}
-	row := c.db.Pool.QueryRow(ctx, userInsertQuery, input.ID, input.CreatedAt, input.UpdatedAt)
+	writer := c.db.Writer()
+	if writer == nil {
+		return nil, errors.New("database writer pool is unavailable")
+	}
+	row := writer.QueryRow(ctx, userInsertQuery, input.ID, input.CreatedAt, input.UpdatedAt)
 	out := new(User)
 	if err := row.Scan(&out.ID, &out.Slug, &out.CreatedAt, &out.UpdatedAt); err != nil {
 		return nil, err
@@ -135,7 +139,11 @@ func (c *UserClient) BulkCreate(ctx context.Context, inputs []*User) ([]*User, e
 	if err != nil {
 		return nil, err
 	}
-	rows, err := c.db.Pool.Query(ctx, sql, args...)
+	writer := c.db.Writer()
+	if writer == nil {
+		return nil, errors.New("database writer pool is unavailable")
+	}
+	rows, err := writer.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +177,7 @@ func (c *UserClient) ByID(ctx context.Context, id string) (*User, error) {
 			}
 		}
 	}
-	row := c.db.Pool.QueryRow(ctx, userSelectQuery, id)
+	row := c.db.QueryRow(ctx, "users", userSelectQuery, id)
 	out := new(User)
 	if err := row.Scan(&out.ID, &out.Slug, &out.CreatedAt, &out.UpdatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -191,7 +199,7 @@ func (c *UserClient) List(ctx context.Context, limit, offset int) ([]*User, erro
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := c.db.Pool.Query(ctx, userListQuery, limit, offset)
+	rows, err := c.db.Query(ctx, "users", userListQuery, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +219,7 @@ func (c *UserClient) List(ctx context.Context, limit, offset int) ([]*User, erro
 }
 
 func (c *UserClient) Count(ctx context.Context) (int, error) {
-	row := c.db.Pool.QueryRow(ctx, userCountQuery)
+	row := c.db.QueryRow(ctx, "users", userCountQuery)
 	var total int
 	if err := row.Scan(&total); err != nil {
 		return 0, err
@@ -231,7 +239,11 @@ func (c *UserClient) Update(ctx context.Context, input *User) (*User, error) {
 	if err := ValidationRegistry.Validate(ctx, "User", validation.OpUpdate, userValidationRecord(input), input); err != nil {
 		return nil, err
 	}
-	row := c.db.Pool.QueryRow(ctx, userUpdateQuery, input.UpdatedAt, input.ID)
+	writer := c.db.Writer()
+	if writer == nil {
+		return nil, errors.New("database writer pool is unavailable")
+	}
+	row := writer.QueryRow(ctx, userUpdateQuery, input.UpdatedAt, input.ID)
 	out := new(User)
 	if err := row.Scan(&out.ID, &out.Slug, &out.CreatedAt, &out.UpdatedAt); err != nil {
 		return nil, err
@@ -276,7 +288,7 @@ func (c *UserClient) BulkUpdate(ctx context.Context, inputs []*User) ([]*User, e
 	if err != nil {
 		return nil, err
 	}
-	rows, err := c.db.Pool.Query(ctx, sql, args...)
+	rows, err := c.db.Query(ctx, "users", sql, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +311,11 @@ func (c *UserClient) BulkUpdate(ctx context.Context, inputs []*User) ([]*User, e
 }
 
 func (c *UserClient) Delete(ctx context.Context, id string) error {
-	if _, err := c.db.Pool.Exec(ctx, userDeleteQuery, id); err != nil {
+	writer := c.db.Writer()
+	if writer == nil {
+		return errors.New("database writer pool is unavailable")
+	}
+	if _, err := writer.Exec(ctx, userDeleteQuery, id); err != nil {
 		return err
 	}
 	if c.cache != nil {
@@ -324,7 +340,11 @@ func (c *UserClient) BulkDelete(ctx context.Context, ids []string) (int64, error
 	if err != nil {
 		return 0, err
 	}
-	tag, err := c.db.Pool.Exec(ctx, sql, args...)
+	writer := c.db.Writer()
+	if writer == nil {
+		return 0, errors.New("database writer pool is unavailable")
+	}
+	tag, err := writer.Exec(ctx, sql, args...)
 	if err != nil {
 		return 0, err
 	}
