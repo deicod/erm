@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
@@ -12,13 +13,20 @@ func newGraphQLInitCmd() *cobra.Command {
 		Use:   "graphql init",
 		Short: "Add gqlgen config and bootstrap Relay schema",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := os.WriteFile("internal/graphql/gqlgen.yml", []byte(gqlgenYAML), 0o644); err != nil {
-				return err
+			graphqlDir := filepath.Join("internal", "graphql")
+			if err := ensureDir(graphqlDir); err != nil {
+				return wrapError(fmt.Sprintf("graphql init: create directory %s", graphqlDir), err, "Create the directory or run from the project root.", 1)
 			}
-			if err := os.WriteFile("internal/graphql/schema.graphqls", []byte(schemaGraphQLS), 0o644); err != nil {
-				return err
+			files := map[string]string{
+				filepath.Join(graphqlDir, "gqlgen.yml"):      gqlgenYAML,
+				filepath.Join(graphqlDir, "schema.graphqls"): schemaGraphQLS,
 			}
-			fmt.Println("Initialized gqlgen configuration.")
+			for path, content := range files {
+				if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+					return wrapError(fmt.Sprintf("graphql init: write %s", path), err, "Check that the GraphQL directory is writable.", 1)
+				}
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Initialized gqlgen configuration.")
 			return nil
 		},
 	}

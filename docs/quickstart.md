@@ -123,6 +123,13 @@ func (Post) Edges() []dsl.Edge {
 erm gen
 ```
 
+During development you can run:
+
+```bash
+erm gen --dry-run --diff      # Inspect the SQL and a concise change summary
+erm gen --only orm,graphql    # Refresh code without touching migrations
+```
+
 Outputs:
 
 - ORM packages in `internal/orm/user` and `internal/orm/post`
