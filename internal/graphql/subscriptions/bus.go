@@ -48,19 +48,22 @@ func (b *InMemoryBroker) Publish(ctx context.Context, topic string, payload any)
 		ctx = context.Background()
 	}
 	b.mu.RLock()
-	subscribers := make([]chan any, 0, len(b.subs[topic]))
-	for _, ch := range b.subs[topic] {
-		subscribers = append(subscribers, ch)
+	subscribers, ok := b.subs[topic]
+	if !ok {
+		b.mu.RUnlock()
+		return nil
 	}
-	b.mu.RUnlock()
 	for _, ch := range subscribers {
+		if err := ctx.Err(); err != nil {
+			b.mu.RUnlock()
+			return err
+		}
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
 		case ch <- payload:
 		default:
 		}
 	}
+	b.mu.RUnlock()
 	return nil
 }
 
