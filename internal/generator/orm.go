@@ -43,8 +43,8 @@ func writeRegistry(root string, entities []Entity) error {
 		fmt.Fprintf(buf, "            },\n")
 		fmt.Fprintf(buf, "            Edges: []runtime.EdgeSpec{\n")
 		for _, edge := range ent.Edges {
-			fmt.Fprintf(buf, "                {Name: %q, Column: %q, RefName: %q, Through: %q, Target: %q, Kind: %s, Nullable: %t, Unique: %t, Annotations: %s, Inverse: %q},\n",
-				edge.Name, edgeColumn(edge), edge.RefName, edge.Through, edge.Target, edgeKindLiteral(edge.Kind), edge.Nullable, edge.Unique, mapLiteral(edge.Annotations), edge.InverseName)
+			fmt.Fprintf(buf, "                {Name: %q, Column: %q, RefName: %q, Through: %q, Target: %q, Kind: %s, Nullable: %t, Unique: %t, Annotations: %s, Inverse: %q, PolymorphicTargets: %s, Cascade: %s},\n",
+				edge.Name, edgeColumn(edge), edge.RefName, edge.Through, edge.Target, edgeKindLiteral(edge.Kind), edge.Nullable, edge.Unique, mapLiteral(edge.Annotations), edge.InverseName, edgeTargetsLiteral(edge.PolymorphicTargets), edgeCascadeLiteral(edge.Cascade))
 		}
 		fmt.Fprintf(buf, "            },\n")
 		fmt.Fprintf(buf, "            Indexes: []runtime.IndexSpec{\n")
@@ -856,6 +856,38 @@ func aggregateGoType(agg dsl.Aggregate, fields map[string]dsl.Field) string {
 		return "any"
 	default:
 		return "any"
+	}
+}
+
+func edgeTargetsLiteral(targets []dsl.EdgeTarget) string {
+	if len(targets) == 0 {
+		return "nil"
+	}
+	items := make([]string, len(targets))
+	for i, target := range targets {
+		items[i] = fmt.Sprintf("{Entity: %q, Condition: %q}", target.Entity, target.Condition)
+	}
+	return fmt.Sprintf("[]runtime.EdgeTargetSpec{%s}", strings.Join(items, ", "))
+}
+
+func edgeCascadeLiteral(c dsl.EdgeCascade) string {
+	return fmt.Sprintf("runtime.CascadeSpec{OnDelete: %s, OnUpdate: %s}", cascadeActionLiteral(c.OnDelete), cascadeActionLiteral(c.OnUpdate))
+}
+
+func cascadeActionLiteral(action dsl.CascadeAction) string {
+	switch action {
+	case dsl.CascadeNoAction:
+		return "runtime.CascadeNoAction"
+	case dsl.CascadeRestrict:
+		return "runtime.CascadeRestrict"
+	case dsl.CascadeCascade:
+		return "runtime.CascadeCascade"
+	case dsl.CascadeSetNull:
+		return "runtime.CascadeSetNull"
+	case dsl.CascadeSetDefault:
+		return "runtime.CascadeSetDefault"
+	default:
+		return "runtime.CascadeUnset"
 	}
 }
 

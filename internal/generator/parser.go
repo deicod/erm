@@ -616,6 +616,8 @@ func executeDSLFunc(name string, args []any) (any, error) {
 		return dsl.ToMany(argString(args, 0), argString(args, 1)), nil
 	case "ManyToMany":
 		return dsl.ManyToMany(argString(args, 0), argString(args, 1)), nil
+	case "PolymorphicTarget":
+		return dsl.PolymorphicTarget(argString(args, 0), argString(args, 1)), nil
 	case "Idx":
 		return dsl.Idx(argString(args, 0)), nil
 	default:
@@ -678,6 +680,46 @@ func executeEdgeMethod(edge dsl.Edge, name string, args []any) (any, error) {
 		return edge.UniqueEdge(), nil
 	case "Inverse":
 		return edge.Inverse(argString(args, 0)), nil
+	case "Polymorphic":
+		targets := make([]dsl.EdgeTarget, len(args))
+		for i, arg := range args {
+			target, ok := arg.(dsl.EdgeTarget)
+			if !ok {
+				return nil, fmt.Errorf("Polymorphic expects dsl.EdgeTarget, got %T", arg)
+			}
+			targets[i] = target
+		}
+		return edge.Polymorphic(targets...), nil
+	case "PolymorphicTargets":
+		targets := make([]dsl.EdgeTarget, len(args))
+		for i, arg := range args {
+			target, ok := arg.(dsl.EdgeTarget)
+			if !ok {
+				return nil, fmt.Errorf("PolymorphicTargets expects dsl.EdgeTarget, got %T", arg)
+			}
+			targets[i] = target
+		}
+		return edge.Polymorphic(targets...), nil
+	case "OnDelete":
+		return edge.OnDelete(argCascade(args, 0)), nil
+	case "OnUpdate":
+		return edge.OnUpdate(argCascade(args, 0)), nil
+	case "OnDeleteCascade":
+		return edge.OnDeleteCascade(), nil
+	case "OnDeleteSetNull":
+		return edge.OnDeleteSetNull(), nil
+	case "OnDeleteRestrict":
+		return edge.OnDeleteRestrict(), nil
+	case "OnDeleteNoAction":
+		return edge.OnDeleteNoAction(), nil
+	case "OnUpdateCascade":
+		return edge.OnUpdateCascade(), nil
+	case "OnUpdateSetNull":
+		return edge.OnUpdateSetNull(), nil
+	case "OnUpdateRestrict":
+		return edge.OnUpdateRestrict(), nil
+	case "OnUpdateNoAction":
+		return edge.OnUpdateNoAction(), nil
 	default:
 		return nil, fmt.Errorf("unsupported edge method %s", name)
 	}
@@ -725,6 +767,10 @@ func buildInverseEdge(source Entity, edge dsl.Edge) dsl.Edge {
 		Unique:      edge.Unique,
 		Through:     edge.Through,
 		InverseName: edge.Name,
+		Cascade:     edge.Cascade,
+	}
+	if len(edge.PolymorphicTargets) > 0 {
+		inverse.PolymorphicTargets = append([]dsl.EdgeTarget(nil), edge.PolymorphicTargets...)
 	}
 	switch edge.Kind {
 	case dsl.EdgeToOne:
@@ -901,6 +947,23 @@ func argIdentityMode(args []any, idx int) dsl.IdentityMode {
 		}
 	}
 	return dsl.IdentityByDefault
+}
+
+func argCascade(args []any, idx int) dsl.CascadeAction {
+	if idx >= len(args) {
+		return dsl.CascadeUnset
+	}
+	switch v := args[idx].(type) {
+	case dsl.CascadeAction:
+		return v
+	case string:
+		if v == "" {
+			return dsl.CascadeUnset
+		}
+		return dsl.CascadeAction(strings.ToUpper(v))
+	default:
+		return dsl.CascadeUnset
+	}
 }
 
 func argFieldType(args []any, idx int) (dsl.FieldType, error) {

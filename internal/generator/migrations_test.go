@@ -368,6 +368,58 @@ func TestRenderInitialMigration_ManyToManyEdges(t *testing.T) {
 	}
 }
 
+func TestRenderInitialMigration_ForeignKeyCascade(t *testing.T) {
+	entities := []Entity{
+		{
+			Name: "Parent",
+			Fields: []dsl.Field{
+				dsl.UUIDv7("id").Primary(),
+			},
+		},
+		{
+			Name: "Child",
+			Fields: []dsl.Field{
+				dsl.UUIDv7("id").Primary(),
+				dsl.UUIDv7("parent_id"),
+			},
+			Edges: []dsl.Edge{
+				dsl.ToOne("parent", "Parent").Field("parent_id").OnDeleteCascade().OnUpdateRestrict(),
+			},
+		},
+	}
+
+	sql := renderInitialMigration(entities, extensionFlags{})
+
+	if !strings.Contains(sql, "ON DELETE CASCADE") {
+		t.Fatalf("expected cascade delete clause in migration:\n%s", sql)
+	}
+	if !strings.Contains(sql, "ON UPDATE RESTRICT") {
+		t.Fatalf("expected restrict update clause in migration:\n%s", sql)
+	}
+}
+
+func TestRenderInitialMigration_JoinTableCascade(t *testing.T) {
+	entities := []Entity{
+		{
+			Name:   "User",
+			Fields: []dsl.Field{dsl.UUIDv7("id").Primary()},
+			Edges: []dsl.Edge{
+				dsl.ManyToMany("teams", "Team").OnDeleteCascade().OnUpdateCascade(),
+			},
+		},
+		{
+			Name:   "Team",
+			Fields: []dsl.Field{dsl.UUIDv7("id").Primary()},
+		},
+	}
+
+	sql := renderInitialMigration(entities, extensionFlags{})
+
+	if !strings.Contains(sql, "CONSTRAINT fk_teams_users_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE ON UPDATE CASCADE") {
+		t.Fatalf("expected join table constraint to include cascades, got:\n%s", sql)
+	}
+}
+
 func TestFieldSQLType_PostgresFamilies(t *testing.T) {
 	tests := []struct {
 		name  string

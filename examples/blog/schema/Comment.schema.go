@@ -18,10 +18,12 @@ func (Comment) Fields() []dsl.Field {
 
 func (Comment) Edges() []dsl.Edge {
 	return []dsl.Edge{
-		dsl.ToOne("post", "Post").Field("post_id"),
-		dsl.ToOne("author", "User").Field("author_id"),
-		dsl.ToOne("parent", "Comment").Field("parent_id").Optional(),
-		dsl.ToMany("replies", "Comment").Ref("parent"),
+		dsl.ToOne("post", "Post").Field("post_id").OnDeleteCascade(),
+		dsl.ToOne("author", "User").Field("author_id").OnDeleteCascade(),
+		dsl.ToOne("parent", "Comment").Field("parent_id").Optional().OnDeleteSetNull(),
+		dsl.ToMany("replies", "Comment").Ref("parent").Polymorphic(
+			dsl.PolymorphicTarget("Comment", "parent_id IS NOT NULL"),
+		),
 	}
 }
 

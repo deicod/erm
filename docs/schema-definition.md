@@ -491,11 +491,29 @@ Using `.Inverse("projects")` keeps the `Tag` schema minimal while still generati
 
 ### Edge annotations
 
-- `.OnDeleteCascade()` / `.OnDeleteSetNull()` – Control FK behavior in SQL and GraphQL.
-- `.Inverse(name)` – Create an inverse edge without writing a second schema definition. `Ref()` is preferred when referencing a
-  concrete field but `.Inverse()` is helpful for convenience edges.
+- `.OnDeleteCascade()` / `.OnDeleteSetNull()` / `.OnDeleteRestrict()` – Control FK behavior in SQL and GraphQL. Pair with the matching `.OnUpdate*` helpers to keep constraints symmetric when you expect updates to cascade, restrict, or set null.
+- `.Polymorphic(targets...)` – Attach discriminated unions to edges. Combine with `dsl.PolymorphicTarget("<Entity>", "<sql condition>")` to describe how records should be typed at runtime.
+- `.Inverse(name)` – Create an inverse edge without writing a second schema definition. `Ref()` is preferred when referencing a concrete field but `.Inverse()` is helpful for convenience edges.
 - `.StorageKey(name)` – Override join table or foreign key column names explicitly.
 - `.Privacy(expression)` – Apply edge-specific guard in addition to entity policy.
+
+#### Polymorphic unions
+
+```go
+func (Post) Edges() []dsl.Edge {
+    return []dsl.Edge{
+        dsl.ToOne("workspace", "Workspace").
+            Field("workspace_id").
+            OnDeleteCascade().
+            Polymorphic(
+                dsl.PolymorphicTarget("Workspace", "kind = 'team'"),
+                dsl.PolymorphicTarget("Workspace", "kind = 'personal'"),
+            ),
+    }
+}
+```
+
+`Polymorphic` metadata flows through the generated registry and clients so resolvers can materialise GraphQL interfaces or unions without hand-written switches.
 
 ### Generated helpers
 

@@ -19,8 +19,14 @@ func (Post) Fields() []dsl.Field {
 
 func (Post) Edges() []dsl.Edge {
 	return []dsl.Edge{
-		dsl.ToOne("author", "User").Field("author_id").Inverse("posts"),
-		dsl.ToOne("workspace", "Workspace").Field("workspace_id"),
+		dsl.ToOne("author", "User").Field("author_id").OnDeleteCascade().Inverse("posts"),
+		dsl.ToOne("workspace", "Workspace").
+			Field("workspace_id").
+			OnDeleteCascade().
+			Polymorphic(
+				dsl.PolymorphicTarget("Workspace", "kind = 'team'"),
+				dsl.PolymorphicTarget("Workspace", "kind = 'personal'"),
+			),
 		dsl.ToMany("comments", "Comment").Ref("post"),
 	}
 }

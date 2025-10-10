@@ -5,6 +5,12 @@ tune to keep latency low, detect N+1 issues, and observe behavior in production.
 
 ---
 
+## Migration caveats
+
+- Foreign keys with explicit cascade policies (`OnDeleteCascade`, `OnUpdateRestrict`, etc.) are rendered directly into the SQL migrations. Plan for the additional write amplification on large tables and ensure background workers account for the cascaded deletes.
+- Polymorphic edges only annotate runtime metadata. The generator still emits concrete foreign keys, so keep discriminator predicates lightweight (usually an indexed column).
+- Regenerate migrations after changing cascade semantics—existing databases require manual `ALTER TABLE ... DROP CONSTRAINT ...` before the new clause can be applied.
+
 ## Connection Pooling
 
 - ORM uses `pgxpool.Pool`. Configure via `erm.yaml`:
