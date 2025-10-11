@@ -1,9 +1,14 @@
 package generator
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 type GenerateOptions struct {
@@ -86,6 +91,7 @@ func Run(root string, opts GenerateOptions) (RunResult, error) {
 		defer restoreWriter()
 	}
 
+	var modulePath string
 	for _, name := range []ComponentName{ComponentORM, ComponentGraphQL} {
 		plan := plans[name]
 		if plan == nil || !plan.Enabled {
@@ -104,7 +110,18 @@ func Run(root string, opts GenerateOptions) (RunResult, error) {
 		case ComponentORM:
 			genErr = writeORMArtifacts(plan.WriteRoot, entities)
 		case ComponentGraphQL:
-			genErr = writeGraphQLArtifacts(plan.WriteRoot, entities)
+			if modulePath == "" {
+				modulePath, err = detectModulePath(root)
+				if err != nil {
+					genErr = err
+					break
+				}
+				if modulePath == "" {
+					genErr = fmt.Errorf("module path not found; set module in erm.yaml or go.mod")
+					break
+				}
+			}
+			genErr = writeGraphQLArtifacts(plan.WriteRoot, entities, modulePath)
 			if genErr == nil && !plan.Stage {
 				genErr = gqlRunner(plan.WriteRoot)
 			}
@@ -197,6 +214,54 @@ func buildComponentPlan(root string, opts GenerateOptions, state generatorState,
 
 	plan.Reason = "up-to-date"
 	return plan
+}
+
+func detectModulePath(root string) (string, error) {
+	if module, err := moduleFromConfig(root); err != nil {
+		return "", err
+	} else if module != "" {
+		return module, nil
+	}
+	return moduleFromGoMod(root)
+}
+
+func moduleFromConfig(root string) (string, error) {
+	path := filepath.Join(root, "erm.yaml")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
+	}
+	var cfg struct {
+		Module string `yaml:"module"`
+	}
+	if err := yaml.Unmarshal(raw, &cfg); err != nil {
+		return "", fmt.Errorf("parse %s: %w", path, err)
+	}
+	return strings.TrimSpace(cfg.Module), nil
+}
+
+func moduleFromGoMod(root string) (string, error) {
+	path := filepath.Join(root, "go.mod")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", err
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "module ") {
+			module := strings.TrimSpace(strings.TrimPrefix(line, "module "))
+			if module != "" {
+				return module, nil
+			}
+		}
+	}
+	return "", nil
 }
 
 func activateTracker(root string, opts GenerateOptions, plans map[ComponentName]*componentPlan) (*artifactTracker, func()) {

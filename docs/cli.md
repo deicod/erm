@@ -80,6 +80,8 @@ Key flags:
 - `--diff` formats each migration operation with `+`, `-`, or `~` prefixes so you can skim structural changes quickly.
 - `--name` customizes the slug appended to the timestamp in the generated migration filename.
 - `--force` bypasses on-disk equality checks, rewriting artifacts when you need to regenerate after upgrading dependencies.
+- Ensure the project module path is set in `erm.yaml` (or inferred from `go.mod`). GraphQL resolvers and dataloaders import
+  `internal/*` packages using that module path; generation fails if it cannot be determined.
 
 Generation outputs when not running in dry-run mode:
 
