@@ -13,6 +13,18 @@ type (
 	FieldType          = publicdsl.FieldType
 	ExpressionSpec     = publicdsl.ExpressionSpec
 	IdentityMode       = publicdsl.IdentityMode
+	Field              = publicdsl.Field
+	ComputedColumn     = publicdsl.ComputedColumn
+	EdgeKind           = publicdsl.EdgeKind
+	CascadeAction      = publicdsl.CascadeAction
+	EdgeCascade        = publicdsl.EdgeCascade
+	EdgeTarget         = publicdsl.EdgeTarget
+	Edge               = publicdsl.Edge
+	Index              = publicdsl.Index
+	Predicate          = publicdsl.Predicate
+	Order              = publicdsl.Order
+	Aggregate          = publicdsl.Aggregate
+	QuerySpec          = publicdsl.QuerySpec
 )
 
 const (
@@ -92,16 +104,90 @@ const (
 	TypeBytes               = publicdsl.TypeBytes
 	IdentityByDefault       = publicdsl.IdentityByDefault
 	IdentityAlways          = publicdsl.IdentityAlways
+	EdgeToOne               = publicdsl.EdgeToOne
+	EdgeToMany              = publicdsl.EdgeToMany
+	EdgeManyToMany          = publicdsl.EdgeManyToMany
+	CascadeUnset            = publicdsl.CascadeUnset
+	CascadeNoAction         = publicdsl.CascadeNoAction
+	CascadeRestrict         = publicdsl.CascadeRestrict
+	CascadeCascade          = publicdsl.CascadeCascade
+	CascadeSetNull          = publicdsl.CascadeSetNull
+	CascadeSetDefault       = publicdsl.CascadeSetDefault
 )
 
-func GraphQL(name string, opts ...GraphQLOption) Annotation {
-	return publicdsl.GraphQL(name, opts...)
-}
-
-func GraphQLSubscriptions(events ...SubscriptionEvent) GraphQLOption {
-	return publicdsl.GraphQLSubscriptions(events...)
-}
-
-func Expression(sql string, deps ...string) ExpressionSpec {
-	return publicdsl.Expression(sql, deps...)
-}
+var (
+	GraphQL              = publicdsl.GraphQL
+	GraphQLSubscriptions = publicdsl.GraphQLSubscriptions
+	Expression           = publicdsl.Expression
+	Computed             = publicdsl.Computed
+	PolymorphicTarget    = publicdsl.PolymorphicTarget
+	Text                 = publicdsl.Text
+	VarChar              = publicdsl.VarChar
+	Char                 = publicdsl.Char
+	Boolean              = publicdsl.Boolean
+	SmallInt             = publicdsl.SmallInt
+	Integer              = publicdsl.Integer
+	BigInt               = publicdsl.BigInt
+	SmallSerial          = publicdsl.SmallSerial
+	Serial               = publicdsl.Serial
+	BigSerial            = publicdsl.BigSerial
+	SmallIntIdentity     = publicdsl.SmallIntIdentity
+	IntegerIdentity      = publicdsl.IntegerIdentity
+	BigIntIdentity       = publicdsl.BigIntIdentity
+	Decimal              = publicdsl.Decimal
+	Numeric              = publicdsl.Numeric
+	Real                 = publicdsl.Real
+	DoublePrecision      = publicdsl.DoublePrecision
+	Money                = publicdsl.Money
+	Bytea                = publicdsl.Bytea
+	Date                 = publicdsl.Date
+	Time                 = publicdsl.Time
+	TimeTZ               = publicdsl.TimeTZ
+	Timestamp            = publicdsl.Timestamp
+	TimestampTZ          = publicdsl.TimestampTZ
+	Interval             = publicdsl.Interval
+	JSON                 = publicdsl.JSON
+	JSONB                = publicdsl.JSONB
+	XML                  = publicdsl.XML
+	UUID                 = publicdsl.UUID
+	UUIDv7               = publicdsl.UUIDv7
+	Inet                 = publicdsl.Inet
+	CIDR                 = publicdsl.CIDR
+	MACAddr              = publicdsl.MACAddr
+	MACAddr8             = publicdsl.MACAddr8
+	Bit                  = publicdsl.Bit
+	VarBit               = publicdsl.VarBit
+	TSVector             = publicdsl.TSVector
+	TSQuery              = publicdsl.TSQuery
+	Point                = publicdsl.Point
+	Line                 = publicdsl.Line
+	Lseg                 = publicdsl.Lseg
+	Box                  = publicdsl.Box
+	Path                 = publicdsl.Path
+	Polygon              = publicdsl.Polygon
+	Circle               = publicdsl.Circle
+	Int4Range            = publicdsl.Int4Range
+	Int8Range            = publicdsl.Int8Range
+	NumRange             = publicdsl.NumRange
+	TSRange              = publicdsl.TSRange
+	TSTZRange            = publicdsl.TSTZRange
+	DateRange            = publicdsl.DateRange
+	Array                = publicdsl.Array
+	Geometry             = publicdsl.Geometry
+	Geography            = publicdsl.Geography
+	Vector               = publicdsl.Vector
+	String               = publicdsl.String
+	Int                  = publicdsl.Int
+	Float                = publicdsl.Float
+	Bool                 = publicdsl.Bool
+	Bytes                = publicdsl.Bytes
+	ToOne                = publicdsl.ToOne
+	ToMany               = publicdsl.ToMany
+	ManyToMany           = publicdsl.ManyToMany
+	Idx                  = publicdsl.Idx
+	NewPredicate         = publicdsl.NewPredicate
+	OrderBy              = publicdsl.OrderBy
+	NewAggregate         = publicdsl.NewAggregate
+	CountAggregate       = publicdsl.CountAggregate
+	Query                = publicdsl.Query
+)
