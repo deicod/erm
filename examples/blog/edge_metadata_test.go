@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/deicod/erm/examples/blog/schema"
-	"github.com/deicod/erm/internal/orm/dsl"
+	"github.com/deicod/erm/orm/dsl"
 )
 
 func TestBlogSchemaEdgeMetadata(t *testing.T) {

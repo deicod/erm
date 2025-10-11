@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/deicod/erm/internal/orm/dsl"
+	"github.com/deicod/erm/orm/dsl"
 )
 
 func TestGraphQLTypeMappings(t *testing.T) {

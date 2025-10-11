@@ -7,7 +7,7 @@ and GraphQL annotations in a single file.【F:internal/cli/new.go†L39-L79】�
 ```go
 package schema
 
-import "github.com/deicod/erm/internal/orm/dsl"
+import "github.com/deicod/erm/orm/dsl"
 
 // Entity models the Entity domain entity.
 type Entity struct{ dsl.Schema }

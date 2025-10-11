@@ -1,6 +1,6 @@
 package runtime
 
-import "github.com/deicod/erm/internal/orm/dsl"
+import "github.com/deicod/erm/orm/dsl"
 
 type FieldSpec struct {
 	Name         string

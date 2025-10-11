@@ -20,7 +20,7 @@ Each entity defines:
 // examples/blog/schema/User.schema.go
 package schema
 
-import "github.com/deicod/erm/internal/orm/dsl"
+import "github.com/deicod/erm/orm/dsl"
 
 type User struct{ dsl.Schema }
 

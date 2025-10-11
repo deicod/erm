@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deicod/erm/internal/orm/dsl"
+	"github.com/deicod/erm/orm/dsl"
 )
 
 func TestGenerateMigrations_TableAddition(t *testing.T) {

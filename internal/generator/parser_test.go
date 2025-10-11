@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/deicod/erm/internal/orm/dsl"
+	"github.com/deicod/erm/orm/dsl"
 )
 
 func TestLoadEntitiesSynthesizesInverseEdges(t *testing.T) {
@@ -18,7 +18,7 @@ func TestLoadEntitiesSynthesizesInverseEdges(t *testing.T) {
 
 	source := `package schema
 
-import "github.com/deicod/erm/internal/orm/dsl"
+import "github.com/deicod/erm/orm/dsl"
 
 type User struct{ dsl.Schema }
 
@@ -88,7 +88,7 @@ func TestLoadEntitiesSkipsExistingInverse(t *testing.T) {
 
 	source := `package schema
 
-import "github.com/deicod/erm/internal/orm/dsl"
+import "github.com/deicod/erm/orm/dsl"
 
 type Author struct{ dsl.Schema }
 
@@ -137,7 +137,7 @@ func TestInverseEdgeDerivesDefaultNames(t *testing.T) {
 
 	source := `package schema
 
-import "github.com/deicod/erm/internal/orm/dsl"
+import "github.com/deicod/erm/orm/dsl"
 
 type User struct{ dsl.Schema }
 
@@ -186,7 +186,7 @@ func TestInverseEdgeHonorsExplicitNames(t *testing.T) {
 
 	source := `package schema
 
-import "github.com/deicod/erm/internal/orm/dsl"
+import "github.com/deicod/erm/orm/dsl"
 
 type User struct{ dsl.Schema }
 

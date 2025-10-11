@@ -36,7 +36,7 @@ func newNewCmd() *cobra.Command {
 
 var schemaTemplate = `package schema
 
-import "github.com/deicod/erm/internal/orm/dsl"
+import "github.com/deicod/erm/orm/dsl"
 
 // {{Entity}} models the {{Entity}} domain entity.
 type {{Entity}} struct{ dsl.Schema }

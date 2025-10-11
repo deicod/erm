@@ -2,8 +2,8 @@
 package gen
 
 import (
-	"github.com/deicod/erm/internal/orm/dsl"
 	"github.com/deicod/erm/internal/orm/runtime"
+	"github.com/deicod/erm/orm/dsl"
 )
 
 var Registry = runtime.Registry{

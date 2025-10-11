@@ -27,7 +27,7 @@ erm new Task
 ```go
 package schema
 
-import "github.com/erm-project/erm/internal/orm/dsl"
+import "github.com/erm-project/erm/orm/dsl"
 
 type Workspace struct{ dsl.Schema }
 
@@ -66,7 +66,7 @@ func (Workspace) Annotations() []dsl.Annotation {
 ```go
 package schema
 
-import "github.com/erm-project/erm/internal/orm/dsl"
+import "github.com/erm-project/erm/orm/dsl"
 
 type Project struct{ dsl.Schema }
 
@@ -97,7 +97,7 @@ func (Project) Annotations() []dsl.Annotation {
 ```go
 package schema
 
-import "github.com/erm-project/erm/internal/orm/dsl"
+import "github.com/erm-project/erm/orm/dsl"
 
 type Task struct{ dsl.Schema }
 

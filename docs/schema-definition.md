@@ -5,7 +5,7 @@ generators synthesize ORM packages, GraphQL types, privacy policies, and migrati
 every DSL construct with examples you can copy into `internal/orm/schema`.
 
 > **Terminology:** Throughout this guide, the term *schema* refers to a Go type that embeds `dsl.Schema`. *Entity* describes the
-> generated runtime type and database table. The DSL lives in the `github.com/erm-project/erm/internal/orm/dsl` package.
+> generated runtime type and database table. The DSL lives in the `github.com/erm-project/erm/orm/dsl` package.
 
 ---
 
@@ -17,7 +17,7 @@ Every schema file should follow the same structure: imports, type definition, an
 package schema
 
 import (
-    "github.com/erm-project/erm/internal/orm/dsl"
+    "github.com/erm-project/erm/orm/dsl"
 )
 
 type User struct{ dsl.Schema }
