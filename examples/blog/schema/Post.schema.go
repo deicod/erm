@@ -1,6 +1,6 @@
 package schema
 
-import "github.com/deicod/erm/internal/orm/dsl"
+import "github.com/deicod/erm/orm/dsl"
 
 type Post struct{ dsl.Schema }
 

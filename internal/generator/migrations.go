@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deicod/erm/internal/orm/dsl"
+	"github.com/deicod/erm/orm/dsl"
 	"gopkg.in/yaml.v3"
 )
 

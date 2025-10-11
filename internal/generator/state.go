@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/deicod/erm/internal/orm/dsl"
+	"github.com/deicod/erm/orm/dsl"
 )
 
 type ComponentName string

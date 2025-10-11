@@ -3,8 +3,8 @@ package gen
 import (
 	"testing"
 
-	"github.com/deicod/erm/internal/orm/dsl"
 	"github.com/deicod/erm/internal/orm/runtime"
+	"github.com/deicod/erm/orm/dsl"
 )
 
 func TestRegistryStoresCascadeAndPolymorphicMetadata(t *testing.T) {

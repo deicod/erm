@@ -1,6 +1,6 @@
 package schema
 
-import "github.com/deicod/erm/internal/orm/dsl"
+import "github.com/deicod/erm/orm/dsl"
 
 // User models the User domain entity used in generator examples.
 type User struct{ dsl.Schema }

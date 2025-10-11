@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/deicod/erm/internal/orm/dsl"
+	"github.com/deicod/erm/orm/dsl"
 )
 
 func writeGraphQLArtifacts(root string, entities []Entity, modulePath string) error {

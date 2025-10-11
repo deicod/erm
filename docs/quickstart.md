@@ -66,7 +66,7 @@ Edit `internal/orm/schema/user.go`:
 ```go
 package schema
 
-import "github.com/erm-project/erm/internal/orm/dsl"
+import "github.com/erm-project/erm/orm/dsl"
 
 type User struct{ dsl.Schema }
 
@@ -90,7 +90,7 @@ Edit `internal/orm/schema/post.go`:
 ```go
 package schema
 
-import "github.com/erm-project/erm/internal/orm/dsl"
+import "github.com/erm-project/erm/orm/dsl"
 
 type Post struct{ dsl.Schema }
 
