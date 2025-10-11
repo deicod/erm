@@ -13,7 +13,7 @@ func newGraphQLInitCmd() *cobra.Command {
 		Use:   "graphql init",
 		Short: "Add gqlgen config and bootstrap Relay schema",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			graphqlDir := filepath.Join("internal", "graphql")
+			graphqlDir := "graphql"
 			if err := ensureDir(graphqlDir); err != nil {
 				return wrapError(fmt.Sprintf("graphql init: create directory %s", graphqlDir), err, "Create the directory or run from the project root.", 1)
 			}

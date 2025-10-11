@@ -27,7 +27,7 @@ func TestGraphQLInitCmdGeneratesResolverConfig(t *testing.T) {
 		t.Fatalf("execute graphql init: %v", err)
 	}
 
-	graphqlDir := filepath.Join("internal", "graphql")
+	graphqlDir := "graphql"
 	if _, err := os.Stat(graphqlDir); err != nil {
 		t.Fatalf("graphql directory missing after init: %v", err)
 	}
