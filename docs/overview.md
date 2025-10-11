@@ -25,17 +25,17 @@ features without diverging from proven patterns.
 
 The erm runtime separates concerns across predictable directories and packages:
 
-1. **Schema DSL (`internal/orm/schema`)** – Hand-authored Go files describe entities, fields, edges, indexes, mixins,
+1. **Schema DSL (`orm/schema`)** – Hand-authored Go files describe entities, fields, edges, indexes, mixins,
    annotations, hooks, interceptors, privacy policies, and constraints.
-2. **ORM Packages (`internal/orm/<entity>`)** – Generated code that includes builders, query APIs, mutation helpers,
+2. **ORM Packages (`orm/<entity>`)** – Generated code that includes builders, query APIs, mutation helpers,
    transaction scaffolding, predicates, eager-loading support, `Edges` structs, and instrumentation hooks.
-3. **GraphQL Layer (`internal/graphql`)** – Generated gqlgen schema/resolver glue, dataloader registrations, Node resolver, and
+3. **GraphQL Layer (`graphql`)** – Generated gqlgen schema/resolver glue, dataloader registrations, Node resolver, and
    GraphQL-specific annotations from the DSL.
-4. **Security Layer (`internal/oidc`)** – OIDC middleware verifying JWTs via discovery documents, JWKS caching, and claims
+4. **Security Layer (`oidc`)** – OIDC middleware verifying JWTs via discovery documents, JWKS caching, and claims
    mapping; integrates with GraphQL via `@auth` directives and context injection.
-5. **Observability (`internal/observability`)** – Tracing, metrics, structured logging, N+1 detection, and connection pool
+5. **Observability (`observability`)** – Tracing, metrics, structured logging, N+1 detection, and connection pool
    monitors that the generators wire into resolvers and ORM interceptors.
-6. **Extensions (`internal/orm/pgxext`)** – Specialized mixins and field types for PostGIS geometries, pgvector embeddings, and
+6. **Extensions (`orm/pgxext`)** – Specialized mixins and field types for PostGIS geometries, pgvector embeddings, and
    TimescaleDB hypertables, along with migration helpers.
 
 The generated CLI tasks (`erm gen`, `erm graphql init`, etc.) orchestrate these layers so a change in the schema DSL fans out to
@@ -50,11 +50,11 @@ customizing hooks or debugging performance issues.
 
 1. **HTTP Entry (cmd/server)** – The generated HTTP server receives a GraphQL request. Middleware validates JWTs and attaches a
    `context.Context` enriched with identity information and request metadata.
-2. **GraphQL Resolver** – The gqlgen resolver (generated in `internal/graphql/resolver`) translates the selection set into ORM
+2. **GraphQL Resolver** – The gqlgen resolver (generated in `graphql/resolver`) translates the selection set into ORM
    operations. Field resolvers automatically register dataloaders to prevent N+1 issues.
 3. **Privacy Evaluation** – Before executing ORM queries/mutations, privacy rules generated from schema annotations evaluate the
    viewer and operation type, short-circuiting unauthorized access.
-4. **ORM Execution** – Query builders leverage `pgx/v5` via connection pools configured in `internal/orm/runtime`. Hooks and
+4. **ORM Execution** – Query builders leverage `pgx/v5` via connection pools configured in `orm/runtime`. Hooks and
    interceptors instrument spans, apply auditing mixins, or enforce domain invariants.
 5. **Result Assembly** – Loaded entities populate `Edges` structs so resolvers can reuse data without additional database hits.
    Global IDs are encoded as `base64("<Type>:<uuidv7>")` before returning to the client.
@@ -70,13 +70,14 @@ customizing hooks or debugging performance issues.
 ├── cmd/
 │   └── server/              # GraphQL HTTP server entrypoint (generated + extendable)
 ├── docs/                    # This portal
-├── internal/
-│   ├── graphql/             # gqlgen config, resolvers, dataloaders, Node registry
-│   ├── observability/       # Logging/tracing integrations, metrics collectors
-│   ├── oidc/                # JWT verification, claims mapper interfaces, context helpers
-│   ├── orm/                 # Generated ORM packages with schema subdirectory for DSL definitions
-│   │   └── schema/          # Hand-authored entity schemas, mixins, annotations
-│   └── pkg/                 # Optional custom packages used by both generated and handwritten code
+├── cli/                     # CLI implementation powering `erm` commands
+├── generator/               # Shared code generation engine
+├── graphql/                 # gqlgen config, resolvers, dataloaders, Node registry
+├── observability/           # Logging/tracing integrations, metrics collectors
+├── oidc/                    # JWT verification, claims mapper interfaces, context helpers
+├── orm/                     # Generated ORM packages with schema subdirectory for DSL definitions
+│   └── schema/              # Hand-authored entity schemas, mixins, annotations
+├── testing/                 # Sandbox helpers for exercising ORM + GraphQL flows
 ├── migrations/              # Versioned SQL migrations generated during `erm gen`
 ├── schema/                  # (Optional) GraphQL SDL if you author custom SDL alongside generation
 └── erm.yaml                 # Project configuration consumed by the CLI
@@ -86,7 +87,7 @@ Key layout guarantees that AI tooling relies on:
 
 - Generated files include a prominent header discouraging manual edits; customizing behavior happens via schema annotations or
   resolver extension stubs.
-- Every entity lives in its own package under `internal/orm`, and the CLI updates package imports automatically when you add
+- Every entity lives in its own package under `orm`, and the CLI updates package imports automatically when you add
   mixins or fields.
 - `erm.yaml` stores module path, database DSN, OIDC issuer, and code generation toggles; CLI commands read it to avoid repeated
   prompts.

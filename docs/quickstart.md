@@ -29,8 +29,8 @@ erm init --module github.com/example/blog --oidc-issuer http://localhost:8080/re
 
 - `erm.yaml` with module path, database defaults, and OIDC configuration
 - `cmd/server` GraphQL entrypoint
-- `internal/orm/schema` with sample schema mixins
-- `internal/graphql` resolver scaffolding
+- `orm/schema` with sample schema mixins
+- `graphql` resolver scaffolding
 - `.env.example` and Makefile targets (`gen`, `test`, `serve`)
 
 ---
@@ -61,7 +61,7 @@ erm new User
 erm new Post
 ```
 
-Edit `internal/orm/schema/user.go`:
+Edit `orm/schema/user.go`:
 
 ```go
 package schema
@@ -85,7 +85,7 @@ func (User) Edges() []dsl.Edge {
 }
 ```
 
-Edit `internal/orm/schema/post.go`:
+Edit `orm/schema/post.go`:
 
 ```go
 package schema
@@ -132,8 +132,8 @@ erm gen --only orm,graphql    # Refresh code without touching migrations
 
 Outputs:
 
-- ORM packages in `internal/orm/user` and `internal/orm/post`
-- GraphQL schema/resolvers in `internal/graphql`
+- ORM packages in `orm/user` and `orm/post`
+- GraphQL schema/resolvers in `graphql`
 - SQL migrations under `migrations/`
 
 Review migrations:
@@ -157,7 +157,7 @@ Or use your migration tool of choice.
 
 ## 5. Seed Data (Optional)
 
-Create a seed script `internal/seed/seed.go`:
+Create a seed script `seed/seed.go`:
 
 ```go
 package seed
@@ -252,7 +252,7 @@ Set up Keycloak (or your provider) and update `erm.yaml` `oidc` block. Restart t
 go test ./...
 ```
 
-Use `internal/testing` helpers (sandbox + GraphQL harness) to create targeted tests.
+Use `testing` helpers (sandbox + GraphQL harness) to create targeted tests.
 
 ---
 

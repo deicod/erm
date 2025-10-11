@@ -1,7 +1,7 @@
 # Testing Guide
 
 Reliable tests make it safe to evolve schemas, generated clients, and GraphQL resolvers. The `erm` repository ships with helpers
-in `internal/testing` that keep suites fast while still exercising the generated layers end-to-end. This guide outlines the
+in `testing` that keep suites fast while still exercising the generated layers end-to-end. This guide outlines the
 available utilities, common patterns, and CI recommendations.
 
 ---
@@ -56,7 +56,7 @@ _, err := client.Users().Create(ctx, &gen.User{Email: "bad"})
 require.Error(t, err)
 ```
 
-Use the `internal/orm/runtime/validation` helpers to build string, regex, and cross-field checks; they run automatically inside `Create`/`Update` once registered.
+Use the `orm/runtime/validation` helpers to build string, regex, and cross-field checks; they run automatically inside `Create`/`Update` once registered.
 
 ### GraphQL Harness
 

@@ -65,12 +65,13 @@ paths for tooling:
 .
 ├── cmd/                # Entry points (e.g. GraphQL server) generated and/or extended by developers
 ├── docs/               # This portal, synced with CLI scaffolding for onboarding
-├── internal/
-│   ├── graphql/        # Generated resolvers, dataloaders, Relay node registry, gqlgen configuration
-│   ├── observability/  # Tracing integrations, logging adapters, request metrics
-│   ├── oidc/           # OIDC verifier, JWKS cache, claims mappers, @auth directive helpers
-│   ├── orm/            # Generated ORM packages; `schema/` subdirectory contains the hand-authored DSL
-│   └── pkg/            # Optional handwritten libraries that augment generated code
+├── cli/                # CLI implementation backing `erm init`, `erm gen`, and friends
+├── generator/          # Code generation engine shared by the CLI and tests
+├── graphql/            # Generated resolvers, dataloaders, Relay node registry, gqlgen configuration
+├── observability/      # Tracing integrations, logging adapters, request metrics
+├── oidc/               # OIDC verifier, JWKS cache, claims mappers, @auth directive helpers
+├── orm/                # Generated ORM packages; `schema/` subdirectory contains the hand-authored DSL
+├── testing/            # Integration harnesses for ORM + GraphQL flows
 ├── migrations/         # SQL migration files emitted during `erm gen`
 ├── schema/             # (Optional) GraphQL SDL stubs when authoring manually managed schemas
 └── erm.yaml            # Project configuration consumed by the CLI and generators
@@ -78,7 +79,7 @@ paths for tooling:
 
 The layered architecture consists of:
 
-1. **Schema Definitions** – Go files in `internal/orm/schema` describe entities, fields, edges, indexes, mixins, and annotations.
+1. **Schema Definitions** – Go files in `orm/schema` describe entities, fields, edges, indexes, mixins, and annotations.
 2. **Code Generation** – `erm gen` materializes ORM packages, GraphQL types/resolvers, privacy rules, loader registries, and
    migrations.
 3. **Runtime Services** – A gqlgen-powered HTTP server exposes the Relay API with dataloaders, Node ID helpers, and metrics.

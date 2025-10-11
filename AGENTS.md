@@ -10,19 +10,19 @@ We use **specialized LLM agents** coordinated by a lightweight orchestrator. Eac
 
 2. **ORM Core Engineer**
    - Owns schema DSL, codegen, migrations, predicates, eager loading.
-   - Output: `/internal/orm/*`, templates, tests.
+   - Output: `/orm/*`, templates, tests.
 
 3. **GraphQL Engineer**
    - Owns gqlgen, Relay Node/global ID, connections, dataloaders.
-   - Output: `/internal/graphql/*`, schema & resolvers.
+   - Output: `/graphql/*`, schema & resolvers.
 
 4. **OIDC/Security Engineer**
    - Middleware, JWKS, claims mapping (Keycloak default, others pluggable).
-   - Output: `/internal/oidc/*`, `@auth` directive.
+   - Output: `/oidc/*`, `@auth` directive.
 
 5. **Extensions Engineer**
    - PostGIS, pgvector, TimescaleDB support.
-   - Output: `/internal/orm/pgxext/*`, migration helpers.
+   - Output: `/orm/pg/*`, migration helpers.
 
 6. **CLI/Scaffold Engineer**
    - `erm` UX, project bootstrap, generator orchestration.
@@ -30,7 +30,7 @@ We use **specialized LLM agents** coordinated by a lightweight orchestrator. Eac
 
 7. **Perf & Observability Engineer**
    - Benchmarks, N+1 detection, tracing hooks, pool settings.
-   - Output: `/internal/observability/*`, `/benchmarks/*`.
+   - Output: `/observability/*`, `/benchmarks/*`.
 
 8. **Docs & DX Engineer**
    - Tutorials, examples, error messages, `erm doctor` basics.

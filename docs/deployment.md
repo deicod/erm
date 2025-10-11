@@ -36,7 +36,7 @@ go run ./cmd/erm migrate --mode rollback --env dev
 2. **Preflight schema changes.** Run `erm migrate --mode plan` in dev and staging. Resolve any reported schema drift before continuing.
 3. **Back up production.** Create a physical or logical backup before running destructive changes. Automate this inside your orchestration platform where possible.
 4. **Apply migrations.** Execute `erm migrate --mode apply --env <profile>` from a trusted CI job or release engineer workstation.
-5. **Run smoke tests.** Use the `internal/testing` sandbox helpers to validate high-value queries and inserts. The GitHub Actions workflow under `.github/workflows/ci.yml` contains a reusable example.
+5. **Run smoke tests.** Use the `testing` sandbox helpers to validate high-value queries and inserts. The GitHub Actions workflow under `.github/workflows/ci.yml` contains a reusable example.
 6. **Observe and verify.** Monitor database telemetry (locks, replication lag) and application health dashboards for at least one full billing cycle.
 7. **Promote artifacts.** Tag the release, publish binaries, and update downstream services.
 

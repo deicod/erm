@@ -2,7 +2,7 @@
 
 The `erm new <Entity>` command scaffolds a schema file under `schema/<Entity>.schema.go` with a production-ready baseline.
 The template mirrors the `User` example shipped in this repository and demonstrates how to combine the DSL, query helpers,
-and GraphQL annotations in a single file.【F:internal/cli/new.go†L39-L79】【F:schema/User.schema.go†L1-L44】
+and GraphQL annotations in a single file.【F:cli/new.go†L39-L79】【F:schema/User.schema.go†L1-L44】
 
 ```go
 package schema
@@ -37,7 +37,7 @@ func (Entity) Fields() []dsl.Field {
 
 The schema skeleton is designed to be evolved in tandem with tests. When you change it:
 
-1. Add or update tests under `internal/generator` or your application package to encode the expected behavior.
+1. Add or update tests under `generator` or your application package to encode the expected behavior.
 2. Regenerate artifacts with `erm gen` and review the staged diff.
 3. Run the schema workflow commands captured in `schema/AGENTS.md` to keep the feedback loop fast (`go test`, `go test -race`, and `go vet`).【F:schema/AGENTS.md†L5-L11】
 

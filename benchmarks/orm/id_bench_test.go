@@ -3,7 +3,7 @@ package orm
 import (
 	"testing"
 
-	"github.com/deicod/erm/internal/orm/id"
+	"github.com/deicod/erm/orm/id"
 )
 
 func BenchmarkUUIDv7(b *testing.B) {

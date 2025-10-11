@@ -7,8 +7,8 @@ import (
 
 	pgxmock "github.com/pashagolub/pgxmock/v4"
 
-	"github.com/deicod/erm/internal/orm/gen"
-	ermtesting "github.com/deicod/erm/internal/testing"
+	"github.com/deicod/erm/orm/gen"
+	ermtesting "github.com/deicod/erm/testing"
 )
 
 func TestUserORMCRUDFlow(t *testing.T) {

@@ -10,7 +10,7 @@ This project relies on deterministic code generation. The generator now fingerpr
    - Migrations are generated only when the schema snapshot changes. Re-running without changes keeps the migration directory clean.
 3. Commit the regenerated files as usual.
 
-Because the generator tracks hashes, you can safely run `erm gen` as often as you like—the second run after a change should report every component as "up-to-date". The tests under `internal/generator/run_test.go` exercise this flow against the `examples/blog` workspace to guarantee idempotency.
+Because the generator tracks hashes, you can safely run `erm gen` as often as you like—the second run after a change should report every component as "up-to-date". The tests under `generator/run_test.go` exercise this flow against the `examples/blog` workspace to guarantee idempotency.
 
 ## Watching schema changes
 
@@ -41,4 +41,4 @@ This prints the SQL that would be generated and a concise diff summary. Because 
 - Run `erm gen` after every schema edit.
 - If a component reports "up-to-date" unexpectedly, clean `.erm/cache/generator_state.json` and regenerate.
 - Use `erm gen --watch` during heavy schema work to get immediate feedback in `.erm/staging` without touching tracked files.
-- Rely on the `examples/blog` workspace (see `internal/generator/run_test.go`) to verify generator idempotency before major changes.
+- Rely on the `examples/blog` workspace (see `generator/run_test.go`) to verify generator idempotency before major changes.

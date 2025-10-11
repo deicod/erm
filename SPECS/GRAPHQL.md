@@ -34,4 +34,4 @@ interface Node {
 
 ## gqlgen
 - `gqlgen.yml` with `autobind` to generated ORM Go types.
-- Generated `schema.graphqls` + stubs live under `internal/graphql`.
+- Generated `schema.graphqls` + stubs live under `graphql`.
