@@ -22,7 +22,7 @@ erm new Task
 
 ### Step 2 – Author Schema Files
 
-`internal/orm/schema/workspace.go`:
+`orm/schema/workspace.go`:
 
 ```go
 package schema
@@ -61,7 +61,7 @@ func (Workspace) Annotations() []dsl.Annotation {
 }
 ```
 
-`internal/orm/schema/project.go`:
+`orm/schema/project.go`:
 
 ```go
 package schema
@@ -92,7 +92,7 @@ func (Project) Annotations() []dsl.Annotation {
 }
 ```
 
-`internal/orm/schema/task.go`:
+`orm/schema/task.go`:
 
 ```go
 package schema
@@ -390,7 +390,7 @@ func TestEventSimilarity(t *testing.T) {
 
 ## Example 5: Automation CLI Workflow
 
-1. Add `//go:generate erm gen` to `internal/orm/schema/doc.go`.
+1. Add `//go:generate erm gen` to `orm/schema/doc.go`.
 2. Write a shell script:
 
 ```bash

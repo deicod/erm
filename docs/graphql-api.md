@@ -8,7 +8,7 @@ implementation patterns, dataloader integration, and how to extend the generated
 ## Relay Compliance at a Glance
 
 - **Global Node IDs** – Every entity implements the `Node` interface. IDs are encoded as `base64("<Type>:<uuidv7>")`. Helpers
-  live in `internal/graphql/node` and the ORM automatically decodes/encodes IDs in builders.
+  live in `graphql/node` and the ORM automatically decodes/encodes IDs in builders.
 - **Connections & Edges** – Pagination follows the Relay spec using `first`, `last`, `after`, and `before`. Connections expose
   `edges`, `pageInfo`, and `totalCount`.
 - **Mutations** – Generated CRUD mutations use input objects and payload objects that include `clientMutationId` for optimistic
@@ -20,7 +20,7 @@ implementation patterns, dataloader integration, and how to extend the generated
 
 ## Generated Schema Structure
 
-For each entity, erm produces GraphQL types in `internal/graphql/schema.graphqls` (or split across modules if you enable module
+For each entity, erm produces GraphQL types in `graphql/schema.graphqls` (or split across modules if you enable module
 mode). Using a `User` entity as an example:
 
 ```graphql
@@ -97,7 +97,7 @@ query NodeQuery($id: ID!) {
 }
 ```
 
-The `node` resolver dispatches to `FindNodeByID` generated in `internal/graphql/node/registry.go`. You can register additional
+The `node` resolver dispatches to `FindNodeByID` generated in `graphql/node/registry.go`. You can register additional
 node types (e.g., view projections) via annotations.
 
 ### Entity Queries
@@ -189,13 +189,13 @@ graphql:
       graphql_ws: false
 ```
 
-The default in-memory broker works for tests and local development. For production plug in your own adapter by passing a custom `subscriptions.Broker` to `server.NewServer` / `resolvers.NewWithOptions` (Redis, NATS, Kafka, etc.). The helpers in `internal/graphql/resolvers/subscriptions.go` expose consistent topic naming (`user:created`, `user:updated`, `user:deleted`) so your producer can emit events independently if needed.
+The default in-memory broker works for tests and local development. For production plug in your own adapter by passing a custom `subscriptions.Broker` to `server.NewServer` / `resolvers.NewWithOptions` (Redis, NATS, Kafka, etc.). The helpers in `graphql/resolvers/subscriptions.go` expose consistent topic naming (`user:created`, `user:updated`, `user:deleted`) so your producer can emit events independently if needed.
 
 ---
 
 ## Resolver Implementation
 
-Generated resolvers live in `internal/graphql/resolvers`. Files ending in `_gen.go` (`entities_gen.go`) should not be edited. For custom logic, create extension files (e.g., `user.resolvers_extension.go`) in the same package. The generated stubs already handle:
+Generated resolvers live in `graphql/resolvers`. Files ending in `_gen.go` (`entities_gen.go`) should not be edited. For custom logic, create extension files (e.g., `user.resolvers_extension.go`) in the same package. The generated stubs already handle:
 
 * Decoding global IDs via the Relay helpers.
 * Falling back to the ORM client when a dataloader is unavailable.
@@ -205,13 +205,13 @@ Generated resolvers live in `internal/graphql/resolvers`. Files ending in `_gen.
 
 1. **Argument Parsing** – gqlgen decodes incoming arguments into Go structs (pointers for optional input fields so you can detect "not provided").
 2. **Privacy Check** – ORM policy/privacy rules run before executing SQL.
-3. **Dataloader Registration** – Entity list resolvers register dataloaders generated in `internal/graphql/dataloaders/entities_gen.go` to prevent N+1 patterns.
+3. **Dataloader Registration** – Entity list resolvers register dataloaders generated in `graphql/dataloaders/entities_gen.go` to prevent N+1 patterns.
 4. **ORM Execution** – Query builders fetch data via `pgx` with context propagation.
 5. **Response Mapping** – Entities convert to GraphQL models using helper functions such as `toGraphQL<User>`. 
 
 ### Dataloaders
 
-The `dataloader` package prevents N+1 queries by batching loads. Each entity gets a generated loader in `internal/graphql/dataloaders/entities_gen.go`, and `Resolver.WithLoaders` wires them into the request context. Override settings via schema annotations:
+The `dataloader` package prevents N+1 queries by batching loads. Each entity gets a generated loader in `graphql/dataloaders/entities_gen.go`, and `Resolver.WithLoaders` wires them into the request context. Override settings via schema annotations:
 
 ```go
 dsl.ToMany("sessions", "LoginSession").
@@ -225,7 +225,7 @@ dsl.ToMany("sessions", "LoginSession").
 - Privacy denials use `PERMISSION_DENIED`.
 - Unexpected errors propagate as `INTERNAL` with sanitized messages. The observability package logs full error context.
 
-Custom resolvers can wrap errors using helpers in `internal/graphql/errors`.
+Custom resolvers can wrap errors using helpers in `graphql/errors`.
 
 ---
 
@@ -252,7 +252,7 @@ The generator creates a resolver stub for `profileUrl` that you can customize.
 ### Custom Mutations
 
 Defined via `dsl.Mutation` in the schema (see the schema guide). Generated payloads live in
-`internal/graphql/resolvers/<entity>_mutation_extension.go` so you can author business logic there.
+`graphql/resolvers/<entity>_mutation_extension.go` so you can author business logic there.
 
 ### Query Helpers
 
@@ -287,7 +287,7 @@ The directive references claims extracted by the OIDC middleware. In Go, you can
 ## File Layout Overview
 
 ```
-internal/graphql/
+graphql/
 ├── schema.graphqls                  # Generated SDL (split when module mode enabled)
 ├── resolvers/
 │   ├── entities_gen.go              # Generated CRUD + connection resolvers – do not edit
@@ -306,7 +306,7 @@ internal/graphql/
 
 ## Testing the GraphQL Layer
 
-Use the generated test helpers in `internal/graphql/testutil`:
+Use the generated test helpers in `graphql/testutil`:
 
 ```go
 func TestQueryUsers(t *testing.T) {
@@ -332,7 +332,7 @@ The testing guide dives deeper into integration tests, mock dataloaders, and sna
 
 - `erm graphql init --playground` enables GraphQL Playground in development; disable it in production via `erm.yaml`.
 - `erm gen --dry-run` prints SDL diffs so you can review schema changes before committing.
-- Use GraphQL Inspector or Apollo Rover in CI to catch breaking schema changes; export SDL from `internal/graphql/schema.graphqls`.
+- Use GraphQL Inspector or Apollo Rover in CI to catch breaking schema changes; export SDL from `graphql/schema.graphqls`.
 
 ---
 
@@ -343,7 +343,7 @@ The testing guide dives deeper into integration tests, mock dataloaders, and sna
 | `node(id:)` returns null | Ensure the ID is base64-encoded `<Type>:<uuidv7>` and that the Node registry includes the type. |
 | Duplicate edges in connection | Confirm dataloader caching is not disabled and review `.BatchSize()` annotations. |
 | Mutation denies access | Check entity `Policy()`/`Privacy()` definitions and `@auth` roles; inspect logs for policy evaluation. |
-| Playground missing custom headers | Update `internal/graphql/server/server.go` to inject defaults or configure your HTTP client. |
+| Playground missing custom headers | Update `graphql/server/server.go` to inject defaults or configure your HTTP client. |
 
 For resolver-specific errors, turn on verbose logging (`ERM_LOG_LEVEL=debug`) to inspect ORM queries and dataloader batches.
 

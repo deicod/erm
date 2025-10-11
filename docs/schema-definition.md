@@ -2,7 +2,7 @@
 
 erm uses a declarative-but-expressive schema DSL inspired by Ent. You write Go code that describes your domain model, and the
 generators synthesize ORM packages, GraphQL types, privacy policies, and migrations. This guide is the canonical reference for
-every DSL construct with examples you can copy into `internal/orm/schema`.
+every DSL construct with examples you can copy into `orm/schema`.
 
 > **Terminology:** Throughout this guide, the term *schema* refers to a Go type that embeds `dsl.Schema`. *Entity* describes the
 > generated runtime type and database table. The DSL lives in the `github.com/erm-project/erm/orm/dsl` package.
@@ -286,7 +286,7 @@ Validation runs before hooks and before hitting the database. Cross-field checks
 
 #### Runtime rules
 
-Generated packages export `gen.ValidationRegistry`, an instance of `internal/orm/runtime/validation.Registry`. Register rules during package init (or application startup) to apply additional constraints without editing generated files. Rules run prior to hitting the database for both `Create` and `Update` mutations.
+Generated packages export `gen.ValidationRegistry`, an instance of `orm/runtime/validation.Registry`. Register rules during package init (or application startup) to apply additional constraints without editing generated files. Rules run prior to hitting the database for both `Create` and `Update` mutations.
 
 ```go
 var emailRegex = regexp.MustCompile(`^[^@]+@example.com$`)
@@ -665,7 +665,7 @@ func (User) Mixins() []dsl.Mixin {
 }
 ```
 
-erm ships common mixins (timestamps, soft delete, workspace scoping) under `internal/orm/schema/mixins`. Copy them when you need
+erm ships common mixins (timestamps, soft delete, workspace scoping) under `orm/schema/mixins`. Copy them when you need
 customization.
 
 ---
@@ -831,7 +831,7 @@ Materialized views generate `CREATE MATERIALIZED VIEW` migrations and optional r
 After running `erm gen`, inspect the following structure for each entity:
 
 ```
-internal/orm/user/
+orm/user/
 ├── user.go               # Core entity definition and getters
 ├── user_create.go        # Builder for create mutations
 ├── user_update.go        # Builder for updates
@@ -853,11 +853,11 @@ Do not edit `*_generated.go` files directly; instead, create `_extension.go` or 
 Each schema change generates SQL migrations with comments pointing back to the schema file.
 
 ```sql
--- internal/orm/schema/user.go: Field "email"
+-- orm/schema/user.go: Field "email"
 ALTER TABLE users ADD COLUMN email TEXT NOT NULL;
 COMMENT ON COLUMN users.email IS 'Primary login identifier.';
 
--- internal/orm/schema/user.go: Index idx_users_email
+-- orm/schema/user.go: Index idx_users_email
 CREATE UNIQUE INDEX idx_users_email ON users (email);
 ```
 

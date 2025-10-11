@@ -11,7 +11,7 @@ and AI collaborators alike.
 2. **Small Commits** – Keep schema, migrations, and resolver changes in the same commit so reviewers can reason about the impact.
 3. **Run `erm gen` Before Commit** – Prevent CI failures by regenerating code locally.
 4. **Update Documentation** – When you introduce new patterns, update the docs under `docs/` and reference the change in PRs.
-5. **Include Tests** – Add or update tests (`internal/testing` sandbox + GraphQL harness) whenever business logic changes.
+5. **Include Tests** – Add or update tests (`testing` sandbox + GraphQL harness) whenever business logic changes.
 
 ---
 

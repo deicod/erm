@@ -8,8 +8,8 @@ import (
 	"github.com/99designs/gqlgen/client"
 	pgxmock "github.com/pashagolub/pgxmock/v4"
 
-	"github.com/deicod/erm/internal/graphql/relay"
-	ermtesting "github.com/deicod/erm/internal/testing"
+	"github.com/deicod/erm/graphql/relay"
+	ermtesting "github.com/deicod/erm/testing"
 )
 
 func TestGraphQLUserResolvers(t *testing.T) {

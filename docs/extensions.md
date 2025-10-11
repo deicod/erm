@@ -54,7 +54,7 @@ func (Location) Fields() []dsl.Field {
 ### Generated Features
 
 - SQL migration includes `CREATE EXTENSION IF NOT EXISTS postgis;` and sets SRID metadata.
-- ORM builder exposes `SetGeom(point geom.Geometry)` with helper constructors in `internal/orm/pgxext/postgis`.
+- ORM builder exposes `SetGeom(point geom.Geometry)` with helper constructors in `orm/pgxext/postgis`.
 - GraphQL exposes `GeoJSON` scalars for geometry fields.
 - Predicate helpers support spatial operators (`WhereGeomWithin`, `WhereGeomIntersects`).
 

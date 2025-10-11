@@ -12,8 +12,8 @@
 - Emit code via `text/template` with embedded templates; idempotent file writes.
 
 ## Outputs
-- `/internal/orm/gen/*`: entity structs, builders, registries.
-- `/internal/graphql/gen/*`: gql types, connection types, resolvers stubs.
+- `/orm/gen/*`: entity structs, builders, registries.
+- `/graphql/gen/*`: gql types, connection types, resolvers stubs.
 - `/migrations/*`: versioned SQL.
 
 ## Idempotency

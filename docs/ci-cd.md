@@ -7,7 +7,7 @@ This document explains how to integrate the `erm` tooling into automated pipelin
 The default GitHub Actions workflow (`.github/workflows/ci.yml`) now runs two jobs:
 
 1. **build** – executes formatting checks, `go build`, unit tests, and verifies that generated artifacts are checked in.
-2. **migrations** – provisions a disposable Postgres instance, runs `erm migrate` in `plan` and `apply` modes, and executes smoke tests built on `internal/testing`.
+2. **migrations** – provisions a disposable Postgres instance, runs `erm migrate` in `plan` and `apply` modes, and executes smoke tests built on `testing`.
 
 Re-use the workflow by copying the job definitions into your own repositories or by calling it from reusable workflows.
 
@@ -40,7 +40,7 @@ Run this after smoke tests when you need to exercise rollback logic, or add a ni
 
 ## Smoke Tests
 
-The `internal/testing` package exposes a `Sandbox` helper backed by `pgxmock` and the generated ORM client. The CI workflow includes a `go test ./internal/testing/...` step which executes `TestSandboxSmoke` to ensure the helpers wire up correctly. Extend this suite with domain-specific smoke tests for your project.
+The `testing` package exposes a `Sandbox` helper backed by `pgxmock` and the generated ORM client. The CI workflow includes a `go test ./testing/...` step which executes `TestSandboxSmoke` to ensure the helpers wire up correctly. Extend this suite with domain-specific smoke tests for your project.
 
 ## Secrets and Configuration
 

@@ -46,13 +46,13 @@ erm init --module github.com/acme/payment --oidc-issuer http://localhost:8080/re
 Actions performed:
 
 - Creates `erm.yaml` populated with module path, database defaults, and OIDC issuer.
-- Generates base folders: `cmd/server`, `internal/graphql`, `internal/orm/schema`, `docs/`, `migrations/`.
+- Generates base folders: `cmd/server`, `graphql`, `orm/schema`, `docs/`, `migrations/`.
 - Writes starter mixins (`time`, `soft delete`), GraphQL resolver stubs, and `.env.example` with connection strings.
 - Adds Makefile targets for `gen`, `lint`, `test`, and `migrate`.
 
 ### `erm new <Entity>`
 
-Generates a new schema skeleton under `internal/orm/schema/<entity>.go`.
+Generates a new schema skeleton under `orm/schema/<entity>.go`.
 
 ```bash
 erm new Invoice --table invoices --description "Customer invoices with line items"
@@ -81,12 +81,12 @@ Key flags:
 - `--name` customizes the slug appended to the timestamp in the generated migration filename.
 - `--force` bypasses on-disk equality checks, rewriting artifacts when you need to regenerate after upgrading dependencies.
 - Ensure the project module path is set in `erm.yaml` (or inferred from `go.mod`). GraphQL resolvers and dataloaders import
-  `internal/*` packages using that module path; generation fails if it cannot be determined.
+  generated packages under `graphql/*` and `orm/*` using that module path; generation fails if it cannot be determined.
 
 Generation outputs when not running in dry-run mode:
 
-- ORM packages under `internal/orm/<entity>` with fluent builders, query types, and `Edges` structs.
-- GraphQL schema (`internal/graphql/schema.graphqls`), gqlgen config (`gqlgen.yml`), resolver implementations, and dataloader
+- ORM packages under `orm/<entity>` with fluent builders, query types, and `Edges` structs.
+- GraphQL schema (`graphql/schema.graphqls`), gqlgen config (`gqlgen.yml`), resolver implementations, and dataloader
   registration.
 - Migration files under `migrations/<timestamp>_<name>.sql`, including extension management and comment DDL.
 - Updated documentation comments that help AI tooling understand generated code.
@@ -128,9 +128,9 @@ erm graphql init --playground --listen :8080
 
 Outputs include:
 
-- `internal/graphql/server/server.go` – HTTP server with middleware chain (OIDC auth, tracing, logging).
-- `internal/graphql/resolver/resolver.go` – Resolver root that delegates to generated ORM builders.
-- `internal/graphql/node/registry.go` – Global Node lookup with base64 `<Type>:<uuidv7>` encoding helpers.
+- `graphql/server/server.go` – HTTP server with middleware chain (OIDC auth, tracing, logging).
+- `graphql/resolver/resolver.go` – Resolver root that delegates to generated ORM builders.
+- `graphql/node/registry.go` – Global Node lookup with base64 `<Type>:<uuidv7>` encoding helpers.
 - `cmd/server/main.go` – Entry point that wires gqlgen handlers, dataloaders, and health endpoints.
 
 ### `erm doctor` *(experimental)*
@@ -153,10 +153,10 @@ Run it locally before committing, or add it to GitHub Actions once the `doctor` 
 
 ```bash
 erm new Comment
-# Edit internal/orm/schema/comment.go to add fields/edges
+# Edit orm/schema/comment.go to add fields/edges
 erm gen
 erm migrate                   # Apply the new migration to your local database
-# Edit internal/graphql/resolver/comment.resolvers.go for custom logic
+# Edit graphql/resolver/comment.resolvers.go for custom logic
 make test
 ```
 

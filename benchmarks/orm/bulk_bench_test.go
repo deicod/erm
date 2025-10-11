@@ -3,7 +3,7 @@ package orm
 import (
 	"testing"
 
-	"github.com/deicod/erm/internal/orm/runtime"
+	"github.com/deicod/erm/orm/runtime"
 )
 
 func BenchmarkBuildBulkInsertSQL(b *testing.B) {

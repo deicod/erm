@@ -28,7 +28,7 @@ database:
 ```
 
 - Use annotations to override per-entity transaction isolation if necessary (`dsl.TransactionIsolation(...)`).
-- Monitor pool stats via the `internal/observability/metrics` package (exported to Prometheus by default).
+- Monitor pool stats via the `observability/metrics` package (exported to Prometheus by default).
 
 The pgx wrapper now exposes a consolidated `pg.WithPoolConfig` option, so CLI consumers can translate the YAML block into runtime tuning without sprinkling individual setters throughout the codebase.
 
@@ -67,7 +67,7 @@ dsl.ToMany("comments", "Comment").
 
 ## Cache Pluggability
 
-- ORM clients expose `Client.UseCache(cache.Store)`. Implement the `Store` interface from `internal/orm/runtime/cache` to plug
+- ORM clients expose `Client.UseCache(cache.Store)`. Implement the `Store` interface from `orm/runtime/cache` to plug
   in Redis, in-memory LRU, or a no-op adapter. Primary-key lookups automatically populate or invalidate the cache across
   create/update/delete (including bulk APIs).
 - Keep TTL logic inside your `Store` implementation; the ORM only deals with keys shaped like `orm:<Entity>:<id>`.
@@ -76,7 +76,7 @@ dsl.ToMany("comments", "Comment").
 
 ## Tracing
 
-- OpenTelemetry instrumentation is wired into resolvers, ORM queries, and hooks via `internal/observability/tracing`.
+- OpenTelemetry instrumentation is wired into resolvers, ORM queries, and hooks via `observability/tracing`.
 - Configure exporters in `cmd/server/main.go` or via environment variables (`OTEL_EXPORTER_OTLP_ENDPOINT`).
 - Spans include attributes: entity name, operation (`create`, `query`, `update`), row counts, and dataloader batch sizes.
 
@@ -96,7 +96,7 @@ return res, err
 
 ## Metrics
 
-Prometheus counters/gauges/histograms live in `internal/observability/metrics` and are registered via the HTTP server.
+Prometheus counters/gauges/histograms live in `observability/metrics` and are registered via the HTTP server.
 
 Key metrics:
 
@@ -114,7 +114,7 @@ Enable metrics endpoint by default at `/metrics`. Lock it down via reverse proxy
 
 ## ORM Query Instrumentation
 
-`internal/orm/runtime.QueryObserver` fans structured logs, tracing spans, and metrics events into the observability stack. The observer cooperates with `internal/observability/metrics` and `internal/observability/tracing`, so you can opt into telemetry features by wiring the components together in one place:
+`orm/runtime.QueryObserver` fans structured logs, tracing spans, and metrics events into the observability stack. The observer cooperates with `observability/metrics` and `observability/tracing`, so you can opt into telemetry features by wiring the components together in one place:
 
 ```go
 observer := runtime.QueryObserver{
@@ -226,7 +226,7 @@ observability:
     log_n_plus_one: true
 ```
 
-Run `erm gen` to propagate changes into `internal/observability` packages.
+Run `erm gen` to propagate changes into `observability` packages.
 
 ---
 

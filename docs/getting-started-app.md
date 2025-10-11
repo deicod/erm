@@ -20,7 +20,7 @@ workspace will contain:
   generated.
 - `schema/` – empty directory with an `AGENTS.md` reminder to regenerate code
   and run tests whenever entities change.
-- `internal/graphql/README.md` – instructions for bootstrapping gqlgen with
+- `graphql/README.md` – instructions for bootstrapping gqlgen with
   `erm graphql init` and maintaining resolvers.
 - `migrations/` – empty directory ready for generated SQL migrations.
 
@@ -55,7 +55,7 @@ Update the port or middleware as your requirements evolve.
    tidy with `go mod tidy`.
 2. Create entities using `erm new <Entity>` and adjust the generated schema.
 3. Regenerate artifacts with `erm gen` whenever the schema changes.
-4. Implement resolvers under `internal/graphql` and wire them into the HTTP
+4. Implement resolvers under `graphql` and wire them into the HTTP
    server.
 5. Apply migrations locally with `erm migrate` as you iterate.
 

@@ -8,9 +8,9 @@ import (
 
 	pgxmock "github.com/pashagolub/pgxmock/v4"
 
-	"github.com/deicod/erm/internal/orm/gen"
-	"github.com/deicod/erm/internal/orm/runtime/validation"
-	ermtesting "github.com/deicod/erm/internal/testing"
+	"github.com/deicod/erm/orm/gen"
+	"github.com/deicod/erm/orm/runtime/validation"
+	ermtesting "github.com/deicod/erm/testing"
 )
 
 func TestUserValidationRegistry(t *testing.T) {

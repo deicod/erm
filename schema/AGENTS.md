@@ -2,7 +2,7 @@
 
 When touching files in this directory:
 
-1. Practice TDD — write or update tests alongside schema changes (see `internal/generator` and example apps).
+1. Practice TDD — write or update tests alongside schema changes (see `generator` and example apps).
 2. Run `gofmt -w` on edited schema files before committing.
 3. Validate the project with:
    - `go test ./...`

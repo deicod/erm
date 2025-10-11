@@ -31,7 +31,7 @@ oidc:
   claims_mapper: keycloak
 ```
 
-Supported mappers: `keycloak` (default), `auth0`, `okta`, or custom implementations registered under `internal/oidc/mapper`.
+Supported mappers: `keycloak` (default), `auth0`, `okta`, or custom implementations registered under `oidc/mapper`.
 
 After updating configuration, run `erm gen` so generated middleware picks up new defaults.
 
@@ -39,7 +39,7 @@ After updating configuration, run `erm gen` so generated middleware picks up new
 
 ## Middleware Flow
 
-1. **Token Extraction** – `internal/oidc/middleware.go` pulls the `Authorization: Bearer <token>` header.
+1. **Token Extraction** – `oidc/middleware.go` pulls the `Authorization: Bearer <token>` header.
 2. **Verification** – The token is validated using the provider’s JWKS. Signature, expiration, issuer, and audience checks run
    automatically.
 3. **Claims Mapping** – The mapper converts raw claims into a `Viewer` struct (`ID`, `Email`, `Name`, `Roles`, `Permissions`).
@@ -47,7 +47,7 @@ After updating configuration, run `erm gen` so generated middleware picks up new
    responses.
 5. **Directive Enforcement** – GraphQL resolvers read viewer data to evaluate `@auth` directives and privacy rules.
 
-The middleware is inserted in `internal/graphql/server/server.go` during `erm graphql init`.
+The middleware is inserted in `graphql/server/server.go` during `erm graphql init`.
 
 ---
 
@@ -71,7 +71,7 @@ func (CustomMapper) Map(ctx context.Context, token *oidc.IDToken, claims map[str
 }
 ```
 
-Register the mapper in `internal/oidc/mapper/registry.go` and reference it in `erm.yaml`.
+Register the mapper in `oidc/mapper/registry.go` and reference it in `erm.yaml`.
 
 ### Mapping Tips
 
