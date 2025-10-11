@@ -60,10 +60,11 @@ func TestGraphQLResolverGeneration(t *testing.T) {
 	}}
 
 	root := t.TempDir()
-	if err := writeGraphQLResolvers(root, entities); err != nil {
+	modulePath := "example.com/app"
+	if err := writeGraphQLResolvers(root, entities, modulePath); err != nil {
 		t.Fatalf("writeGraphQLResolvers: %v", err)
 	}
-	if err := writeGraphQLDataloaders(root, entities); err != nil {
+	if err := writeGraphQLDataloaders(root, entities, modulePath); err != nil {
 		t.Fatalf("writeGraphQLDataloaders: %v", err)
 	}
 
@@ -76,11 +77,16 @@ func TestGraphQLResolverGeneration(t *testing.T) {
 		"func (r *mutationResolver) CreateWidget",
 		"func (r *queryResolver) Widgets",
 		"func decodeWidgetID",
+		modulePath + "/internal/graphql",
+		modulePath + "/internal/graphql/dataloaders",
 	}
 	for _, needle := range expectations {
 		if !strings.Contains(string(resolverSrc), needle) {
 			t.Fatalf("expected resolver source to contain %q\n%s", needle, resolverSrc)
 		}
+	}
+	if strings.Contains(string(resolverSrc), "github.com/deicod/erm") {
+		t.Fatalf("resolver source still references repository module path\n%s", resolverSrc)
 	}
 	if _, err := parser.ParseFile(token.NewFileSet(), resolverPath, resolverSrc, parser.AllErrors); err != nil {
 		t.Fatalf("resolvers parse: %v", err)
@@ -95,11 +101,15 @@ func TestGraphQLResolverGeneration(t *testing.T) {
 		"configureEntityLoaders",
 		"func (l *Loaders) Widget()",
 		"orm.Widgets().ByID",
+		modulePath + "/internal/observability/metrics",
 	}
 	for _, needle := range loaderExpectations {
 		if !strings.Contains(string(loaderSrc), needle) {
 			t.Fatalf("expected dataloader source to contain %q\n%s", needle, loaderSrc)
 		}
+	}
+	if strings.Contains(string(loaderSrc), "github.com/deicod/erm") {
+		t.Fatalf("dataloader source still references repository module path\n%s", loaderSrc)
 	}
 	if _, err := parser.ParseFile(token.NewFileSet(), loaderPath, loaderSrc, parser.AllErrors); err != nil {
 		t.Fatalf("dataloaders parse: %v", err)

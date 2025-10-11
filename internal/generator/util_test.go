@@ -40,6 +40,7 @@ func TestGeneratorsUsePluralizedNames(t *testing.T) {
 	}
 
 	root := t.TempDir()
+	modulePath := "example.com/app"
 
 	if err := writeRegistry(root, entities); err != nil {
 		t.Fatalf("writeRegistry: %v", err)
@@ -57,7 +58,7 @@ func TestGeneratorsUsePluralizedNames(t *testing.T) {
 	assertContains(t, client, "SELECT id FROM addresses")
 	assertContains(t, client, "DELETE FROM buses")
 
-	if err := writeGraphQLArtifacts(root, entities); err != nil {
+	if err := writeGraphQLArtifacts(root, entities, modulePath); err != nil {
 		t.Fatalf("writeGraphQLArtifacts: %v", err)
 	}
 	schema := readFile(t, filepath.Join(root, "internal", "graphql", "schema.graphqls"))
