@@ -52,18 +52,19 @@ func TestGraphQLTypeMappings(t *testing.T) {
 		}
 	}
 
-	forbiddenScalars := []string{
+	declaredScalars := []string{
 		"scalar BigInt",
 		"scalar Decimal",
 		"scalar JSONB",
 		"scalar Timestamptz",
 		"scalar Date",
-		"scalar Time",
 	}
 
-	for _, scalar := range forbiddenScalars {
-		mustNotContain(t, schema, scalar)
+	for _, scalar := range declaredScalars {
+		mustContain(t, schema, scalar)
 	}
+
+	mustNotContain(t, schema, "scalar Time\n")
 }
 
 func TestGraphQLEnumGeneration(t *testing.T) {

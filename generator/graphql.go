@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"os"
@@ -1067,13 +1068,27 @@ func writeGraphQLDataloaders(root string, entities []Entity, modulePath string) 
 }
 
 var predeclaredScalars = func() map[string]struct{} {
-	scalars := make(map[string]struct{}, len(graphqlModelTypeMappings)+1)
-	for name := range graphqlModelTypeMappings {
+	scalars := map[string]struct{}{
+		"Boolean": {},
+		"Float":   {},
+		"ID":      {},
+		"Int":     {},
+		"String":  {},
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(graphqlBaseSchema))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if !strings.HasPrefix(line, "scalar ") {
+			continue
+		}
+		name := strings.TrimSpace(strings.TrimPrefix(line, "scalar "))
+		if name == "" {
+			continue
+		}
 		scalars[name] = struct{}{}
 	}
-	// Ensure legacy runtime scalars remain whitelisted even if removed from the
-	// gqlgen configuration map.
-	scalars["Time"] = struct{}{}
+
 	return scalars
 }()
 
