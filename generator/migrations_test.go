@@ -630,6 +630,42 @@ func loadBlogEntities(t *testing.T) []Entity {
 	return entities
 }
 
+func TestGenerateMigrations_EnumAndDefaults(t *testing.T) {
+	root := t.TempDir()
+	entities := []Entity{{
+		Name: "Task",
+		Fields: []dsl.Field{
+			dsl.UUIDv7("id").Primary(),
+			dsl.Enum("status", "BACKLOG", "ACTIVE", "DONE").Default("BACKLOG"),
+			dsl.Boolean("archived").Default(false),
+		},
+	}}
+
+	res, err := generateMigrations(root, entities, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 4, 1, 0, 0, 0)})
+	if err != nil {
+		t.Fatalf("generateMigrations: %v", err)
+	}
+	if !strings.Contains(res.SQL, "CONSTRAINT tasks_status_enum_check CHECK (status IN ('BACKLOG', 'ACTIVE', 'DONE'))") {
+		t.Fatalf("expected enum check constraint in SQL, got:\n%s", res.SQL)
+	}
+	if !strings.Contains(res.SQL, "DEFAULT 'BACKLOG'") {
+		t.Fatalf("expected string default in SQL, got:\n%s", res.SQL)
+	}
+	if !strings.Contains(res.SQL, "DEFAULT FALSE") {
+		t.Fatalf("expected boolean default in SQL, got:\n%s", res.SQL)
+	}
+
+	snap := mustLoadSnapshot(t, root)
+	table := mustFindTable(t, snap, "tasks")
+	status := findColumn(table, "status")
+	if status.Name == "" || len(status.EnumValues) != 3 {
+		t.Fatalf("expected status column with enum metadata, got %#v", status)
+	}
+	if status.DefaultExpr != "'BACKLOG'" {
+		t.Fatalf("expected snapshot default 'BACKLOG', got %q", status.DefaultExpr)
+	}
+}
+
 func tableDefinition(t *testing.T, sql, table string) string {
 	t.Helper()
 	marker := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (", table)

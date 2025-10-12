@@ -50,6 +50,21 @@ func TestGraphQLTypeMappings(t *testing.T) {
 	}
 }
 
+func TestGraphQLEnumGeneration(t *testing.T) {
+	entities := []Entity{{
+		Name: "Task",
+		Fields: []dsl.Field{
+			dsl.UUIDv7("id").Primary(),
+			dsl.Enum("status", "NEW", "DONE"),
+		},
+	}}
+	assignEnumMetadata(entities)
+
+	schema := buildGraphQLGeneratedSection(entities)
+	mustContain(t, schema, "enum TaskStatus")
+	mustContain(t, schema, "status: TaskStatus!")
+}
+
 func TestGraphQLResolverGeneration(t *testing.T) {
 	entities := []Entity{{
 		Name: "Widget",

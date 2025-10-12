@@ -22,6 +22,8 @@ const (
 	OpDropIndex        OperationKind = "drop_index"
 	OpCreateHypertable OperationKind = "create_hypertable"
 	OpDropHypertable   OperationKind = "drop_hypertable"
+	OpAddCheck         OperationKind = "add_check_constraint"
+	OpDropCheck        OperationKind = "drop_check_constraint"
 )
 
 type Operation struct {
@@ -209,7 +211,7 @@ func diffColumns(prev, next TableSnapshot) []Operation {
 		ops = append(ops, Operation{
 			Kind:   OpAddColumn,
 			Target: fmt.Sprintf("%s.%s", next.Name, name),
-			SQL:    fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s;", next.Name, renderColumnDefinition(col)),
+			SQL:    fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s;", next.Name, renderColumnDefinition(next.Name, col)),
 		})
 	}
 
@@ -236,7 +238,7 @@ func diffColumn(table string, prev, next ColumnSnapshot) []Operation {
 			add := Operation{
 				Kind:   OpAddColumn,
 				Target: fmt.Sprintf("%s.%s", table, next.Name),
-				SQL:    fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s;", table, renderColumnDefinition(next)),
+				SQL:    fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s;", table, renderColumnDefinition(table, next)),
 			}
 			return []Operation{drop, add}
 		}
@@ -277,10 +279,29 @@ func diffColumn(table string, prev, next ColumnSnapshot) []Operation {
 			})
 		}
 	}
+	if !equalStringSlices(prev.EnumValues, next.EnumValues) {
+		constraint := enumConstraintName(table, prev.Name)
+		if len(prev.EnumValues) > 0 {
+			ops = append(ops, Operation{
+				Kind:   OpDropCheck,
+				Target: fmt.Sprintf("%s.%s", table, constraint),
+				SQL:    fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT IF EXISTS %s;", table, constraint),
+			})
+		}
+		if len(next.EnumValues) > 0 {
+			constraint = enumConstraintName(table, next.Name)
+			clause := enumCheckCondition(next.Name, next.EnumValues)
+			ops = append(ops, Operation{
+				Kind:   OpAddCheck,
+				Target: fmt.Sprintf("%s.%s", table, constraint),
+				SQL:    fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s CHECK (%s);", table, constraint, clause),
+			})
+		}
+	}
 	return ops
 }
 
-func renderColumnDefinition(col ColumnSnapshot) string {
+func renderColumnDefinition(table string, col ColumnSnapshot) string {
 	parts := []string{fmt.Sprintf("%s %s", col.Name, col.Type)}
 	if !col.Nullable {
 		parts = append(parts, "NOT NULL")
@@ -290,6 +311,9 @@ func renderColumnDefinition(col ColumnSnapshot) string {
 	}
 	if col.Unique {
 		parts = append(parts, "UNIQUE")
+	}
+	if len(col.EnumValues) > 0 {
+		parts = append(parts, fmt.Sprintf("CONSTRAINT %s CHECK (%s)", enumConstraintName(table, col.Name), enumCheckCondition(col.Name, col.EnumValues)))
 	}
 	return strings.Join(parts, " ")
 }
@@ -433,7 +457,7 @@ func createTableOps(table TableSnapshot) []Operation {
 	ops := make([]Operation, 0)
 	defs := make([]string, 0, len(table.Columns)+1)
 	for _, col := range table.Columns {
-		defs = append(defs, fmt.Sprintf("    %s", renderColumnDefinition(col)))
+		defs = append(defs, fmt.Sprintf("    %s", renderColumnDefinition(table.Name, col)))
 	}
 	if len(table.PrimaryKey) > 0 {
 		defs = append(defs, fmt.Sprintf("    PRIMARY KEY (%s)", strings.Join(table.PrimaryKey, ", ")))
@@ -471,4 +495,16 @@ func renderCreateIndex(table string, idx IndexSnapshot) string {
 		parts = append(parts, "NULLS NOT DISTINCT")
 	}
 	return strings.Join(parts, " ") + ";"
+}
+
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

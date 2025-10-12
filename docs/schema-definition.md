@@ -235,7 +235,7 @@ Use `dsl.IdentityAlways` or `dsl.IdentityByDefault` as the second parameter when
 - `dsl.Array(name, elementType)` creates PostgreSQL arrays (`elementType[]`). Pass constants like `dsl.TypeText` or `dsl.TypeInteger`; the generators derive the appropriate Go slice (for example `[]string` or `[]int32`) and GraphQL list (`[String!]!`).
 - `dsl.Geometry(name)` / `dsl.Geography(name)` require the PostGIS extension. Columns are exposed as `[]byte` in Go and the `JSON` scalar in GraphQL.
 - `dsl.Vector(name, dim)` requires the `vector` extension and maps to `[]float32` in Go and `[Float!]!` in GraphQL.
-- `dsl.Enum(name, values...)` still generates GraphQL enums backed by a `TEXT CHECK` constraint.
+- `dsl.Enum(name, values...)` generates GraphQL enums backed by a deterministic `CHECK` constraint. The generator records allowed values for diffing and exposes them in runtime metadata.
 
 ### Common Modifiers
 
@@ -254,7 +254,7 @@ Selected modifiers:
 - `.NotEmpty()` / `.Required()` – Non-null constraint with generated validation.
 - `.Optional()` – Field may be omitted on create and update; GraphQL input marks it optional.
 - `.Nillable()` – Distinguishes between “not set” and `null` in updates; generates pointer fields in Go builders.
-- `.Default(value)` – Static default inserted in Go and SQL.
+- `.Default(value)` – Static default expressed as a Go value. Strings are quoted and escaped, numerics render as literals, and temporal types become `DATE`/`TIMESTAMP` casts. Enum defaults validate against the declared value set.
 - `.DefaultFunc(fn)` – Call Go function to set default at runtime (`uuid.New` etc.).
 - `.Immutable()` – Prevents updates after initial creation.
 - `.Sensitive()` – Excludes from GraphQL outputs and JSON logs (still stored in DB).
