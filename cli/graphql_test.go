@@ -18,6 +18,10 @@ func TestGraphQLInitCmdGeneratesResolverConfig(t *testing.T) {
 		_ = os.Chdir(wd)
 	})
 
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module github.com/example/app\n\ngo 1.21\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+
 	if err := os.Chdir(tmpDir); err != nil {
 		t.Fatalf("chdir temp dir: %v", err)
 	}
