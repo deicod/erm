@@ -22,6 +22,7 @@ func TestGraphQLTypeMappings(t *testing.T) {
 				dsl.BigInt("counter"),
 				dsl.Decimal("price", 10, 2),
 				dsl.Date("ship_date").Optional(),
+				dsl.Time("ship_time").Optional(),
 				dsl.TimestampTZ("created_at"),
 				dsl.JSONB("metadata"),
 				dsl.Array("tags", dsl.TypeText),
@@ -33,10 +34,12 @@ func TestGraphQLTypeMappings(t *testing.T) {
 	schema := buildGraphQLGeneratedSection(entities)
 
 	checks := []string{
-		"scalar BigInt",
-		"scalar Decimal",
-		"scalar JSONB",
-		"scalar Timestamptz",
+		"counter: BigInt!",
+		"price: Decimal!",
+		"metadata: JSONB!",
+		"createdAt: Timestamptz!",
+		"shipDate: Date",
+		"shipTime: Time",
 		"title: String",
 		"CreateSampleInput",
 		"updateSample",
@@ -48,6 +51,20 @@ func TestGraphQLTypeMappings(t *testing.T) {
 			t.Fatalf("expected GraphQL schema to contain %q\nactual: %s", needle, schema)
 		}
 	}
+
+	declaredScalars := []string{
+		"scalar BigInt",
+		"scalar Decimal",
+		"scalar JSONB",
+		"scalar Timestamptz",
+		"scalar Date",
+	}
+
+	for _, scalar := range declaredScalars {
+		mustContain(t, schema, scalar)
+	}
+
+	mustNotContain(t, schema, "scalar Time\n")
 }
 
 func TestGraphQLEnumGeneration(t *testing.T) {
@@ -187,4 +204,11 @@ func TestGraphQLInitialismHandling(t *testing.T) {
 	mustContain(t, string(resolverSrc), "model.AvatarURL")
 	mustContain(t, string(resolverSrc), "input.APIToken")
 	mustContain(t, string(resolverSrc), "model.APIToken")
+}
+
+func mustNotContain(t *testing.T, content, needle string) {
+	t.Helper()
+	if strings.Contains(content, needle) {
+		t.Fatalf("expected GraphQL schema to omit %q\nactual: %s", needle, content)
+	}
 }

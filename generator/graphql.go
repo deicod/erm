@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"os"
@@ -1066,9 +1067,30 @@ func writeGraphQLDataloaders(root string, entities []Entity, modulePath string) 
 	return writeGoFile(path, buf.Bytes())
 }
 
-var predeclaredScalars = map[string]struct{}{
-	"Time": {},
-}
+var predeclaredScalars = func() map[string]struct{} {
+	scalars := map[string]struct{}{
+		"Boolean": {},
+		"Float":   {},
+		"ID":      {},
+		"Int":     {},
+		"String":  {},
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(graphqlBaseSchema))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if !strings.HasPrefix(line, "scalar ") {
+			continue
+		}
+		name := strings.TrimSpace(strings.TrimPrefix(line, "scalar "))
+		if name == "" {
+			continue
+		}
+		scalars[name] = struct{}{}
+	}
+
+	return scalars
+}()
 
 func collectGraphQLEnums(entities []Entity) map[string][]string {
 	enums := make(map[string][]string)
