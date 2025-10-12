@@ -214,7 +214,7 @@ func renderInitialMigration(entities []Entity, flags extensionFlags) string {
 		buf.WriteString("\n")
 	}
 	migrationEntities, joinTables := buildMigrationPlan(entities)
-	sort.Slice(migrationEntities, func(i, j int) bool { return migrationEntities[i].Entity.Name < migrationEntities[j].Entity.Name })
+	migrationEntities = sortEntityMigrations(migrationEntities)
 	var deferredFKs []string
 	for _, ent := range migrationEntities {
 		table := pluralize(ent.Entity.Name)
@@ -350,6 +350,73 @@ func buildMigrationPlan(entities []Entity) ([]entityMigration, []joinTableSpec) 
 	return plan, joinTables
 }
 
+func sortEntityMigrations(entities []entityMigration) []entityMigration {
+	if len(entities) <= 1 {
+		return entities
+	}
+	tableIndex := make(map[string]int, len(entities))
+	inDegree := make(map[string]int, len(entities))
+	graph := make(map[string][]string, len(entities))
+	for i := range entities {
+		table := pluralize(entities[i].Entity.Name)
+		tableIndex[table] = i
+		inDegree[table] = 0
+	}
+	for _, ent := range entities {
+		table := pluralize(ent.Entity.Name)
+		for _, fk := range ent.ForeignKeys {
+			target := fk.TargetTable
+			if target == table {
+				continue
+			}
+			if _, ok := tableIndex[target]; !ok {
+				continue
+			}
+			graph[target] = append(graph[target], table)
+			inDegree[table]++
+		}
+	}
+	queue := make([]string, 0, len(entities))
+	for table, degree := range inDegree {
+		if degree == 0 {
+			queue = append(queue, table)
+		}
+	}
+	sort.Strings(queue)
+	ordered := make([]entityMigration, 0, len(entities))
+	visited := make(map[string]bool, len(entities))
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if visited[current] {
+			continue
+		}
+		visited[current] = true
+		ordered = append(ordered, entities[tableIndex[current]])
+		for _, dependent := range graph[current] {
+			inDegree[dependent]--
+			if inDegree[dependent] == 0 {
+				queue = append(queue, dependent)
+				sort.Strings(queue)
+			}
+		}
+	}
+	if len(ordered) == len(entities) {
+		return ordered
+	}
+	remaining := make([]string, 0, len(entities)-len(ordered))
+	for table := range tableIndex {
+		if !visited[table] {
+			remaining = append(remaining, table)
+		}
+	}
+	sort.Strings(remaining)
+	for _, table := range remaining {
+		ordered = append(ordered, entities[tableIndex[table]])
+	}
+	return ordered
+}
+
 func ensureToOneColumn(src *entityMigration, entityIndex map[string]*entityMigration, edge dsl.Edge) {
 	target, ok := entityIndex[edge.Target]
 	if !ok {
@@ -396,7 +463,7 @@ func ensureToManyColumn(src *entityMigration, entityIndex map[string]*entityMigr
 	if !ok {
 		return
 	}
-	refColumn := edgeRefColumn(src.Entity, edge, srcPrimary)
+	refColumn, _ := resolveForeignKeyColumn(target, src.Entity, edge, srcPrimary)
 	if refColumn == "" {
 		return
 	}
@@ -467,6 +534,40 @@ func ensureJoinTable(joinTables map[string]joinTableSpec, source Entity, entityI
 			OnUpdate:     edge.Cascade.OnUpdate,
 		},
 	}
+}
+
+func resolveForeignKeyColumn(target *entityMigration, source Entity, edge dsl.Edge, sourcePrimary dsl.Field) (string, bool) {
+	column := edgeRefColumn(source, edge, sourcePrimary)
+	if column == "" {
+		return "", false
+	}
+	if _, exists := target.fieldIndex[column]; exists {
+		return column, true
+	}
+	if edge.RefName != "" {
+		if _, exists := target.fieldIndex[edge.RefName]; exists {
+			return edge.RefName, true
+		}
+		if targetEdge, ok := findEdgeByName(target.Entity.Edges, edge.RefName); ok {
+			alt := edgeColumn(targetEdge)
+			if alt != "" {
+				column = alt
+				if _, exists := target.fieldIndex[column]; exists {
+					return column, true
+				}
+			}
+		}
+	}
+	return column, false
+}
+
+func findEdgeByName(edges []dsl.Edge, name string) (dsl.Edge, bool) {
+	for _, edge := range edges {
+		if edge.Name == name {
+			return edge, true
+		}
+	}
+	return dsl.Edge{}, false
 }
 
 func makeForeignKeyField(column string, refField dsl.Field, nullable, unique bool) dsl.Field {
