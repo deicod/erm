@@ -9,7 +9,7 @@ practical examples you can adapt to your team’s workflow.
 ## Installation
 
 ```bash
-go install github.com/erm-project/erm/cmd/erm@latest
+go install github.com/deicod/erm/cmd/erm@latest
 ```
 
 You can also run the CLI directly from source:
