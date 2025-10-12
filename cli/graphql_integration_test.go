@@ -80,6 +80,8 @@ func scaffoldRuntimeDependencies(t *testing.T, root, modulePath string) {
 		filepath.Join(root, "orm", "gen", "client.go"): `package gen
 
 type Client struct{}
+
+func NewClient(any) *Client { return &Client{} }
 `,
 		filepath.Join(root, "observability", "metrics", "metrics.go"): `package metrics
 
@@ -178,9 +180,69 @@ type Resolver struct {
 
 func NewWithOptions(opts Options) *Resolver { return &Resolver{ORM: opts.ORM} }
 `,
+		filepath.Join(root, "graphql", "subscriptions", "bus.go"): `package subscriptions
+
+import "context"
+
+type Broker interface {
+        Publish(context.Context, string, any) error
+        Subscribe(context.Context, string) (<-chan any, func(), error)
+}
+
+type InMemoryBroker struct{}
+
+func NewInMemoryBroker() *InMemoryBroker { return &InMemoryBroker{} }
+
+func (*InMemoryBroker) Publish(context.Context, string, any) error { return nil }
+
+func (*InMemoryBroker) Subscribe(context.Context, string) (<-chan any, func(), error) {
+        ch := make(chan any)
+        return ch, func() { close(ch) }, nil
+}
+`,
+		filepath.Join(root, "graphql", "server", "server.go"): `package server
+
+import (
+        "context"
+        "net/http"
+
+        "` + modulePath + `/observability/metrics"
+        "` + modulePath + `/orm/gen"
+)
+
+type Options struct {
+        ORM           *gen.Client
+        Collector     metrics.Collector
+        Subscriptions SubscriptionOptions
+}
+
+type SubscriptionOptions struct {
+        Enabled    bool
+        Broker     interface{}
+        Transports SubscriptionTransports
+}
+
+type SubscriptionTransports struct {
+        Websocket bool
+        GraphQLWS bool
+}
+
+type Server struct{}
+
+func NewServer(Options) *Server { return &Server{} }
+
+func (Server) ServeHTTP(http.ResponseWriter, *http.Request) {}
+
+func WithLoaders(ctx context.Context, _ Options) context.Context { return ctx }
+`,
 	}
 
 	for path, content := range stubs {
+		if _, err := os.Stat(path); err == nil {
+			continue
+		} else if err != nil && !os.IsNotExist(err) {
+			t.Fatalf("stat %s: %v", path, err)
+		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", path, err)
 		}
