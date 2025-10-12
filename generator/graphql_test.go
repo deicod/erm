@@ -206,6 +206,41 @@ func TestGraphQLInitialismHandling(t *testing.T) {
 	mustContain(t, string(resolverSrc), "model.APIToken")
 }
 
+func TestWriteGraphQLArtifactsEnsuresScalarHelpers(t *testing.T) {
+	template, err := os.ReadFile(filepath.Join("..", "cli", "templates", "graphql", "scalars.go.tmpl"))
+	if err != nil {
+		t.Fatalf("read scalars template: %v", err)
+	}
+	RegisterGraphQLScalarTemplate(template)
+	t.Cleanup(func() { RegisterGraphQLScalarTemplate(nil) })
+
+	root := t.TempDir()
+	modulePath := "example.com/app"
+	entities := []Entity{{
+		Name: "Widget",
+		Fields: []dsl.Field{
+			dsl.UUIDv7("id").Primary(),
+		},
+	}}
+
+	if err := writeGraphQLArtifacts(root, entities, modulePath); err != nil {
+		t.Fatalf("writeGraphQLArtifacts: %v", err)
+	}
+
+	path := filepath.Join(root, "graphql", "scalars.go")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected scalars helper to be written: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read scalars helper: %v", err)
+	}
+	if string(content) != string(template) {
+		t.Fatalf("unexpected scalars helper content\nwant:\n%s\ngot:\n%s", template, content)
+	}
+}
+
 func mustNotContain(t *testing.T, content, needle string) {
 	t.Helper()
 	if strings.Contains(content, needle) {
