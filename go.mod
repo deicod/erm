@@ -51,4 +51,3 @@ require (
 	golang.org/x/tools v0.37.0 // indirect
 )
 
-replace github.com/deicod/erm => .
