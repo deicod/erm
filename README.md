@@ -32,6 +32,8 @@ Generated app uses:
 - **OIDC** middleware (pluggable claims mapping; default Keycloak).
 - **pgx/v5** pools + migrations.
 
+To keep custom business logic safe across regenerations, follow the patterns in [Customizing generated code safely](docs/customizing-generated-code.md).
+
 ## License
 
 MIT © 2025 deicod / contributors
