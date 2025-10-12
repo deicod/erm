@@ -9,6 +9,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/deicod/erm/generator"
 	"github.com/spf13/cobra"
 )
 
@@ -74,6 +75,7 @@ func renderGQLGenYAML(modulePath string) string {
 	fmt.Fprintln(builder, "  layout: follow-schema")
 	fmt.Fprintln(builder, "  dir: graphql/resolvers")
 	fmt.Fprintln(builder, "  package: resolvers")
+	builder.WriteString(generator.GraphQLModelsSection())
 	fmt.Fprintln(builder, "autobind:")
 	fmt.Fprintf(builder, "  - %s/orm/gen\n", modulePath)
 	return builder.String()
