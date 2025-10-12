@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	testkit "github.com/deicod/erm/testing"
 )
 
 func TestGraphQLInitScaffoldsRuntimePackages(t *testing.T) {
@@ -58,7 +60,7 @@ func TestGraphQLInitScaffoldsRuntimePackages(t *testing.T) {
 		t.Fatalf("module path not substituted in directives/auth.go: %s", content)
 	}
 
-	scaffoldRuntimeDependencies(t, tmpDir, modulePath)
+	testkit.ScaffoldGraphQLRuntime(t, tmpDir, modulePath)
 
 	tidyCmd := exec.Command("go", "mod", "tidy")
 	tidyCmd.Dir = tmpDir
@@ -71,186 +73,5 @@ func TestGraphQLInitScaffoldsRuntimePackages(t *testing.T) {
 	output, err := buildCmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("compile runtime packages: %v\n%s", err, output)
-	}
-}
-
-func scaffoldRuntimeDependencies(t *testing.T, root, modulePath string) {
-	t.Helper()
-
-	stubs := map[string]string{
-		filepath.Join(root, "orm", "gen", "client.go"): `package gen
-
-type Client struct{}
-
-func NewClient(any) *Client { return &Client{} }
-`,
-		filepath.Join(root, "observability", "metrics", "metrics.go"): `package metrics
-
-import "time"
-
-type Collector interface {
-        RecordDataloaderBatch(string, int, time.Duration)
-        RecordQuery(string, string, time.Duration, error)
-}
-
-type NoopCollector struct{}
-
-func (NoopCollector) RecordDataloaderBatch(string, int, time.Duration) {}
-
-func (NoopCollector) RecordQuery(string, string, time.Duration, error) {}
-
-func WithCollector(primary Collector, others ...Collector) Collector {
-        if primary != nil {
-                return primary
-        }
-        return NoopCollector{}
-}
-`,
-		filepath.Join(root, "oidc", "claims.go"): `package oidc
-
-import "context"
-
-type Claims struct {
-        Roles []string
-}
-
-type claimsKey struct{}
-
-func ToContext(ctx context.Context, claims Claims) context.Context {
-        if ctx == nil {
-                return context.Background()
-        }
-        return context.WithValue(ctx, claimsKey{}, claims)
-}
-
-func FromContext(ctx context.Context) (Claims, bool) {
-        if ctx == nil {
-                return Claims{}, false
-        }
-        claims, ok := ctx.Value(claimsKey{}).(Claims)
-        return claims, ok
-}
-`,
-		filepath.Join(root, "graphql", "dataloaders", "entities_gen.go"): `package dataloaders
-
-import (
-        "` + modulePath + `/observability/metrics"
-        "` + modulePath + `/orm/gen"
-)
-
-func configureEntityLoaders(*Loaders, *gen.Client, metrics.Collector) {}
-`,
-		filepath.Join(root, "graphql", "graphql.go"): `package graphql
-
-import (
-        "context"
-
-        gql "github.com/99designs/gqlgen/graphql"
-)
-
-type ExecutableSchema = gql.ExecutableSchema
-
-type DirectiveRoot struct {
-        Auth func(ctx context.Context, obj interface{}, next gql.Resolver, roles []string) (interface{}, error)
-}
-
-type Config struct {
-        Resolvers interface{}
-        Directives DirectiveRoot
-}
-
-type executionContext struct{}
-
-func NewExecutableSchema(Config) gql.ExecutableSchema { return nil }
-`,
-		filepath.Join(root, "graphql", "resolvers", "resolver.go"): `package resolvers
-
-import (
-        "` + modulePath + `/graphql/subscriptions"
-        "` + modulePath + `/observability/metrics"
-        "` + modulePath + `/orm/gen"
-)
-
-type Options struct {
-        ORM           *gen.Client
-        Collector     metrics.Collector
-        Subscriptions subscriptions.Broker
-}
-
-type Resolver struct {
-        ORM *gen.Client
-}
-
-func NewWithOptions(opts Options) *Resolver { return &Resolver{ORM: opts.ORM} }
-`,
-		filepath.Join(root, "graphql", "subscriptions", "bus.go"): `package subscriptions
-
-import "context"
-
-type Broker interface {
-        Publish(context.Context, string, any) error
-        Subscribe(context.Context, string) (<-chan any, func(), error)
-}
-
-type InMemoryBroker struct{}
-
-func NewInMemoryBroker() *InMemoryBroker { return &InMemoryBroker{} }
-
-func (*InMemoryBroker) Publish(context.Context, string, any) error { return nil }
-
-func (*InMemoryBroker) Subscribe(context.Context, string) (<-chan any, func(), error) {
-        ch := make(chan any)
-        return ch, func() { close(ch) }, nil
-}
-`,
-		filepath.Join(root, "graphql", "server", "server.go"): `package server
-
-import (
-        "context"
-        "net/http"
-
-        "` + modulePath + `/observability/metrics"
-        "` + modulePath + `/orm/gen"
-)
-
-type Options struct {
-        ORM           *gen.Client
-        Collector     metrics.Collector
-        Subscriptions SubscriptionOptions
-}
-
-type SubscriptionOptions struct {
-        Enabled    bool
-        Broker     interface{}
-        Transports SubscriptionTransports
-}
-
-type SubscriptionTransports struct {
-        Websocket bool
-        GraphQLWS bool
-}
-
-type Server struct{}
-
-func NewServer(Options) *Server { return &Server{} }
-
-func (Server) ServeHTTP(http.ResponseWriter, *http.Request) {}
-
-func WithLoaders(ctx context.Context, _ Options) context.Context { return ctx }
-`,
-	}
-
-	for path, content := range stubs {
-		if _, err := os.Stat(path); err == nil {
-			continue
-		} else if err != nil && !os.IsNotExist(err) {
-			t.Fatalf("stat %s: %v", path, err)
-		}
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			t.Fatalf("mkdir %s: %v", path, err)
-		}
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			t.Fatalf("write stub %s: %v", path, err)
-		}
 	}
 }
