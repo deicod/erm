@@ -20,22 +20,6 @@ func ensureGQLGenConfig(root string) (string, error) {
 	return path, nil
 }
 
-var defaultGQLGenConfig = func() string {
-	builder := &strings.Builder{}
-	fmt.Fprintln(builder, "schema:")
-	fmt.Fprintln(builder, "  - graphql/schema.graphqls")
-	fmt.Fprintln(builder, "exec:")
-	fmt.Fprintln(builder, "  filename: graphql/generated.go")
-	fmt.Fprintln(builder, "model:")
-	fmt.Fprintln(builder, "  filename: graphql/models_gen.go")
-	fmt.Fprintln(builder, "resolver:")
-	fmt.Fprintln(builder, "  layout: follow-schema")
-	fmt.Fprintln(builder, "  dir: graphql/resolvers")
-	fmt.Fprintln(builder, "  package: resolvers")
-	builder.WriteString(GraphQLModelsSection())
-	return builder.String()
-}()
-
 // graphqlModelTypeMappings defines the Go types gqlgen should use for custom scalars.
 var graphqlModelTypeMappings = map[string][]string{
 	"BitString": {
@@ -121,6 +105,22 @@ var graphqlModelTypeMappings = map[string][]string{
 		"string",
 	},
 }
+
+var defaultGQLGenConfig = func() string {
+	builder := &strings.Builder{}
+	fmt.Fprintln(builder, "schema:")
+	fmt.Fprintln(builder, "  - graphql/schema.graphqls")
+	fmt.Fprintln(builder, "exec:")
+	fmt.Fprintln(builder, "  filename: graphql/generated.go")
+	fmt.Fprintln(builder, "model:")
+	fmt.Fprintln(builder, "  filename: graphql/models_gen.go")
+	fmt.Fprintln(builder, "resolver:")
+	fmt.Fprintln(builder, "  layout: follow-schema")
+	fmt.Fprintln(builder, "  dir: graphql/resolvers")
+	fmt.Fprintln(builder, "  package: resolvers")
+	builder.WriteString(GraphQLModelsSection())
+	return builder.String()
+}()
 
 // GraphQLModelTypeMappings returns a defensive copy of the scalar-to-Go type mappings used
 // when scaffolding gqlgen configuration.
