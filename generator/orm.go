@@ -960,17 +960,32 @@ func emitToOneLoader(buf *bytes.Buffer, source Entity, edge dsl.Edge, entityInde
 	fmt.Fprintf(buf, "    type keyType = %s\n", keyType)
 	fmt.Fprintf(buf, "    keys := make([]keyType, 0, len(parents))\n")
 	fmt.Fprintf(buf, "    seen := make(map[keyType]struct{}, len(parents))\n")
-	fmt.Fprintf(buf, "    for _, parent := range parents {\n        if parent == nil {\n            continue\n        }\n        edges := ensure%sEdges(parent)\n        edges.markLoaded(%q)\n        fk := parent.%s\n        if isZero(fk) {\n            edges.%s = nil\n            continue\n        }\n        if _, ok := seen[fk]; !ok {\n            seen[fk] = struct{}{}\n            keys = append(keys, fk)\n        }\n    }\n", source.Name, edge.Name, fkFieldName, exportName(edge.Name))
+	fmt.Fprintf(buf, "    for _, parent := range parents {\n        if parent == nil {\n            continue\n        }\n    edges := ensure%sEdges(parent)\n        edges.markLoaded(%q)\n        var fk keyType\n", source.Name, edge.Name)
+	if isNullablePointerField(fkField) {
+		fmt.Fprintf(buf, "        fkPtr := parent.%s\n        if fkPtr == nil {\n            edges.%s = nil\n            continue\n        }\n        fk = *fkPtr\n", fkFieldName, exportName(edge.Name))
+	} else if isNullableSQLNullField(fkField) {
+		fmt.Fprintf(buf, "        fkNull := parent.%s\n        if !fkNull.Valid {\n            edges.%s = nil\n            continue\n        }\n        fk = fkNull.%s\n", fkFieldName, exportName(edge.Name), sqlNullValueFieldAccessor(fkField))
+	} else {
+		fmt.Fprintf(buf, "        fk = parent.%s\n", fkFieldName)
+	}
+	fmt.Fprintf(buf, "        if isZero(fk) {\n            edges.%s = nil\n            continue\n        }\n        if _, ok := seen[fk]; !ok {\n            seen[fk] = struct{}{}\n            keys = append(keys, fk)\n        }\n    }\n", exportName(edge.Name))
 	fmt.Fprintf(buf, "    if len(keys) == 0 {\n        return nil\n    }\n")
 	fmt.Fprintf(buf, "    sql, args := buildInQuery(%s, keys)\n", constName)
-	fmt.Fprintf(buf, "    rows, err := c.db.Pool.Query(ctx, sql, args...)\n    if err != nil {\n        return err\n    }\n    defer rows.Close()\n")
+	fmt.Fprintf(buf, "    rows, err := c.db.Pool.Query(ctx, sql, args...)\n    if err != nil {\n        return err\n    }\n   defer rows.Close()\n")
 	fmt.Fprintf(buf, "    related := make(map[keyType]*%s, len(keys))\n", edge.Target)
-	fmt.Fprintf(buf, "    for rows.Next() {\n        item := new(%s)\n        if err := rows.Scan(%s); err != nil {\n            return err\n        }\n        key := item.%s\n        related[key] = item\n    }\n", edge.Target, scanArgs(target), targetKeyField)
+	fmt.Fprintf(buf, "    for rows.Next() {\n        item := new(%s)\n        if err := rows.Scan(%s); err != nil {\n     return err\n        }\n        key := item.%s\n        related[key] = item\n    }\n", edge.Target, scanArgs(target), targetKeyField)
 	fmt.Fprintf(buf, "    if err := rows.Err(); err != nil {\n        return err\n    }\n")
-	fmt.Fprintf(buf, "    for _, parent := range parents {\n        if parent == nil {\n            continue\n        }\n        fk := parent.%s\n        edges := ensure%sEdges(parent)\n        if isZero(fk) {\n            edges.%s = nil\n            continue\n        }\n        if item, ok := related[fk]; ok {\n            edges.%s = item\n        } else {\n            edges.%s = nil\n        }\n    }\n", fkFieldName, source.Name, exportName(edge.Name), exportName(edge.Name), exportName(edge.Name))
+	fmt.Fprintf(buf, "    for _, parent := range parents {\n        if parent == nil {\n            continue\n        }\n    edges := ensure%sEdges(parent)\n        var fk keyType\n", source.Name)
+	if isNullablePointerField(fkField) {
+		fmt.Fprintf(buf, "        fkPtr := parent.%s\n        if fkPtr == nil {\n            edges.%s = nil\n            continue\n        }\n        fk = *fkPtr\n", fkFieldName, exportName(edge.Name))
+	} else if isNullableSQLNullField(fkField) {
+		fmt.Fprintf(buf, "        fkNull := parent.%s\n        if !fkNull.Valid {\n            edges.%s = nil\n            continue\n        }\n        fk = fkNull.%s\n", fkFieldName, exportName(edge.Name), sqlNullValueFieldAccessor(fkField))
+	} else {
+		fmt.Fprintf(buf, "        fk = parent.%s\n", fkFieldName)
+	}
+	fmt.Fprintf(buf, "        if isZero(fk) {\n            edges.%s = nil\n            continue\n        }\n        if item, ok := related[fk]; ok {\n            edges.%s = item\n        } else {\n            edges.%s = nil\n        }\n    }\n", exportName(edge.Name), exportName(edge.Name), exportName(edge.Name))
 	fmt.Fprintf(buf, "    return nil\n}\n\n")
 }
-
 func emitToManyLoader(buf *bytes.Buffer, source Entity, edge dsl.Edge, entityIndex map[string]Entity) {
 	target, ok := entityIndex[edge.Target]
 	if !ok {
@@ -999,16 +1014,23 @@ func emitToManyLoader(buf *bytes.Buffer, source Entity, edge dsl.Edge, entityInd
 	fmt.Fprintf(buf, "    keys := make([]keyType, 0, len(parents))\n")
 	fmt.Fprintf(buf, "    seen := make(map[keyType]struct{}, len(parents))\n")
 	fmt.Fprintf(buf, "    buckets := make(map[keyType][]*%s, len(parents))\n", source.Name)
-	fmt.Fprintf(buf, "    for _, parent := range parents {\n        if parent == nil {\n            continue\n        }\n        key := parent.%s\n        if isZero(key) {\n            edges := ensure%sEdges(parent)\n            if edges.%s == nil {\n                edges.%s = []*%s{}\n            }\n            edges.markLoaded(%q)\n            continue\n        }\n        if _, ok := seen[key]; !ok {\n            seen[key] = struct{}{}\n            keys = append(keys, key)\n        }\n        buckets[key] = append(buckets[key], parent)\n    }\n", sourceKeyName, source.Name, exportName(edge.Name), exportName(edge.Name), edge.Target, edge.Name)
+	fmt.Fprintf(buf, "    for _, parent := range parents {\n        if parent == nil {\n            continue\n        }\n    key := parent.%s\n        if isZero(key) {\n            edges := ensure%sEdges(parent)\n            if edges.%s == nil {\n                edges.%s = []*%s{}\n            }\n            edges.markLoaded(%q)\n            continue\n        }\n        if _, ok := seen[key]; !ok {\n            seen[key] = struct{}{}\n            keys = append(keys, key)\n        }\n        buckets[key] = append(buckets[key], parent)\n    }\n", sourceKeyName, source.Name, exportName(edge.Name), exportName(edge.Name), edge.Target, edge.Name)
 	fmt.Fprintf(buf, "    if len(keys) == 0 {\n        for _, parent := range parents {\n            if parent == nil {\n                continue\n            }\n            edges := ensure%sEdges(parent)\n            if edges.%s == nil {\n                edges.%s = []*%s{}\n            }\n            edges.markLoaded(%q)\n        }\n        return nil\n    }\n", source.Name, exportName(edge.Name), exportName(edge.Name), edge.Target, edge.Name)
 	fmt.Fprintf(buf, "    sql, args := buildInQuery(%s, keys)\n", constName)
-	fmt.Fprintf(buf, "    rows, err := c.db.Pool.Query(ctx, sql, args...)\n    if err != nil {\n        return err\n    }\n    defer rows.Close()\n")
-	fmt.Fprintf(buf, "    for rows.Next() {\n        item := new(%s)\n        if err := rows.Scan(%s); err != nil {\n            return err\n        }\n        owner := item.%s\n        parents, ok := buckets[owner]\n        if !ok {\n            continue\n        }\n        for _, parent := range parents {\n            edges := ensure%sEdges(parent)\n            edges.%s = append(edges.%s, item)\n        }\n    }\n", edge.Target, scanArgs(target), refFieldName, source.Name, exportName(edge.Name), exportName(edge.Name))
+	fmt.Fprintf(buf, "    rows, err := c.db.Pool.Query(ctx, sql, args...)\n    if err != nil {\n        return err\n    }\n   defer rows.Close()\n")
+	fmt.Fprintf(buf, "    for rows.Next() {\n        item := new(%s)\n        if err := rows.Scan(%s); err != nil {\n     return err\n        }\n        var owner keyType\n", edge.Target, scanArgs(target))
+	if isNullablePointerField(refField) {
+		fmt.Fprintf(buf, "        ownerPtr := item.%s\n        if ownerPtr == nil {\n            continue\n        }\n        owner = *ownerPtr\n", refFieldName)
+	} else if isNullableSQLNullField(refField) {
+		fmt.Fprintf(buf, "        ownerNull := item.%s\n        if !ownerNull.Valid {\n            continue\n        }\n        owner = ownerNull.%s\n", refFieldName, sqlNullValueFieldAccessor(refField))
+	} else {
+		fmt.Fprintf(buf, "        owner = item.%s\n", refFieldName)
+	}
+	fmt.Fprintf(buf, "        if isZero(owner) {\n            continue\n        }\n        parents, ok := buckets[owner]\n        if !ok {\n            continue\n        }\n        for _, parent := range parents {\n            edges := ensure%sEdges(parent)\n            edges.%s = append(edges.%s, item)\n        }\n    }\n", source.Name, exportName(edge.Name), exportName(edge.Name))
 	fmt.Fprintf(buf, "    if err := rows.Err(); err != nil {\n        return err\n    }\n")
-	fmt.Fprintf(buf, "    for _, parent := range parents {\n        if parent == nil {\n            continue\n        }\n        edges := ensure%sEdges(parent)\n        if edges.%s == nil {\n            edges.%s = []*%s{}\n        }\n        edges.markLoaded(%q)\n    }\n", source.Name, exportName(edge.Name), exportName(edge.Name), edge.Target, edge.Name)
+	fmt.Fprintf(buf, "    for _, parent := range parents {\n        if parent == nil {\n            continue\n        }\n    edges := ensure%sEdges(parent)\n        if edges.%s == nil {\n            edges.%s = []*%s{}\n        }\n        edges.markLoaded(%q)\n    }\n", source.Name, exportName(edge.Name), exportName(edge.Name), edge.Target, edge.Name)
 	fmt.Fprintf(buf, "    return nil\n}\n\n")
 }
-
 func emitManyToManyLoader(buf *bytes.Buffer, source Entity, edge dsl.Edge, entityIndex map[string]Entity) {
 	target, ok := entityIndex[edge.Target]
 	if !ok {
@@ -1257,6 +1279,33 @@ func fieldByColumn(ent Entity, column string) (dsl.Field, bool) {
 
 func goTypeForField(field dsl.Field) string {
 	return baseGoType(field)
+}
+
+func isNullablePointerField(field dsl.Field) bool {
+	return field.Nullable && nullableGoStrategy(field) == nullableStrategyPointer
+}
+
+func isNullableSQLNullField(field dsl.Field) bool {
+	return field.Nullable && nullableGoStrategy(field) == nullableStrategySQLNull
+}
+
+func sqlNullValueFieldAccessor(field dsl.Field) string {
+	switch field.Type {
+	case dsl.TypeBoolean:
+		return "Bool"
+	case dsl.TypeSmallInt, dsl.TypeSmallSerial:
+		return "Int16"
+	case dsl.TypeInteger, dsl.TypeSerial:
+		return "Int32"
+	case dsl.TypeBigInt, dsl.TypeBigSerial:
+		return "Int64"
+	case dsl.TypeReal, dsl.TypeDoublePrecision, dsl.TypeDecimal, dsl.TypeNumeric:
+		return "Float64"
+	case dsl.TypeDate, dsl.TypeTime, dsl.TypeTimeTZ, dsl.TypeTimestamp, dsl.TypeTimestampTZ:
+		return "Time"
+	default:
+		return "String"
+	}
 }
 
 func edgeRefColumn(source Entity, edge dsl.Edge, primary dsl.Field) string {
