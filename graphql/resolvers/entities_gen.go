@@ -10,6 +10,65 @@ import (
 	"github.com/deicod/erm/orm/gen"
 )
 
+type entityHooks struct {
+	BeforeCreateUser func(ctx context.Context, r *Resolver, input graphql.CreateUserInput, model *gen.User) error
+	AfterCreateUser  func(ctx context.Context, r *Resolver, record *gen.User) error
+	BeforeUpdateUser func(ctx context.Context, r *Resolver, input graphql.UpdateUserInput, model *gen.User) error
+	AfterUpdateUser  func(ctx context.Context, r *Resolver, record *gen.User) error
+	BeforeDeleteUser func(ctx context.Context, r *Resolver, input graphql.DeleteUserInput, id string) error
+	AfterDeleteUser  func(ctx context.Context, r *Resolver, input graphql.DeleteUserInput, id string) error
+	BeforeReturnUser func(ctx context.Context, r *Resolver, record *gen.User) error
+}
+
+func (r *Resolver) applyBeforeCreateUser(ctx context.Context, input graphql.CreateUserInput, model *gen.User) error {
+	if r == nil || r.hooks.BeforeCreateUser == nil {
+		return nil
+	}
+	return r.hooks.BeforeCreateUser(ctx, r, input, model)
+}
+
+func (r *Resolver) applyAfterCreateUser(ctx context.Context, record *gen.User) error {
+	if r == nil || record == nil || r.hooks.AfterCreateUser == nil {
+		return nil
+	}
+	return r.hooks.AfterCreateUser(ctx, r, record)
+}
+
+func (r *Resolver) applyBeforeUpdateUser(ctx context.Context, input graphql.UpdateUserInput, model *gen.User) error {
+	if r == nil || r.hooks.BeforeUpdateUser == nil {
+		return nil
+	}
+	return r.hooks.BeforeUpdateUser(ctx, r, input, model)
+}
+
+func (r *Resolver) applyAfterUpdateUser(ctx context.Context, record *gen.User) error {
+	if r == nil || record == nil || r.hooks.AfterUpdateUser == nil {
+		return nil
+	}
+	return r.hooks.AfterUpdateUser(ctx, r, record)
+}
+
+func (r *Resolver) applyBeforeDeleteUser(ctx context.Context, input graphql.DeleteUserInput, id string) error {
+	if r == nil || r.hooks.BeforeDeleteUser == nil {
+		return nil
+	}
+	return r.hooks.BeforeDeleteUser(ctx, r, input, id)
+}
+
+func (r *Resolver) applyAfterDeleteUser(ctx context.Context, input graphql.DeleteUserInput, id string) error {
+	if r == nil || r.hooks.AfterDeleteUser == nil {
+		return nil
+	}
+	return r.hooks.AfterDeleteUser(ctx, r, input, id)
+}
+
+func (r *Resolver) applyBeforeReturnUser(ctx context.Context, record *gen.User) error {
+	if r == nil || record == nil || r.hooks.BeforeReturnUser == nil {
+		return nil
+	}
+	return r.hooks.BeforeReturnUser(ctx, r, record)
+}
+
 func (r *queryResolver) Node(ctx context.Context, id string) (graphql.Node, error) {
 	typ, nativeID, err := relay.FromGlobalID(id)
 	if err != nil {
@@ -23,6 +82,9 @@ func (r *queryResolver) Node(ctx context.Context, id string) (graphql.Node, erro
 		}
 		if record == nil {
 			return nil, nil
+		}
+		if err := r.applyBeforeReturnUser(ctx, record); err != nil {
+			return nil, err
 		}
 		return toGraphQLUser(record), nil
 	default:
@@ -87,6 +149,9 @@ func (r *queryResolver) User(ctx context.Context, id string) (*graphql.User, err
 	if err != nil {
 		return nil, err
 	}
+	if err := r.applyBeforeReturnUser(ctx, record); err != nil {
+		return nil, err
+	}
 	return toGraphQLUser(record), nil
 }
 
@@ -118,6 +183,9 @@ func (r *queryResolver) Users(ctx context.Context, first *int, after *string, la
 	edges := make([]*graphql.UserEdge, len(records))
 	for idx, record := range records {
 		cursor := encodeCursor(offset + idx)
+		if err := r.applyBeforeReturnUser(ctx, record); err != nil {
+			return nil, err
+		}
 		r.primeUser(ctx, record)
 		edges[idx] = &graphql.UserEdge{
 			Cursor: cursor,
@@ -158,8 +226,17 @@ func (r *mutationResolver) CreateUser(ctx context.Context, input graphql.CreateU
 	if input.UpdatedAt != nil {
 		model.UpdatedAt = *input.UpdatedAt
 	}
+	if err := r.applyBeforeCreateUser(ctx, input, model); err != nil {
+		return nil, err
+	}
 	record, err := r.ORM.Users().Create(ctx, model)
 	if err != nil {
+		return nil, err
+	}
+	if err := r.applyAfterCreateUser(ctx, record); err != nil {
+		return nil, err
+	}
+	if err := r.applyBeforeReturnUser(ctx, record); err != nil {
 		return nil, err
 	}
 	gqlRecord := toGraphQLUser(record)
@@ -186,8 +263,17 @@ func (r *mutationResolver) UpdateUser(ctx context.Context, input graphql.UpdateU
 	if input.UpdatedAt != nil {
 		model.UpdatedAt = *input.UpdatedAt
 	}
+	if err := r.applyBeforeUpdateUser(ctx, input, model); err != nil {
+		return nil, err
+	}
 	record, err := r.ORM.Users().Update(ctx, model)
 	if err != nil {
+		return nil, err
+	}
+	if err := r.applyAfterUpdateUser(ctx, record); err != nil {
+		return nil, err
+	}
+	if err := r.applyBeforeReturnUser(ctx, record); err != nil {
 		return nil, err
 	}
 	gqlRecord := toGraphQLUser(record)
@@ -207,7 +293,13 @@ func (r *mutationResolver) DeleteUser(ctx context.Context, input graphql.DeleteU
 	if err != nil {
 		return nil, err
 	}
+	if err := r.applyBeforeDeleteUser(ctx, input, nativeID); err != nil {
+		return nil, err
+	}
 	if err := r.ORM.Users().Delete(ctx, nativeID); err != nil {
+		return nil, err
+	}
+	if err := r.applyAfterDeleteUser(ctx, input, nativeID); err != nil {
 		return nil, err
 	}
 	deletedID := relay.ToGlobalID("User", nativeID)

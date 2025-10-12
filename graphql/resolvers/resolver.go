@@ -22,6 +22,7 @@ type Resolver struct {
 	ORM           *gen.Client
 	collector     metrics.Collector
 	subscriptions subscriptions.Broker
+	hooks         entityHooks
 }
 
 // New creates a resolver root bound to the provided ORM client.
@@ -35,7 +36,9 @@ func NewWithOptions(opts Options) *Resolver {
 	if collector == nil {
 		collector = metrics.NoopCollector{}
 	}
-	return &Resolver{ORM: opts.ORM, collector: collector, subscriptions: opts.Subscriptions}
+	resolver := &Resolver{ORM: opts.ORM, collector: collector, subscriptions: opts.Subscriptions}
+	resolver.hooks = newEntityHooks()
+	return resolver
 }
 
 // WithLoaders attaches per-request dataloaders to the supplied context.

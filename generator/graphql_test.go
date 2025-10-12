@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"bytes"
 	"go/parser"
 	"go/token"
 	"os"
@@ -68,6 +69,13 @@ func TestGraphQLResolverGeneration(t *testing.T) {
 		t.Fatalf("writeGraphQLDataloaders: %v", err)
 	}
 
+	hooksPath := filepath.Join(root, "graphql", "resolvers", "entities_hooks.go")
+	hooksSrc, err := os.ReadFile(hooksPath)
+	if err != nil {
+		t.Fatalf("read hooks: %v", err)
+	}
+	mustContain(t, string(hooksSrc), "newEntityHooks")
+
 	resolverPath := filepath.Join(root, "graphql", "resolvers", "entities_gen.go")
 	resolverSrc, err := os.ReadFile(resolverPath)
 	if err != nil {
@@ -77,6 +85,9 @@ func TestGraphQLResolverGeneration(t *testing.T) {
 		"func (r *mutationResolver) CreateWidget",
 		"func (r *queryResolver) Widgets",
 		"func decodeWidgetID",
+		"type entityHooks struct",
+		"applyBeforeCreateWidget",
+		"applyBeforeReturnWidget",
 		modulePath + "/graphql",
 		modulePath + "/graphql/dataloaders",
 	}
@@ -90,6 +101,17 @@ func TestGraphQLResolverGeneration(t *testing.T) {
 	}
 	if _, err := parser.ParseFile(token.NewFileSet(), resolverPath, resolverSrc, parser.AllErrors); err != nil {
 		t.Fatalf("resolvers parse: %v", err)
+	}
+
+	if err := writeGraphQLResolvers(root, entities, modulePath); err != nil {
+		t.Fatalf("second writeGraphQLResolvers: %v", err)
+	}
+	hooksAgain, err := os.ReadFile(hooksPath)
+	if err != nil {
+		t.Fatalf("read hooks second: %v", err)
+	}
+	if !bytes.Equal(hooksSrc, hooksAgain) {
+		t.Fatalf("expected hooks stub to remain unchanged")
 	}
 
 	loaderPath := filepath.Join(root, "graphql", "dataloaders", "entities_gen.go")
