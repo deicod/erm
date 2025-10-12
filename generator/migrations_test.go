@@ -1,7 +1,9 @@
 package generator
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -562,4 +564,102 @@ func sliceContains(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func TestRenderInitialMigration_BlogSchemaForeignKeyOrder(t *testing.T) {
+	entities := loadBlogEntities(t)
+	plan, _ := buildMigrationPlan(entities)
+	sql := renderInitialMigration(entities, extensionFlags{})
+	order := createStatementOrder(sql)
+	for _, ent := range plan {
+		table := pluralize(ent.Entity.Name)
+		tableIdx, ok := order[table]
+		if !ok {
+			t.Fatalf("missing create statement for %s", table)
+		}
+		for _, fk := range ent.ForeignKeys {
+			if fk.TargetTable == table {
+				continue
+			}
+			targetIdx, ok := order[fk.TargetTable]
+			if !ok {
+				t.Fatalf("missing create statement for referenced table %s", fk.TargetTable)
+			}
+			if targetIdx > tableIdx {
+				t.Fatalf("table %s (order %d) references %s (order %d) before it is created", table, tableIdx, fk.TargetTable, targetIdx)
+			}
+		}
+	}
+}
+
+func TestRenderInitialMigration_BlogSchema_NoDuplicateEdgeColumns(t *testing.T) {
+	entities := loadBlogEntities(t)
+	sql := renderInitialMigration(entities, extensionFlags{})
+
+	comments := tableDefinition(t, sql, "comments")
+	if strings.Contains(comments, "post uuid") {
+		t.Fatalf("unexpected synthetic column in comments table: %s", comments)
+	}
+	if strings.Contains(comments, "parent uuid") {
+		t.Fatalf("unexpected synthetic column in comments table: %s", comments)
+	}
+	if count := strings.Count(comments, "post_id uuid"); count != 1 {
+		t.Fatalf("expected one post_id column in comments table, found %d\n%s", count, comments)
+	}
+	if count := strings.Count(comments, "parent_id uuid"); count != 1 {
+		t.Fatalf("expected one parent_id column in comments table, found %d\n%s", count, comments)
+	}
+
+	posts := tableDefinition(t, sql, "posts")
+	if strings.Contains(posts, "author uuid") {
+		t.Fatalf("unexpected synthetic column in posts table: %s", posts)
+	}
+	if count := strings.Count(posts, "author_id uuid"); count != 1 {
+		t.Fatalf("expected one author_id column in posts table, found %d\n%s", count, posts)
+	}
+}
+
+func loadBlogEntities(t *testing.T) []Entity {
+	t.Helper()
+	dir := t.TempDir()
+	copyTree(t, filepath.Join("..", "examples", "blog"), dir)
+	entities, err := loadEntities(dir)
+	if err != nil {
+		t.Fatalf("loadEntities: %v", err)
+	}
+	return entities
+}
+
+func tableDefinition(t *testing.T, sql, table string) string {
+	t.Helper()
+	marker := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (", table)
+	start := strings.Index(sql, marker)
+	if start == -1 {
+		t.Fatalf("table definition for %s not found", table)
+	}
+	start += len(marker)
+	rest := sql[start:]
+	end := strings.Index(rest, ");")
+	if end == -1 {
+		t.Fatalf("unterminated table definition for %s", table)
+	}
+	return rest[:end]
+}
+
+func createStatementOrder(sql string) map[string]int {
+	order := make(map[string]int)
+	lines := strings.Split(sql, "\n")
+	position := 0
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "CREATE TABLE IF NOT EXISTS ") {
+			name := strings.TrimPrefix(trimmed, "CREATE TABLE IF NOT EXISTS ")
+			if idx := strings.IndexAny(name, " ("); idx >= 0 {
+				name = name[:idx]
+			}
+			order[name] = position
+			position++
+		}
+	}
+	return order
 }
