@@ -34,8 +34,11 @@ func TestInitCmdScaffoldsWorkspace(t *testing.T) {
 	assertFileContains(t, "erm.yaml", "module: \"\"")
 	assertFileContains(t, "README.md", "This workspace was bootstrapped with 'erm init'")
 	assertFileContains(t, "AGENTS.md", "Development Workflow")
-	assertFileContains(t, filepath.Join("cmd", "api", "main.go"), "package main")
-	assertFileContains(t, filepath.Join("cmd", "api", "main.go"), "TODO: mount your GraphQL handler")
+	apiMain := filepath.Join("cmd", "api", "main.go")
+	assertFileContains(t, apiMain, "package main")
+	assertFileContains(t, apiMain, "github.com/your/module/graphql/server")
+	assertFileContains(t, apiMain, "TODO: Set the module path")
+	assertFileContains(t, apiMain, "resolveHTTPAddr")
 	assertFileContains(t, filepath.Join("schema", "AGENTS.md"), "Schema Development Workflow")
 	assertFileContains(t, filepath.Join("graphql", "README.md"), "# GraphQL workspace")
 
