@@ -192,7 +192,11 @@ func TestExportNamePreservesInitialisms(t *testing.T) {
 
 func mustContain(t *testing.T, content, needle string) {
 	t.Helper()
-	if !strings.Contains(content, needle) {
+	normalize := func(s string) string {
+		fields := strings.Fields(s)
+		return strings.Join(fields, " ")
+	}
+	if !strings.Contains(normalize(content), normalize(needle)) {
 		t.Fatalf("expected generated content to contain %q\nactual: %s", needle, content)
 	}
 }
@@ -248,6 +252,16 @@ func TestNullableFieldGeneration_EndToEnd(t *testing.T) {
 				f.Annotations = map[string]any{annotationNullableGoType: nullableStrategySQLNull}
 				return f
 			}(),
+			func() dsl.Field {
+				f := dsl.Boolean("active").Optional()
+				f.Annotations = map[string]any{annotationNullableGoType: nullableStrategySQLNull}
+				return f
+			}(),
+			func() dsl.Field {
+				f := dsl.Integer("login_attempts").Optional()
+				f.Annotations = map[string]any{annotationNullableGoType: nullableStrategySQLNull}
+				return f
+			}(),
 		},
 	}}
 
@@ -276,12 +290,14 @@ func TestNullableFieldGeneration_EndToEnd(t *testing.T) {
 		t.Fatalf("read models: %v", err)
 	}
 	models := string(modelsSrc)
-        mustContain(t, models, "\"database/sql\"")
-        mustContain(t, models, "\"time\"")
-        mustContain(t, models, "Nickname *string")
-        mustContain(t, models, "`db:\"nickname,omitempty\" json:\"nickname,omitempty\"`")
-        mustContain(t, models, "LastSeen sql.NullTime")
-        mustContain(t, models, "`db:\"last_seen,omitempty\" json:\"last_seen,omitempty\"`")
+	mustContain(t, models, "\"database/sql\"")
+	mustContain(t, models, "\"time\"")
+	mustContain(t, models, "Nickname *string")
+	mustContain(t, models, "`db:\"nickname,omitempty\" json:\"nickname,omitempty\"`")
+	mustContain(t, models, "LastSeen sql.NullTime")
+	mustContain(t, models, "`db:\"last_seen,omitempty\" json:\"last_seen,omitempty\"`")
+	mustContain(t, models, "Active sql.NullBool")
+	mustContain(t, models, "LoginAttempts sql.NullInt32")
 	if _, err := parser.ParseFile(token.NewFileSet(), modelsPath, modelsSrc, parser.AllErrors); err != nil {
 		t.Fatalf("parse models: %v", err)
 	}
@@ -296,8 +312,14 @@ func TestNullableFieldGeneration_EndToEnd(t *testing.T) {
 	mustContain(t, resolvers, "\"time\"")
 	mustContain(t, resolvers, "model.Nickname = input.Nickname")
 	mustContain(t, resolvers, "model.LastSeen = sql.NullTime{Time: *input.LastSeen, Valid: true}")
+	mustContain(t, resolvers, "model.Active = sql.NullBool{Bool: *input.Active, Valid: true}")
+	mustContain(t, resolvers, "model.LoginAttempts = sql.NullInt32{Int32: *input.LoginAttempts, Valid: true}")
 	mustContain(t, resolvers, "LastSeen: nullableTime(record.LastSeen)")
-        mustContain(t, resolvers, "func nullableTime(input sql.NullTime) *time.Time")
+	mustContain(t, resolvers, "Active: nullableBool(record.Active)")
+	mustContain(t, resolvers, "LoginAttempts: nullableInt32(record.LoginAttempts)")
+	mustContain(t, resolvers, "func nullableTime(input sql.NullTime) *time.Time")
+	mustContain(t, resolvers, "func nullableBool(input sql.NullBool) *bool")
+	mustContain(t, resolvers, "func nullableInt32(input sql.NullInt32) *int32")
 	if _, err := parser.ParseFile(token.NewFileSet(), resolversPath, resolversSrc, parser.AllErrors); err != nil {
 		t.Fatalf("parse resolvers: %v", err)
 	}

@@ -398,27 +398,98 @@ func trimNonNull(typ string) string {
 
 type nullHelperUsage struct {
 	HasSQLNull bool
-	String     bool
-	Time       bool
+	types      map[string]struct{}
+}
+
+func (usage nullHelperUsage) NeedsTime() bool {
+	if usage.types == nil {
+		return false
+	}
+	_, ok := usage.types["sql.NullTime"]
+	return ok
+}
+
+func (usage nullHelperUsage) GoTypes() []string {
+	if usage.types == nil {
+		return nil
+	}
+	goTypes := make([]string, 0, len(usage.types))
+	for typ := range usage.types {
+		goTypes = append(goTypes, typ)
+	}
+	sort.Strings(goTypes)
+	return goTypes
 }
 
 func collectNullHelperUsage(entities []Entity) nullHelperUsage {
-	usage := nullHelperUsage{}
+	usage := nullHelperUsage{types: map[string]struct{}{}}
 	for _, ent := range entities {
 		for _, field := range ent.Fields {
 			goType := defaultGoType(field)
 			if strings.HasPrefix(goType, "sql.Null") {
 				usage.HasSQLNull = true
-				switch goType {
-				case "sql.NullString":
-					usage.String = true
-				case "sql.NullTime":
-					usage.Time = true
-				}
+				usage.types[goType] = struct{}{}
 			}
 		}
 	}
+	if len(usage.types) == 0 {
+		usage.types = nil
+	}
 	return usage
+}
+
+func nullableHelperName(goType string) string {
+	suffix := strings.TrimPrefix(goType, "sql.Null")
+	if suffix == "" {
+		return ""
+	}
+	return "nullable" + suffix
+}
+
+func sqlNullFieldName(goType string) string {
+	switch goType {
+	case "sql.NullBool":
+		return "Bool"
+	case "sql.NullFloat64":
+		return "Float64"
+	case "sql.NullInt16":
+		return "Int16"
+	case "sql.NullInt32":
+		return "Int32"
+	case "sql.NullInt64":
+		return "Int64"
+	case "sql.NullByte":
+		return "Byte"
+	case "sql.NullString":
+		return "String"
+	case "sql.NullTime":
+		return "Time"
+	default:
+		return ""
+	}
+}
+
+func sqlNullValueType(goType string) string {
+	switch goType {
+	case "sql.NullBool":
+		return "bool"
+	case "sql.NullFloat64":
+		return "float64"
+	case "sql.NullInt16":
+		return "int16"
+	case "sql.NullInt32":
+		return "int32"
+	case "sql.NullInt64":
+		return "int64"
+	case "sql.NullByte":
+		return "byte"
+	case "sql.NullString":
+		return "string"
+	case "sql.NullTime":
+		return "time.Time"
+	default:
+		return ""
+	}
 }
 
 func writeGraphQLResolvers(root string, entities []Entity, modulePath string) error {
@@ -446,7 +517,7 @@ func writeGraphQLResolvers(root string, entities []Entity, modulePath string) er
 	if helperUsage.HasSQLNull {
 		imports["database/sql"] = struct{}{}
 	}
-	if helperUsage.Time {
+	if helperUsage.NeedsTime() {
 		imports["time"] = struct{}{}
 	}
 	if len(imports) > 0 {
@@ -477,15 +548,19 @@ func writeGraphQLResolvers(root string, entities []Entity, modulePath string) er
 		}
 	}
 
-	if helperUsage.String {
-		fmt.Fprintf(buf, "func nullableString(input sql.NullString) *string {\n")
-		fmt.Fprintf(buf, "    if !input.Valid {\n        return nil\n    }\n")
-		fmt.Fprintf(buf, "    value := input.String\n    return &value\n}\n\n")
-	}
-	if helperUsage.Time {
-		fmt.Fprintf(buf, "func nullableTime(input sql.NullTime) *time.Time {\n")
-		fmt.Fprintf(buf, "    if !input.Valid {\n        return nil\n    }\n")
-		fmt.Fprintf(buf, "    value := input.Time\n    return &value\n}\n\n")
+	if helperUsage.HasSQLNull {
+		for _, goType := range helperUsage.GoTypes() {
+			helper := nullableHelperName(goType)
+			valueType := sqlNullValueType(goType)
+			field := sqlNullFieldName(goType)
+			if helper == "" || valueType == "" || field == "" {
+				continue
+			}
+			fmt.Fprintf(buf, "func %s(input %s) *%s {\n", helper, goType, valueType)
+			fmt.Fprintf(buf, "    if !input.Valid {\n        return nil\n    }\n")
+			fmt.Fprintf(buf, "    value := input.%s\n", field)
+			fmt.Fprintf(buf, "    return &value\n}\n\n")
+		}
 	}
 
 	path := filepath.Join(root, "graphql", "resolvers", "entities_gen.go")
@@ -632,14 +707,14 @@ func renderEntityHelpers(ent Entity) string {
 
 func graphqlFieldValue(field dsl.Field) string {
 	base := fmt.Sprintf("record.%s", exportName(field.Name))
-	switch defaultGoType(field) {
-	case "sql.NullString":
-		return fmt.Sprintf("nullableString(%s)", base)
-	case "sql.NullTime":
-		return fmt.Sprintf("nullableTime(%s)", base)
-	default:
-		return base
+	goType := defaultGoType(field)
+	if strings.HasPrefix(goType, "sql.Null") {
+		helper := nullableHelperName(goType)
+		if helper != "" {
+			return fmt.Sprintf("%s(%s)", helper, base)
+		}
 	}
+	return base
 }
 
 func renderEntityQueryResolvers(ent Entity) string {
@@ -856,10 +931,13 @@ func renderInputAssignment(inputVar, targetVar string, field dsl.Field, includeI
 	switch {
 	case strings.HasPrefix(goType, "*"):
 		fmt.Fprintf(builder, "        %s.%s = %s.%s\n", targetVar, fieldName, inputVar, inputField)
-	case goType == "sql.NullString":
-		fmt.Fprintf(builder, "        %s.%s = sql.NullString{String: *%s.%s, Valid: true}\n", targetVar, fieldName, inputVar, inputField)
-	case goType == "sql.NullTime":
-		fmt.Fprintf(builder, "        %s.%s = sql.NullTime{Time: *%s.%s, Valid: true}\n", targetVar, fieldName, inputVar, inputField)
+	case strings.HasPrefix(goType, "sql.Null"):
+		field := sqlNullFieldName(goType)
+		if field == "" {
+			fmt.Fprintf(builder, "        %s.%s = *%s.%s\n", targetVar, fieldName, inputVar, inputField)
+		} else {
+			fmt.Fprintf(builder, "        %s.%s = %s{%s: *%s.%s, Valid: true}\n", targetVar, fieldName, goType, field, inputVar, inputField)
+		}
 	default:
 		fmt.Fprintf(builder, "        %s.%s = *%s.%s\n", targetVar, fieldName, inputVar, inputField)
 	}
