@@ -457,6 +457,17 @@ func collectNullHelperUsage(entities []Entity) nullHelperUsage {
 	return usage
 }
 
+func hasEnumFields(entities []Entity) bool {
+	for _, ent := range entities {
+		for _, field := range ent.Fields {
+			if len(field.EnumValues) > 0 && field.EnumName != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func nullableHelperName(goType string) string {
 	suffix := strings.TrimPrefix(goType, "sql.Null")
 	if suffix == "" {
@@ -511,6 +522,23 @@ func sqlNullValueType(goType string) string {
 	}
 }
 
+func renderGraphQLEnumHelpers() string {
+	builder := &strings.Builder{}
+	builder.WriteString("func toGraphQLEnum[T ~string](value string) T {\n")
+	builder.WriteString("    return T(value)\n}\n\n")
+	builder.WriteString("func toGraphQLEnumPtr[T ~string](value *string) *T {\n")
+	builder.WriteString("    if value == nil {\n        return nil\n    }\n")
+	builder.WriteString("    out := T(*value)\n")
+	builder.WriteString("    return &out\n}\n\n")
+	builder.WriteString("func fromGraphQLEnum[T ~string](value T) string {\n")
+	builder.WriteString("    return string(value)\n}\n\n")
+	builder.WriteString("func fromGraphQLEnumPtr[T ~string](value *T) *string {\n")
+	builder.WriteString("    if value == nil {\n        return nil\n    }\n")
+	builder.WriteString("    out := string(*value)\n")
+	builder.WriteString("    return &out\n}\n\n")
+	return builder.String()
+}
+
 func writeGraphQLResolvers(root string, entities []Entity, modulePath string) error {
 	sort.Slice(entities, func(i, j int) bool { return entities[i].Name < entities[j].Name })
 	buf := &bytes.Buffer{}
@@ -522,6 +550,7 @@ func writeGraphQLResolvers(root string, entities []Entity, modulePath string) er
 	}
 
 	helperUsage := collectNullHelperUsage(entities)
+	hasEnums := hasEnumFields(entities)
 
 	imports := map[string]struct{}{
 		"context":                             {},
@@ -567,6 +596,9 @@ func writeGraphQLResolvers(root string, entities []Entity, modulePath string) er
 		}
 	}
 
+	if hasEnums {
+		buf.WriteString(renderGraphQLEnumHelpers())
+	}
 	if helperUsage.HasSQLNull {
 		for _, goType := range helperUsage.GoTypes() {
 			helper := nullableHelperName(goType)
@@ -727,6 +759,13 @@ func renderEntityHelpers(ent Entity) string {
 func graphqlFieldValue(field dsl.Field) string {
 	base := fmt.Sprintf("record.%s", exportName(field.Name))
 	goType := defaultGoType(field)
+	if len(field.EnumValues) > 0 && field.EnumName != "" {
+		enumType := fmt.Sprintf("graphql.%s", field.EnumName)
+		if strings.HasPrefix(goType, "*") {
+			return fmt.Sprintf("toGraphQLEnumPtr[%s](%s)", enumType, base)
+		}
+		return fmt.Sprintf("toGraphQLEnum[%s](%s)", enumType, base)
+	}
 	if strings.HasPrefix(goType, "sql.Null") {
 		helper := nullableHelperName(goType)
 		if helper != "" {
@@ -942,6 +981,17 @@ func renderInputAssignment(inputVar, targetVar string, field dsl.Field, includeI
 	if field.Type == dsl.TypeArray || field.Type == dsl.TypeVector {
 		fmt.Fprintf(builder, "    if %s.%s != nil {\n", inputVar, inputField)
 		fmt.Fprintf(builder, "        %s.%s = *%s.%s\n", targetVar, fieldName, inputVar, inputField)
+		fmt.Fprintf(builder, "    }\n")
+		return builder.String()
+	}
+	if len(field.EnumValues) > 0 && field.EnumName != "" {
+		fmt.Fprintf(builder, "    if %s.%s != nil {\n", inputVar, inputField)
+		enumType := fmt.Sprintf("graphql.%s", field.EnumName)
+		if strings.HasPrefix(defaultGoType(field), "*") {
+			fmt.Fprintf(builder, "        %s.%s = fromGraphQLEnumPtr[%s](%s.%s)\n", targetVar, fieldName, enumType, inputVar, inputField)
+		} else {
+			fmt.Fprintf(builder, "        %s.%s = fromGraphQLEnum[%s](*%s.%s)\n", targetVar, fieldName, enumType, inputVar, inputField)
+		}
 		fmt.Fprintf(builder, "    }\n")
 		return builder.String()
 	}
