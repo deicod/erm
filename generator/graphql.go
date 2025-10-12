@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"unicode"
 
 	"github.com/deicod/erm/orm/dsl"
 )
@@ -785,32 +784,6 @@ func collectCustomScalars(entities []Entity) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func lowerCamel(name string) string {
-	if name == "" {
-		return name
-	}
-	if strings.ToUpper(name) == name {
-		return strings.ToLower(name)
-	}
-	parts := strings.Split(name, "_")
-	if len(parts) > 1 {
-		for i, part := range parts {
-			if part == "" {
-				continue
-			}
-			if i == 0 {
-				parts[i] = strings.ToLower(part)
-			} else {
-				parts[i] = capitalize(part)
-			}
-		}
-		return strings.Join(parts, "")
-	}
-	runes := []rune(name)
-	runes[0] = unicode.ToLower(runes[0])
-	return string(runes)
 }
 
 const graphqlBaseSchema = `scalar Time

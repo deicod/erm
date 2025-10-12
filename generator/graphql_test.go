@@ -115,3 +115,39 @@ func TestGraphQLResolverGeneration(t *testing.T) {
 		t.Fatalf("dataloaders parse: %v", err)
 	}
 }
+
+func TestGraphQLInitialismHandling(t *testing.T) {
+	entities := []Entity{{
+		Name: "Profile",
+		Fields: []dsl.Field{
+			dsl.UUIDv7("id").Primary(),
+			dsl.UUIDv7("post_id"),
+			dsl.String("avatar_url"),
+			dsl.String("api_token"),
+		},
+	}}
+
+	schema := buildGraphQLGeneratedSection(entities)
+	mustContain(t, schema, "postID")
+	mustContain(t, schema, "avatarURL")
+	mustContain(t, schema, "apiToken")
+
+	root := t.TempDir()
+	modulePath := "example.com/app"
+	if err := writeGraphQLResolvers(root, entities, modulePath); err != nil {
+		t.Fatalf("writeGraphQLResolvers: %v", err)
+	}
+
+	resolverPath := filepath.Join(root, "graphql", "resolvers", "entities_gen.go")
+	resolverSrc, err := os.ReadFile(resolverPath)
+	if err != nil {
+		t.Fatalf("read resolvers: %v", err)
+	}
+
+	mustContain(t, string(resolverSrc), "input.PostID")
+	mustContain(t, string(resolverSrc), "model.PostID")
+	mustContain(t, string(resolverSrc), "input.AvatarURL")
+	mustContain(t, string(resolverSrc), "model.AvatarURL")
+	mustContain(t, string(resolverSrc), "input.APIToken")
+	mustContain(t, string(resolverSrc), "model.APIToken")
+}
