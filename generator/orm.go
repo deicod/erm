@@ -10,6 +10,12 @@ import (
 	"github.com/deicod/erm/orm/dsl"
 )
 
+const (
+	annotationNullableGoType = "nullable_go_type"
+	nullableStrategyPointer  = "pointer"
+	nullableStrategySQLNull  = "sql_null"
+)
+
 func writeORMArtifacts(root string, entities []Entity) error {
 	if err := writeRegistry(root, entities); err != nil {
 		return err
@@ -36,8 +42,9 @@ func writeRegistry(root string, entities []Entity) error {
 		fmt.Fprintf(buf, "            Table: \"%s\",\n", pluralize(ent.Name))
 		fmt.Fprintf(buf, "            Fields: []runtime.FieldSpec{\n")
 		for _, field := range ent.Fields {
+			goType := defaultGoType(field)
 			fmt.Fprintf(buf, "                {Name: %q, Column: %q, GoType: %q, Type: %s, Primary: %t, Nullable: %t, Unique: %t, DefaultNow: %t, UpdateNow: %t, DefaultExpr: %q, ReadOnly: %t, ComputedSpec: %s, Annotations: %s},\n",
-				field.Name, fieldColumn(field), field.GoType, fieldTypeLiteral(field.Type), field.IsPrimary, field.Nullable, field.IsUnique, field.HasDefaultNow, field.HasUpdateNow, field.DefaultExpr, field.ReadOnly || field.ComputedSpec != nil, computedLiteral(field.ComputedSpec), mapLiteral(field.Annotations))
+				field.Name, fieldColumn(field), goType, fieldTypeLiteral(field.Type), field.IsPrimary, field.Nullable, field.IsUnique, field.HasDefaultNow, field.HasUpdateNow, field.DefaultExpr, field.ReadOnly || field.ComputedSpec != nil, computedLiteral(field.ComputedSpec), mapLiteral(field.Annotations))
 		}
 		fmt.Fprintf(buf, "            },\n")
 		fmt.Fprintf(buf, "            Edges: []runtime.EdgeSpec{\n")
@@ -78,11 +85,14 @@ func writeModels(root string, entities []Entity) error {
 	for _, ent := range entities {
 		fmt.Fprintf(buf, "type %s struct {\n", ent.Name)
 		for _, field := range ent.Fields {
-			goType := field.GoType
-			if goType == "" {
-				goType = defaultGoType(field)
+			goType := defaultGoType(field)
+			dbTag := fieldColumn(field)
+			jsonTag := jsonName(field.Name)
+			if field.Nullable {
+				dbTag += ",omitempty"
+				jsonTag += ",omitempty"
 			}
-			fmt.Fprintf(buf, "    %s %s `db:\"%s\" json:\"%s\"`\n", exportName(field.Name), goType, fieldColumn(field), jsonName(field.Name))
+			fmt.Fprintf(buf, "    %s %s `db:\"%s\" json:\"%s\"`\n", exportName(field.Name), goType, dbTag, jsonTag)
 		}
 		if len(ent.Edges) > 0 {
 			fmt.Fprintf(buf, "    Edges *%sEdges `json:\"edges,omitempty\"`\n", ent.Name)
@@ -138,6 +148,29 @@ func quoteStringSlice(items []string) string {
 }
 
 func defaultGoType(field dsl.Field) string {
+	base := baseGoType(field)
+	if !field.Nullable {
+		return base
+	}
+	strategy := nullableGoStrategy(field)
+	if strategy == nullableStrategySQLNull {
+		if sqlType := sqlNullType(field); sqlType != "" {
+			return sqlType
+		}
+	}
+	if strings.HasPrefix(base, "*") || strings.HasPrefix(base, "sql.Null") {
+		return base
+	}
+	if strings.HasPrefix(base, "[]") || strings.HasPrefix(base, "map[") {
+		return base
+	}
+	return "*" + base
+}
+
+func baseGoType(field dsl.Field) string {
+	if field.GoType != "" {
+		return field.GoType
+	}
 	switch field.Type {
 	case dsl.TypeUUID:
 		return "string"
@@ -192,19 +225,65 @@ func defaultGoType(field dsl.Field) string {
 	}
 }
 
+func nullableGoStrategy(field dsl.Field) string {
+	if field.Annotations != nil {
+		if raw, ok := field.Annotations[annotationNullableGoType]; ok {
+			if val, ok := raw.(string); ok && val != "" {
+				switch val {
+				case nullableStrategySQLNull:
+					return nullableStrategySQLNull
+				case nullableStrategyPointer:
+					return nullableStrategyPointer
+				}
+			}
+		}
+	}
+	return nullableStrategyPointer
+}
+
+func sqlNullType(field dsl.Field) string {
+	switch field.Type {
+	case dsl.TypeBoolean:
+		return "sql.NullBool"
+	case dsl.TypeSmallInt, dsl.TypeSmallSerial:
+		return "sql.NullInt16"
+	case dsl.TypeInteger, dsl.TypeSerial:
+		return "sql.NullInt32"
+	case dsl.TypeBigInt, dsl.TypeBigSerial:
+		return "sql.NullInt64"
+	case dsl.TypeReal, dsl.TypeDoublePrecision, dsl.TypeDecimal, dsl.TypeNumeric:
+		return "sql.NullFloat64"
+	case dsl.TypeDate, dsl.TypeTime, dsl.TypeTimeTZ, dsl.TypeTimestamp, dsl.TypeTimestampTZ:
+		return "sql.NullTime"
+	case dsl.TypeUUID, dsl.TypeText, dsl.TypeVarChar, dsl.TypeChar, dsl.TypeXML,
+		dsl.TypeInet, dsl.TypeCIDR, dsl.TypeMACAddr, dsl.TypeMACAddr8,
+		dsl.TypeBit, dsl.TypeVarBit, dsl.TypeTSVector, dsl.TypeTSQuery,
+		dsl.TypePoint, dsl.TypeLine, dsl.TypeLseg, dsl.TypeBox, dsl.TypePath,
+		dsl.TypePolygon, dsl.TypeCircle, dsl.TypeInt4Range, dsl.TypeInt8Range,
+		dsl.TypeNumRange, dsl.TypeTSRange, dsl.TypeTSTZRange, dsl.TypeDateRange,
+		dsl.TypeMoney, dsl.TypeInterval, dsl.TypeJSON, dsl.TypeJSONB,
+		dsl.TypeGeometry, dsl.TypeGeography:
+		return "sql.NullString"
+	default:
+		return ""
+	}
+}
+
 func collectModelImports(entities []Entity) []string {
 	set := map[string]struct{}{}
 	for _, ent := range entities {
 		for _, field := range ent.Fields {
-			goType := field.GoType
-			if goType == "" {
-				goType = defaultGoType(field)
-			}
-			switch goType {
-			case "time.Time":
+			goType := defaultGoType(field)
+			switch {
+			case goType == "time.Time" || goType == "*time.Time":
 				set["time"] = struct{}{}
-			case "json.RawMessage":
+			case goType == "json.RawMessage" || goType == "*json.RawMessage":
 				set["encoding/json"] = struct{}{}
+			case strings.HasPrefix(goType, "sql.Null"):
+				set["database/sql"] = struct{}{}
+				if goType == "sql.NullTime" {
+					set["time"] = struct{}{}
+				}
 			}
 		}
 	}
@@ -1002,10 +1081,7 @@ func predicateMethodName(pred dsl.Predicate) string {
 
 func predicateGoType(pred dsl.Predicate, fields map[string]dsl.Field) string {
 	if field, ok := fields[strings.ToLower(pred.Field)]; ok {
-		if field.GoType != "" {
-			return field.GoType
-		}
-		return defaultGoType(field)
+		return baseGoType(field)
 	}
 	return "any"
 }
@@ -1178,10 +1254,7 @@ func fieldByColumn(ent Entity, column string) (dsl.Field, bool) {
 }
 
 func goTypeForField(field dsl.Field) string {
-	if field.GoType != "" {
-		return field.GoType
-	}
-	return defaultGoType(field)
+	return baseGoType(field)
 }
 
 func edgeRefColumn(source Entity, edge dsl.Edge, primary dsl.Field) string {
