@@ -13,9 +13,81 @@ models:
     model:
       - github.com/99designs/gqlgen/graphql.ID
       - string
+  BigInt:
+    model:
+      - int64
+  BitString:
+    model:
+      - string
+  CIDR:
+    model:
+      - string
+  Date:
+    model:
+      - time.Time
+  DateRange:
+    model:
+      - string
+  Decimal:
+    model:
+      - string
+  Inet:
+    model:
+      - string
+  Int4Range:
+    model:
+      - string
+  Int8Range:
+    model:
+      - string
+  Interval:
+    model:
+      - string
+  JSON:
+    model:
+      - encoding/json.RawMessage
+  JSONB:
+    model:
+      - encoding/json.RawMessage
+  MacAddr:
+    model:
+      - string
+  MacAddr8:
+    model:
+      - string
+  Money:
+    model:
+      - string
+  NumRange:
+    model:
+      - string
+  TSQuery:
+    model:
+      - string
+  TSRange:
+    model:
+      - string
+  TSTZRange:
+    model:
+      - string
+  TSVector:
+    model:
+      - string
   Time:
+    model:
+      - time.Time
+  Timestamp:
     model:
       - time.Time
   Timestamptz:
     model:
       - time.Time
+  Timetz:
+    model:
+      - time.Time
+  VarBitString:
+    model:
+      - string
+  XML:
+    model:
+      - string

@@ -47,4 +47,13 @@ func TestGraphQLInitCmdGeneratesResolverConfig(t *testing.T) {
 	if !strings.Contains(cfg, "package: resolvers") {
 		t.Fatalf("resolver package not set correctly in gqlgen.yml:\n%s", cfg)
 	}
+	if !strings.Contains(cfg, "  BigInt:\n    model:\n      - int64\n") {
+		t.Fatalf("gqlgen.yml missing BigInt scalar mapping:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, "  JSONB:\n    model:\n      - encoding/json.RawMessage\n") {
+		t.Fatalf("gqlgen.yml missing JSONB scalar mapping:\n%s", cfg)
+	}
+	if !strings.Contains(cfg, "  Timestamptz:\n    model:\n      - time.Time\n") {
+		t.Fatalf("gqlgen.yml missing Timestamptz scalar mapping:\n%s", cfg)
+	}
 }
