@@ -5,11 +5,13 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/deicod/erm/orm/dsl"
+	testkit "github.com/deicod/erm/testing"
 )
 
 func TestGraphQLTypeMappings(t *testing.T) {
@@ -238,6 +240,49 @@ func TestWriteGraphQLArtifactsEnsuresScalarHelpers(t *testing.T) {
 	}
 	if string(content) != string(template) {
 		t.Fatalf("unexpected scalars helper content\nwant:\n%s\ngot:\n%s", template, content)
+	}
+}
+
+func TestRunGQLGenWithStubbedRuntime(t *testing.T) {
+	root := t.TempDir()
+	modulePath := "example.com/app"
+
+	goMod := "module " + modulePath + "\n\ngo 1.21\n\nrequire (\n\tgithub.com/99designs/gqlgen v0.17.80\n\tgithub.com/vektah/gqlparser/v2 v2.5.30\n)\n"
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+
+	entities := []Entity{{
+		Name: "Gizmo",
+		Fields: []dsl.Field{
+			dsl.UUIDv7("id").Primary(),
+			dsl.Text("name"),
+		},
+	}}
+
+	if err := writeGraphQLArtifacts(root, entities, modulePath); err != nil {
+		t.Fatalf("writeGraphQLArtifacts: %v", err)
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get wd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir temp project: %v", err)
+	}
+
+	testkit.ScaffoldGraphQLRuntime(t, root, modulePath)
+
+	tidy := exec.Command("go", "mod", "tidy")
+	tidy.Dir = root
+	if output, err := tidy.CombinedOutput(); err != nil {
+		t.Fatalf("go mod tidy: %v\n%s", err, output)
+	}
+
+	if err := runGQLGen(root); err != nil {
+		t.Fatalf("runGQLGen: %v", err)
 	}
 }
 

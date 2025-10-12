@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	testkit "github.com/deicod/erm/testing"
 )
 
 func TestInitCmdAPIScaffoldCompiles(t *testing.T) {
@@ -31,7 +33,7 @@ func TestInitCmdAPIScaffoldCompiles(t *testing.T) {
 		t.Fatalf("execute init: %v", err)
 	}
 
-	scaffoldRuntimeDependencies(t, tmp, modulePath)
+	testkit.ScaffoldGraphQLRuntime(t, tmp, modulePath)
 
 	tidyCmd := exec.Command("go", "mod", "tidy")
 	tidyCmd.Dir = tmp
