@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"unicode"
 
 	"github.com/deicod/erm/orm/dsl"
 )
@@ -117,40 +116,6 @@ func edgeColumn(edge dsl.Edge) string {
 	default:
 		return toSnakeCase(edge.Name)
 	}
-}
-
-func exportName(name string) string {
-	if name == "" {
-		return ""
-	}
-	if name == "id" || name == "ID" {
-		return "ID"
-	}
-	if strings.Contains(name, "_") {
-		parts := strings.Split(name, "_")
-		for i, p := range parts {
-			if p == "" {
-				continue
-			}
-			parts[i] = capitalize(p)
-		}
-		return strings.Join(parts, "")
-	}
-	runes := []rune(name)
-	runes[0] = unicode.ToUpper(runes[0])
-	return string(runes)
-}
-
-func capitalize(in string) string {
-	if in == "" {
-		return in
-	}
-	runes := []rune(in)
-	runes[0] = unicode.ToUpper(runes[0])
-	for i := 1; i < len(runes); i++ {
-		runes[i] = unicode.ToLower(runes[i])
-	}
-	return string(runes)
 }
 
 func jsonName(name string) string {

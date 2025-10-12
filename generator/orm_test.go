@@ -175,6 +175,21 @@ func TestWriteRegistry_EdgeMetadata(t *testing.T) {
 	mustContain(t, out, "Cascade: runtime.CascadeSpec{OnDelete: runtime.CascadeCascade, OnUpdate: runtime.CascadeRestrict}")
 }
 
+func TestExportNamePreservesInitialisms(t *testing.T) {
+	tests := map[string]string{
+		"post_id":    "PostID",
+		"avatar_url": "AvatarURL",
+		"api_token":  "APIToken",
+		"id":         "ID",
+		"URL":        "URL",
+	}
+	for input, want := range tests {
+		if got := exportName(input); got != want {
+			t.Fatalf("exportName(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func mustContain(t *testing.T, content, needle string) {
 	t.Helper()
 	if !strings.Contains(content, needle) {
