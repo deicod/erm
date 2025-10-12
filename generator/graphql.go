@@ -1066,9 +1066,16 @@ func writeGraphQLDataloaders(root string, entities []Entity, modulePath string) 
 	return writeGoFile(path, buf.Bytes())
 }
 
-var predeclaredScalars = map[string]struct{}{
-	"Time": {},
-}
+var predeclaredScalars = func() map[string]struct{} {
+	scalars := make(map[string]struct{}, len(graphqlModelTypeMappings)+1)
+	for name := range graphqlModelTypeMappings {
+		scalars[name] = struct{}{}
+	}
+	// Ensure legacy runtime scalars remain whitelisted even if removed from the
+	// gqlgen configuration map.
+	scalars["Time"] = struct{}{}
+	return scalars
+}()
 
 func collectGraphQLEnums(entities []Entity) map[string][]string {
 	enums := make(map[string][]string)
