@@ -396,6 +396,31 @@ func trimNonNull(typ string) string {
 	return strings.TrimSuffix(typ, "!")
 }
 
+type nullHelperUsage struct {
+	HasSQLNull bool
+	String     bool
+	Time       bool
+}
+
+func collectNullHelperUsage(entities []Entity) nullHelperUsage {
+	usage := nullHelperUsage{}
+	for _, ent := range entities {
+		for _, field := range ent.Fields {
+			goType := defaultGoType(field)
+			if strings.HasPrefix(goType, "sql.Null") {
+				usage.HasSQLNull = true
+				switch goType {
+				case "sql.NullString":
+					usage.String = true
+				case "sql.NullTime":
+					usage.Time = true
+				}
+			}
+		}
+	}
+	return usage
+}
+
 func writeGraphQLResolvers(root string, entities []Entity, modulePath string) error {
 	sort.Slice(entities, func(i, j int) bool { return entities[i].Name < entities[j].Name })
 	buf := &bytes.Buffer{}
@@ -406,6 +431,8 @@ func writeGraphQLResolvers(root string, entities []Entity, modulePath string) er
 		return err
 	}
 
+	helperUsage := collectNullHelperUsage(entities)
+
 	imports := map[string]struct{}{
 		"context":                             {},
 		"fmt":                                 {},
@@ -415,6 +442,12 @@ func writeGraphQLResolvers(root string, entities []Entity, modulePath string) er
 	if len(entities) > 0 {
 		imports[fmt.Sprintf("%s/graphql/dataloaders", modulePath)] = struct{}{}
 		imports[fmt.Sprintf("%s/orm/gen", modulePath)] = struct{}{}
+	}
+	if helperUsage.HasSQLNull {
+		imports["database/sql"] = struct{}{}
+	}
+	if helperUsage.Time {
+		imports["time"] = struct{}{}
 	}
 	if len(imports) > 0 {
 		fmt.Fprintf(buf, "import (\n")
@@ -442,6 +475,17 @@ func writeGraphQLResolvers(root string, entities []Entity, modulePath string) er
 			buf.WriteString(renderEntitySubscriptionResolvers(ent))
 			buf.WriteString("\n")
 		}
+	}
+
+	if helperUsage.String {
+		fmt.Fprintf(buf, "func nullableString(input sql.NullString) *string {\n")
+		fmt.Fprintf(buf, "    if !input.Valid {\n        return nil\n    }\n")
+		fmt.Fprintf(buf, "    value := input.String\n    return &value\n}\n\n")
+	}
+	if helperUsage.Time {
+		fmt.Fprintf(buf, "func nullableTime(input sql.NullTime) *time.Time {\n")
+		fmt.Fprintf(buf, "    if !input.Valid {\n        return nil\n    }\n")
+		fmt.Fprintf(buf, "    value := input.Time\n    return &value\n}\n\n")
 	}
 
 	path := filepath.Join(root, "graphql", "resolvers", "entities_gen.go")
@@ -572,7 +616,7 @@ func renderEntityHelpers(ent Entity) string {
 			continue
 		}
 		fieldName := exportName(field.Name)
-		fmt.Fprintf(builder, "        %s: record.%s,\n", fieldName, fieldName)
+		fmt.Fprintf(builder, "        %s: %s,\n", fieldName, graphqlFieldValue(field))
 	}
 	fmt.Fprintf(builder, "    }\n}\n\n")
 
@@ -584,6 +628,18 @@ func renderEntityHelpers(ent Entity) string {
 	fmt.Fprintf(builder, "    return nativeID, nil\n}\n\n")
 
 	return builder.String()
+}
+
+func graphqlFieldValue(field dsl.Field) string {
+	base := fmt.Sprintf("record.%s", exportName(field.Name))
+	switch defaultGoType(field) {
+	case "sql.NullString":
+		return fmt.Sprintf("nullableString(%s)", base)
+	case "sql.NullTime":
+		return fmt.Sprintf("nullableTime(%s)", base)
+	default:
+		return base
+	}
 }
 
 func renderEntityQueryResolvers(ent Entity) string {
@@ -795,8 +851,18 @@ func renderInputAssignment(inputVar, targetVar string, field dsl.Field, includeI
 		fmt.Fprintf(builder, "    }\n")
 		return builder.String()
 	}
+	goType := defaultGoType(field)
 	fmt.Fprintf(builder, "    if %s.%s != nil {\n", inputVar, inputField)
-	fmt.Fprintf(builder, "        %s.%s = *%s.%s\n", targetVar, fieldName, inputVar, inputField)
+	switch {
+	case strings.HasPrefix(goType, "*"):
+		fmt.Fprintf(builder, "        %s.%s = %s.%s\n", targetVar, fieldName, inputVar, inputField)
+	case goType == "sql.NullString":
+		fmt.Fprintf(builder, "        %s.%s = sql.NullString{String: *%s.%s, Valid: true}\n", targetVar, fieldName, inputVar, inputField)
+	case goType == "sql.NullTime":
+		fmt.Fprintf(builder, "        %s.%s = sql.NullTime{Time: *%s.%s, Valid: true}\n", targetVar, fieldName, inputVar, inputField)
+	default:
+		fmt.Fprintf(builder, "        %s.%s = *%s.%s\n", targetVar, fieldName, inputVar, inputField)
+	}
 	fmt.Fprintf(builder, "    }\n")
 	return builder.String()
 }

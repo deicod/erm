@@ -223,3 +223,82 @@ func TestDefaultGoType_PostgresFamilies(t *testing.T) {
 		})
 	}
 }
+
+func TestDefaultGoType_Nullable(t *testing.T) {
+	pointerField := dsl.Text("nickname").Optional()
+	if got := defaultGoType(pointerField); got != "*string" {
+		t.Fatalf("expected optional text field to map to *string, got %q", got)
+	}
+
+	nullTime := dsl.TimestampTZ("last_seen").Optional()
+	nullTime.Annotations = map[string]any{annotationNullableGoType: nullableStrategySQLNull}
+	if got := defaultGoType(nullTime); got != "sql.NullTime" {
+		t.Fatalf("expected optional timestamptz with sql null strategy to map to sql.NullTime, got %q", got)
+	}
+}
+
+func TestNullableFieldGeneration_EndToEnd(t *testing.T) {
+	entities := []Entity{{
+		Name: "Account",
+		Fields: []dsl.Field{
+			dsl.UUIDv7("id").Primary(),
+			dsl.Text("nickname").Optional(),
+			func() dsl.Field {
+				f := dsl.TimestampTZ("last_seen").Optional()
+				f.Annotations = map[string]any{annotationNullableGoType: nullableStrategySQLNull}
+				return f
+			}(),
+		},
+	}}
+
+	for i := range entities {
+		ensureDefaultQuery(&entities[i])
+	}
+
+	root := t.TempDir()
+	if err := writeModels(root, entities); err != nil {
+		t.Fatalf("writeModels: %v", err)
+	}
+	if err := writeClients(root, entities); err != nil {
+		t.Fatalf("writeClients: %v", err)
+	}
+	modulePath := "example.com/app"
+	if err := writeGraphQLResolvers(root, entities, modulePath); err != nil {
+		t.Fatalf("writeGraphQLResolvers: %v", err)
+	}
+	if err := writeGraphQLDataloaders(root, entities, modulePath); err != nil {
+		t.Fatalf("writeGraphQLDataloaders: %v", err)
+	}
+
+	modelsPath := filepath.Join(root, "orm", "gen", "models_gen.go")
+	modelsSrc, err := os.ReadFile(modelsPath)
+	if err != nil {
+		t.Fatalf("read models: %v", err)
+	}
+	models := string(modelsSrc)
+        mustContain(t, models, "\"database/sql\"")
+        mustContain(t, models, "\"time\"")
+        mustContain(t, models, "Nickname *string")
+        mustContain(t, models, "`db:\"nickname,omitempty\" json:\"nickname,omitempty\"`")
+        mustContain(t, models, "LastSeen sql.NullTime")
+        mustContain(t, models, "`db:\"last_seen,omitempty\" json:\"last_seen,omitempty\"`")
+	if _, err := parser.ParseFile(token.NewFileSet(), modelsPath, modelsSrc, parser.AllErrors); err != nil {
+		t.Fatalf("parse models: %v", err)
+	}
+
+	resolversPath := filepath.Join(root, "graphql", "resolvers", "entities_gen.go")
+	resolversSrc, err := os.ReadFile(resolversPath)
+	if err != nil {
+		t.Fatalf("read resolvers: %v", err)
+	}
+	resolvers := string(resolversSrc)
+	mustContain(t, resolvers, "\"database/sql\"")
+	mustContain(t, resolvers, "\"time\"")
+	mustContain(t, resolvers, "model.Nickname = input.Nickname")
+	mustContain(t, resolvers, "model.LastSeen = sql.NullTime{Time: *input.LastSeen, Valid: true}")
+	mustContain(t, resolvers, "LastSeen: nullableTime(record.LastSeen)")
+        mustContain(t, resolvers, "func nullableTime(input sql.NullTime) *time.Time")
+	if _, err := parser.ParseFile(token.NewFileSet(), resolversPath, resolversSrc, parser.AllErrors); err != nil {
+		t.Fatalf("parse resolvers: %v", err)
+	}
+}
