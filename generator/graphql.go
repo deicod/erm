@@ -25,6 +25,9 @@ func writeGraphQLArtifacts(root string, entities []Entity, modulePath string) er
 	if err := writeGraphQLDataloaders(root, entities, modulePath); err != nil {
 		return err
 	}
+	if err := ensureGraphQLScalarHelpers(root); err != nil {
+		return err
+	}
 	return nil
 }
 

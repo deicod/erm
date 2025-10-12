@@ -38,6 +38,7 @@ func TestGraphQLInitScaffoldsRuntimePackages(t *testing.T) {
 		"graphql/dataloaders/loader.go",
 		"graphql/directives/auth.go",
 		"graphql/relay/id.go",
+		"graphql/scalars.go",
 		"graphql/server/schema.go",
 		"graphql/server/server.go",
 		"graphql/subscriptions/bus.go",
@@ -157,6 +158,8 @@ type Config struct {
         Resolvers interface{}
         Directives DirectiveRoot
 }
+
+type executionContext struct{}
 
 func NewExecutableSchema(Config) gql.ExecutableSchema { return nil }
 `,
