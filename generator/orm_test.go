@@ -1,9 +1,11 @@
 package generator
 
 import (
+	"fmt"
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -101,6 +103,68 @@ func TestWriteORMClients_EdgeHelpers(t *testing.T) {
 	mustContain(t, models, "func (m *Post) SetAuthor(")
 	if _, err := parser.ParseFile(fset, modelsPath, modelsSrc, parser.AllErrors); err != nil {
 		t.Fatalf("parse models: %v", err)
+	}
+}
+
+func TestToOneLoaderHandlesOptionalForeignKeys(t *testing.T) {
+	entities := []Entity{
+		{
+			Name: "Task",
+			Fields: []dsl.Field{
+				dsl.UUIDv7("id").Primary(),
+				dsl.UUIDv7("owner_id").Optional(),
+				dsl.String("title"),
+			},
+			Edges: []dsl.Edge{
+				dsl.ToOne("owner", "User").Field("owner_id").Optional().Inverse("tasks"),
+			},
+		},
+		{
+			Name: "User",
+			Fields: []dsl.Field{
+				dsl.UUIDv7("id").Primary(),
+				dsl.String("name"),
+			},
+		},
+	}
+
+	synthesizeInverseEdges(entities)
+	for i := range entities {
+		ensureDefaultQuery(&entities[i])
+	}
+
+	root := t.TempDir()
+	if err := writeORMArtifacts(root, entities); err != nil {
+		t.Fatalf("writeORMArtifacts: %v", err)
+	}
+
+	repoRoot, err := filepath.Abs("..")
+	if err != nil {
+		t.Fatalf("repo root: %v", err)
+	}
+	modulePath := "example.com/app"
+	goMod := fmt.Sprintf("module %s\n\ngo 1.21\n\nrequire github.com/deicod/erm v0.0.0\n\nreplace github.com/deicod/erm => %s\n", modulePath, filepath.ToSlash(repoRoot))
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+
+	goModTidy := exec.Command("go", "mod", "tidy")
+	goModTidy.Dir = root
+	goModTidy.Env = append(os.Environ(), "GOWORK=off")
+	if output, err := goModTidy.CombinedOutput(); err != nil {
+		t.Fatalf("go mod tidy: %v\n%s", err, output)
+	}
+
+	gofmt := exec.Command("gofmt", "-w", filepath.Join(root, "orm"))
+	if output, err := gofmt.CombinedOutput(); err != nil {
+		t.Fatalf("gofmt: %v\n%s", err, output)
+	}
+
+	goTest := exec.Command("go", "test", "./...")
+	goTest.Dir = root
+	goTest.Env = append(os.Environ(), "GOWORK=off")
+	if output, err := goTest.CombinedOutput(); err != nil {
+		t.Fatalf("go test: %v\n%s", err, output)
 	}
 }
 
