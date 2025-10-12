@@ -10,7 +10,7 @@ This project relies on deterministic code generation. The generator now fingerpr
    - Migrations are generated only when the schema snapshot changes. Re-running without changes keeps the migration directory clean.
 3. Commit the regenerated files as usual.
 
-Because the generator tracks hashes, you can safely run `erm gen` as often as you like—the second run after a change should report every component as "up-to-date". The tests under `generator/run_test.go` exercise this flow against the `examples/blog` workspace to guarantee idempotency.
+Because the generator tracks hashes, you can safely run `erm gen` as often as you like—the second run after a change should report every component as "up-to-date". The tests under `generator/run_test.go` exercise this flow against the `examples/blog` workspace to guarantee idempotency. See [Customizing generated code safely](./customizing-generated-code.md) for patterns that keep your manual resolver and runtime edits out of the generator's way.
 
 ## Watching schema changes
 
