@@ -239,6 +239,9 @@ func renderInitialMigration(entities []Entity, flags extensionFlags) string {
 			if field.IsUnique {
 				colDef += " UNIQUE"
 			}
+			if len(field.EnumValues) > 0 {
+				colDef += fmt.Sprintf(" CONSTRAINT %s CHECK (%s)", enumConstraintName(table, column), enumCheckCondition(column, field.EnumValues))
+			}
 			if ts, ok := field.Annotations["timeseries"].(bool); ok && ts {
 				hypertableColumn = column
 			}
@@ -639,6 +642,8 @@ func sqlTypeLiteral(field dsl.Field) string {
 	switch field.Type {
 	case dsl.TypeUUID:
 		return "uuid"
+	case dsl.TypeEnum:
+		return "text"
 	case dsl.TypeText:
 		return "text"
 	case dsl.TypeVarChar:
@@ -787,6 +792,27 @@ func sqlTypeLiteral(field dsl.Field) string {
 		}
 		return "text"
 	}
+}
+
+func enumConstraintName(table, column string) string {
+	base := fmt.Sprintf("%s_%s_enum_check", table, column)
+	base = strings.ReplaceAll(base, ".", "_")
+	base = strings.ReplaceAll(base, "-", "_")
+	base = strings.ReplaceAll(base, " ", "_")
+	base = strings.ToLower(base)
+	return base
+}
+
+func enumCheckCondition(column string, values []string) string {
+	quoted := make([]string, len(values))
+	for i, value := range values {
+		quoted[i] = quoteSQLString(value)
+	}
+	return fmt.Sprintf("%s IN (%s)", column, strings.Join(quoted, ", "))
+}
+
+func quoteSQLString(value string) string {
+	return fmt.Sprintf("'%s'", strings.ReplaceAll(value, "'", "''"))
 }
 
 func annotationInt(field dsl.Field, key string) int {

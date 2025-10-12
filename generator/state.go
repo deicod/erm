@@ -87,6 +87,8 @@ type fieldSignature struct {
 	HasUpdateNow  bool               `json:"has_update_now"`
 	DefaultExpr   string             `json:"default_expr"`
 	Annotations   []annotationRecord `json:"annotations"`
+	EnumValues    []string           `json:"enum_values"`
+	EnumName      string             `json:"enum_name"`
 }
 
 type edgeSignature struct {
@@ -209,6 +211,8 @@ func encodeFields(fields []dsl.Field) []fieldSignature {
 			HasUpdateNow:  field.HasUpdateNow,
 			DefaultExpr:   field.DefaultExpr,
 			Annotations:   encodeAnnotations(field.Annotations),
+			EnumValues:    append([]string(nil), field.EnumValues...),
+			EnumName:      field.EnumName,
 		}
 	}
 	return out

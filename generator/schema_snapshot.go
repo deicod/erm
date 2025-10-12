@@ -35,6 +35,7 @@ type ColumnSnapshot struct {
 	GeneratedExpr string   `json:"generated_expr,omitempty"`
 	Dependencies  []string `json:"dependencies,omitempty"`
 	ReadOnly      bool     `json:"read_only,omitempty"`
+	EnumValues    []string `json:"enum_values,omitempty"`
 }
 
 type IndexSnapshot struct {
@@ -131,6 +132,9 @@ func buildSchemaSnapshot(entities []Entity, flags extensionFlags) SchemaSnapshot
 				DefaultNow:  field.HasDefaultNow,
 				DefaultExpr: field.DefaultExpr,
 				Identity:    isIdentityColumn(field),
+			}
+			if len(field.EnumValues) > 0 {
+				col.EnumValues = append([]string(nil), field.EnumValues...)
 			}
 			if field.ComputedSpec != nil {
 				col.GeneratedExpr = field.ComputedSpec.Expression.SQL

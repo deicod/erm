@@ -43,8 +43,8 @@ func writeRegistry(root string, entities []Entity) error {
 		fmt.Fprintf(buf, "            Fields: []runtime.FieldSpec{\n")
 		for _, field := range ent.Fields {
 			goType := defaultGoType(field)
-			fmt.Fprintf(buf, "                {Name: %q, Column: %q, GoType: %q, Type: %s, Primary: %t, Nullable: %t, Unique: %t, DefaultNow: %t, UpdateNow: %t, DefaultExpr: %q, ReadOnly: %t, ComputedSpec: %s, Annotations: %s},\n",
-				field.Name, fieldColumn(field), goType, fieldTypeLiteral(field.Type), field.IsPrimary, field.Nullable, field.IsUnique, field.HasDefaultNow, field.HasUpdateNow, field.DefaultExpr, field.ReadOnly || field.ComputedSpec != nil, computedLiteral(field.ComputedSpec), mapLiteral(field.Annotations))
+			fmt.Fprintf(buf, "                {Name: %q, Column: %q, GoType: %q, Type: %s, Primary: %t, Nullable: %t, Unique: %t, DefaultNow: %t, UpdateNow: %t, DefaultExpr: %q, ReadOnly: %t, ComputedSpec: %s, Annotations: %s, EnumValues: %s, EnumName: %q},\n",
+				field.Name, fieldColumn(field), goType, fieldTypeLiteral(field.Type), field.IsPrimary, field.Nullable, field.IsUnique, field.HasDefaultNow, field.HasUpdateNow, field.DefaultExpr, field.ReadOnly || field.ComputedSpec != nil, computedLiteral(field.ComputedSpec), mapLiteral(field.Annotations), quoteStringSlice(field.EnumValues), field.EnumName)
 		}
 		fmt.Fprintf(buf, "            },\n")
 		fmt.Fprintf(buf, "            Edges: []runtime.EdgeSpec{\n")
@@ -173,6 +173,8 @@ func baseGoType(field dsl.Field) string {
 	}
 	switch field.Type {
 	case dsl.TypeUUID:
+		return "string"
+	case dsl.TypeEnum:
 		return "string"
 	case dsl.TypeText, dsl.TypeVarChar, dsl.TypeChar, dsl.TypeXML,
 		dsl.TypeInet, dsl.TypeCIDR, dsl.TypeMACAddr, dsl.TypeMACAddr8,
@@ -1435,6 +1437,8 @@ func fieldTypeLiteral(ft dsl.FieldType) string {
 	switch ft {
 	case dsl.TypeUUID:
 		return "dsl.TypeUUID"
+	case dsl.TypeEnum:
+		return "dsl.TypeEnum"
 	case dsl.TypeText:
 		return "dsl.TypeText"
 	case dsl.TypeVarChar:

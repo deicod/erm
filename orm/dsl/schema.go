@@ -1,5 +1,12 @@
 package dsl
 
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+)
+
 type Schema struct{}
 
 type Annotation struct {
@@ -83,6 +90,7 @@ type FieldType string
 
 const (
 	TypeUUID            FieldType = "uuid"
+	TypeEnum            FieldType = "enum"
 	TypeText            FieldType = "text"
 	TypeVarChar         FieldType = "varchar"
 	TypeChar            FieldType = "char"
@@ -172,6 +180,8 @@ type Field struct {
 	ComputedSpec  *ComputedColumn
 	ReadOnly      bool
 	Annotations   map[string]any
+	EnumValues    []string
+	EnumName      string
 }
 
 type ComputedColumn struct {
@@ -193,8 +203,16 @@ func (f Field) NotEmpty() Field               { return f.annotate("notEmpty", tr
 func (f Field) DefaultNow() Field             { f.HasDefaultNow = true; return f }
 func (f Field) UpdateNow() Field              { f.HasUpdateNow = true; return f }
 func (f Field) WithDefault(expr string) Field { f.DefaultExpr = expr; return f }
-func (f Field) SRID(srid int) Field           { return f.annotate("srid", srid) }
-func (f Field) TimeSeries() Field             { return f.annotate("timeseries", true) }
+func (f Field) Default(value any) Field {
+	expr, err := defaultExprForField(f, value)
+	if err != nil {
+		panic(err.Error())
+	}
+	f.HasDefaultNow = false
+	return f.WithDefault(expr)
+}
+func (f Field) SRID(srid int) Field { return f.annotate("srid", srid) }
+func (f Field) TimeSeries() Field   { return f.annotate("timeseries", true) }
 func (f Field) Identity(mode IdentityMode) Field {
 	if mode == "" {
 		mode = IdentityByDefault
@@ -241,7 +259,117 @@ func (f Field) annotate(key string, val any) Field {
 	return f
 }
 
+func defaultExprForField(field Field, value any) (string, error) {
+	switch v := value.(type) {
+	case nil:
+		return "", fmt.Errorf("default value cannot be nil")
+	case string:
+		if len(field.EnumValues) > 0 && !containsString(field.EnumValues, v) {
+			return "", fmt.Errorf("%q is not a valid enum value", v)
+		}
+		return quoteStringLiteral(v), nil
+	case fmt.Stringer:
+		s := v.String()
+		if len(field.EnumValues) > 0 && !containsString(field.EnumValues, s) {
+			return "", fmt.Errorf("%q is not a valid enum value", s)
+		}
+		return quoteStringLiteral(s), nil
+	case bool:
+		if v {
+			return "TRUE", nil
+		}
+		return "FALSE", nil
+	case int:
+		return strconv.Itoa(v), nil
+	case int8:
+		return strconv.FormatInt(int64(v), 10), nil
+	case int16:
+		return strconv.FormatInt(int64(v), 10), nil
+	case int32:
+		return strconv.FormatInt(int64(v), 10), nil
+	case int64:
+		return strconv.FormatInt(v, 10), nil
+	case uint:
+		return strconv.FormatUint(uint64(v), 10), nil
+	case uint8:
+		return strconv.FormatUint(uint64(v), 10), nil
+	case uint16:
+		return strconv.FormatUint(uint64(v), 10), nil
+	case uint32:
+		return strconv.FormatUint(uint64(v), 10), nil
+	case uint64:
+		return strconv.FormatUint(v, 10), nil
+	case float32:
+		return formatFloat(float64(v)), nil
+	case float64:
+		return formatFloat(v), nil
+	case time.Time:
+		return timeLiteral(field, v)
+	default:
+		return "", fmt.Errorf("unsupported default value type %T", value)
+	}
+}
+
+func quoteStringLiteral(val string) string {
+	escaped := strings.ReplaceAll(val, "'", "''")
+	return fmt.Sprintf("'%s'", escaped)
+}
+
+func containsString(values []string, candidate string) bool {
+	for _, v := range values {
+		if v == candidate {
+			return true
+		}
+	}
+	return false
+}
+
+func formatFloat(f float64) string {
+	return strconv.FormatFloat(f, 'f', -1, 64)
+}
+
+func timeLiteral(field Field, t time.Time) (string, error) {
+	switch field.Type {
+	case TypeDate:
+		return fmt.Sprintf("DATE '%s'", t.Format("2006-01-02")), nil
+	case TypeTime:
+		return fmt.Sprintf("TIME '%s'", t.Format("15:04:05.999999")), nil
+	case TypeTimeTZ:
+		return fmt.Sprintf("TIMETZ '%s'", t.Format("15:04:05.999999Z07:00")), nil
+	case TypeTimestamp:
+		return fmt.Sprintf("TIMESTAMP '%s'", t.Format("2006-01-02 15:04:05.999999")), nil
+	case TypeTimestampTZ:
+		return fmt.Sprintf("TIMESTAMPTZ '%s'", t.UTC().Format(time.RFC3339Nano)), nil
+	default:
+		return "", fmt.Errorf("time defaults require temporal column, got %s", field.Type)
+	}
+}
+
 func Text(name string) Field { return Field{Name: name, Type: TypeText, GoType: "string"} }
+func Enum(name string, values ...string) Field {
+	if len(values) == 0 {
+		panic("enum fields require at least one value")
+	}
+	normalized := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			panic("enum values cannot be empty")
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	if len(normalized) == 0 {
+		panic("enum fields require non-empty unique values")
+	}
+	field := Field{Name: name, Type: TypeEnum, GoType: "string", EnumValues: normalized}
+	field = field.annotate("enum", true)
+	field = field.annotate("enum_values", append([]string(nil), normalized...))
+	return field
+}
 func VarChar(name string, size int) Field {
 	field := Field{Name: name, Type: TypeVarChar, GoType: "string"}
 	if size > 0 {

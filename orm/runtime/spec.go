@@ -16,6 +16,8 @@ type FieldSpec struct {
 	ReadOnly     bool
 	ComputedSpec *dsl.ComputedColumn
 	Annotations  map[string]any
+	EnumValues   []string
+	EnumName     string
 }
 
 type EdgeSpec struct {

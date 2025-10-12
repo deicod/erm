@@ -53,6 +53,22 @@ func buildGraphQLGeneratedSection(entities []Entity) string {
 		builder.WriteString("\n")
 	}
 
+	enums := collectGraphQLEnums(entities)
+	if len(enums) > 0 {
+		names := make([]string, 0, len(enums))
+		for name := range enums {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			builder.WriteString(fmt.Sprintf("enum %s {\n", name))
+			for _, value := range enums[name] {
+				builder.WriteString(fmt.Sprintf("  %s\n", value))
+			}
+			builder.WriteString("}\n\n")
+		}
+	}
+
 	queryFields := make([]string, 0, len(entities)*2)
 	mutationFields := make([]string, 0, len(entities)*3)
 	subscriptionFields := make([]string, 0, len(entities)*3)
@@ -306,6 +322,9 @@ func graphqlNamedType(field dsl.Field) (string, []string) {
 	case dsl.TypeVector:
 		return "[Float!]", nil
 	default:
+		if len(field.EnumValues) > 0 && field.EnumName != "" {
+			return field.EnumName, nil
+		}
 		name, scalar := graphqlScalarName(field.Type)
 		scalars := []string{}
 		if scalar != "" {
@@ -999,6 +1018,25 @@ func writeGraphQLDataloaders(root string, entities []Entity, modulePath string) 
 
 var predeclaredScalars = map[string]struct{}{
 	"Time": {},
+}
+
+func collectGraphQLEnums(entities []Entity) map[string][]string {
+	enums := make(map[string][]string)
+	for _, ent := range entities {
+		for _, field := range ent.Fields {
+			if len(field.EnumValues) == 0 || field.EnumName == "" {
+				continue
+			}
+			if existing, ok := enums[field.EnumName]; ok {
+				if !equalStringSlices(existing, field.EnumValues) {
+					panic(fmt.Sprintf("conflicting enum values for %s", field.EnumName))
+				}
+				continue
+			}
+			enums[field.EnumName] = append([]string(nil), field.EnumValues...)
+		}
+	}
+	return enums
 }
 
 func collectCustomScalars(entities []Entity) []string {

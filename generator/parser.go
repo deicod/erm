@@ -123,6 +123,7 @@ func loadEntities(root string) ([]Entity, error) {
 		ensureDefaultQuery(&out[i])
 	}
 	synthesizeInverseEdges(out)
+	assignEnumMetadata(out)
 	return out, nil
 }
 
@@ -217,6 +218,28 @@ func ensureDefaultQuery(ent *Entity) {
 	if len(ent.Query.Aggregates) == 0 {
 		ent.Query.Aggregates = []dsl.Aggregate{
 			dsl.CountAggregate("Count"),
+		}
+	}
+}
+
+func assignEnumMetadata(entities []Entity) {
+	for i := range entities {
+		ent := &entities[i]
+		for j := range ent.Fields {
+			field := ent.Fields[j]
+			if len(field.EnumValues) == 0 {
+				continue
+			}
+			if field.EnumName == "" {
+				field.EnumName = fmt.Sprintf("%s%s", ent.Name, exportName(field.Name))
+			}
+			if field.Annotations == nil {
+				field.Annotations = make(map[string]any)
+			}
+			field.Annotations["enum"] = true
+			field.Annotations["enum_values"] = append([]string(nil), field.EnumValues...)
+			field.Annotations["enum_name"] = field.EnumName
+			ent.Fields[j] = field
 		}
 	}
 }
@@ -389,6 +412,28 @@ func (e *exprEvaluator) evalExpr(expr ast.Expr) (any, error) {
 		default:
 			return nil, fmt.Errorf("unsupported selector base %T", prefix)
 		}
+	case *ast.UnaryExpr:
+		val, err := e.evalExpr(exp.X)
+		if err != nil {
+			return nil, err
+		}
+		switch exp.Op {
+		case token.SUB:
+			switch v := val.(type) {
+			case int:
+				return -v, nil
+			case int64:
+				return -v, nil
+			case float64:
+				return -v, nil
+			default:
+				return nil, fmt.Errorf("unsupported unary negation operand %T", val)
+			}
+		case token.ADD:
+			return val, nil
+		default:
+			return nil, fmt.Errorf("unsupported unary operator %s", exp.Op)
+		}
 	}
 	return nil, fmt.Errorf("unsupported expression %T", expr)
 }
@@ -519,6 +564,20 @@ func executeDSLFunc(name string, args []any) (any, error) {
 		return dsl.UUID(argString(args, 0)), nil
 	case "Text":
 		return dsl.Text(argString(args, 0)), nil
+	case "Enum":
+		if len(args) < 2 {
+			return nil, fmt.Errorf("Enum requires name and at least one value")
+		}
+		name := argString(args, 0)
+		values := make([]string, 0, len(args)-1)
+		for i := 1; i < len(args); i++ {
+			val, ok := args[i].(string)
+			if !ok {
+				return nil, fmt.Errorf("Enum values must be strings, got %T", args[i])
+			}
+			values = append(values, val)
+		}
+		return dsl.Enum(name, values...), nil
 	case "String":
 		return dsl.String(argString(args, 0)), nil
 	case "VarChar":
@@ -740,6 +799,11 @@ func executeFieldMethod(f dsl.Field, name string, args []any) (any, error) {
 		return f.UpdateNow(), nil
 	case "WithDefault":
 		return f.WithDefault(argString(args, 0)), nil
+	case "Default":
+		if len(args) == 0 {
+			return nil, fmt.Errorf("Default expects a value")
+		}
+		return f.Default(args[0]), nil
 	case "SRID":
 		return f.SRID(argInt(args, 0)), nil
 	case "TimeSeries":
