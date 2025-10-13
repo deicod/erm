@@ -203,6 +203,10 @@ func (f Field) NotEmpty() Field               { return f.annotate("notEmpty", tr
 func (f Field) DefaultNow() Field             { f.HasDefaultNow = true; return f }
 func (f Field) UpdateNow() Field              { f.HasUpdateNow = true; return f }
 func (f Field) WithDefault(expr string) Field { f.DefaultExpr = expr; return f }
+func (f Field) WithGoType(goType string) Field {
+	f.GoType = goType
+	return f
+}
 func (f Field) Default(value any) Field {
 	expr, err := defaultExprForField(f, value)
 	if err != nil {

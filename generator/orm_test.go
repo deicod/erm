@@ -388,3 +388,130 @@ func TestNullableFieldGeneration_EndToEnd(t *testing.T) {
 		t.Fatalf("parse resolvers: %v", err)
 	}
 }
+
+func TestFieldWithGoTypePropagates(t *testing.T) {
+	entities := []Entity{
+		{
+			Name: "User",
+			Fields: []dsl.Field{
+				dsl.UUIDv7("id").WithGoType("UserID").Primary(),
+				dsl.String("name"),
+			},
+		},
+		{
+			Name: "Task",
+			Fields: []dsl.Field{
+				dsl.UUIDv7("id").Primary(),
+				dsl.Enum("status", "NEW", "DONE").WithGoType("Status"),
+				dsl.UUIDv7("owner_id").Optional().WithGoType("UserID"),
+			},
+			Edges: []dsl.Edge{
+				dsl.ToOne("owner", "User").Field("owner_id").Optional().Inverse("tasks"),
+			},
+		},
+	}
+
+	assignEnumMetadata(entities)
+	synthesizeInverseEdges(entities)
+	for i := range entities {
+		ensureDefaultQuery(&entities[i])
+	}
+
+	root := t.TempDir()
+	if err := writeORMArtifacts(root, entities); err != nil {
+		t.Fatalf("writeORMArtifacts: %v", err)
+	}
+
+	modulePath := "example.com/app"
+	if err := writeGraphQLResolvers(root, entities, modulePath); err != nil {
+		t.Fatalf("writeGraphQLResolvers: %v", err)
+	}
+	if err := writeGraphQLDataloaders(root, entities, modulePath); err != nil {
+		t.Fatalf("writeGraphQLDataloaders: %v", err)
+	}
+	if err := writeGraphQLSchema(root, entities); err != nil {
+		t.Fatalf("writeGraphQLSchema: %v", err)
+	}
+
+	registryPath := filepath.Join(root, "orm", "gen", "registry_gen.go")
+	registrySrc, err := os.ReadFile(registryPath)
+	if err != nil {
+		t.Fatalf("read registry: %v", err)
+	}
+	registry := string(registrySrc)
+	mustContain(t, registry, "GoType: \"Status\"")
+	mustContain(t, registry, "GoType: \"UserID\"")
+
+	modelsPath := filepath.Join(root, "orm", "gen", "models_gen.go")
+	modelsSrc, err := os.ReadFile(modelsPath)
+	if err != nil {
+		t.Fatalf("read models: %v", err)
+	}
+	models := string(modelsSrc)
+	mustContain(t, models, "Status Status `db:\"status\" json:\"status\"`")
+	mustContain(t, models, "OwnerID *UserID `db:\"owner_id,omitempty\" json:\"owner_id,omitempty\"`")
+
+	resolversPath := filepath.Join(root, "graphql", "resolvers", "entities_gen.go")
+	resolversSrc, err := os.ReadFile(resolversPath)
+	if err != nil {
+		t.Fatalf("read resolvers: %v", err)
+	}
+	resolvers := string(resolversSrc)
+	mustContain(t, resolvers, "model.Status = Status(fromGraphQLEnum[graphql.TaskStatus](*input.Status))")
+	mustContain(t, resolvers, "value := UserID(*input.OwnerID)")
+	mustContain(t, resolvers, "model.OwnerID = &value")
+	mustContain(t, resolvers, "toGraphQLEnum[graphql.TaskStatus]")
+
+	dataloadersPath := filepath.Join(root, "graphql", "dataloaders", "entities_gen.go")
+	dataloadersSrc, err := os.ReadFile(dataloadersPath)
+	if err != nil {
+		t.Fatalf("read dataloaders: %v", err)
+	}
+	dataloaders := string(dataloadersSrc)
+	mustContain(t, dataloaders, "*gen.Task")
+
+	migrationEntities := []Entity{
+		{
+			Name: "User",
+			Fields: []dsl.Field{
+				dsl.UUIDv7("id").WithGoType("UserID").Primary(),
+			},
+		},
+		{
+			Name: "Task",
+			Fields: []dsl.Field{
+				dsl.UUIDv7("id").Primary(),
+				dsl.Enum("status", "NEW", "DONE").WithGoType("Status"),
+			},
+			Edges: []dsl.Edge{
+				dsl.ToOne("owner", "User").Optional().Inverse("tasks"),
+			},
+		},
+	}
+	assignEnumMetadata(migrationEntities)
+	synthesizeInverseEdges(migrationEntities)
+	plan, _ := buildMigrationPlan(migrationEntities)
+	var taskMigration entityMigration
+	for _, ent := range plan {
+		if ent.Entity.Name == "Task" {
+			taskMigration = ent
+			break
+		}
+	}
+	if taskMigration.Entity.Name != "Task" {
+		t.Fatalf("expected migration plan for Task entity")
+	}
+	var ownerField dsl.Field
+	for _, field := range taskMigration.Fields {
+		if field.Name == "owner_id" {
+			ownerField = field
+			break
+		}
+	}
+	if ownerField.Name == "" {
+		t.Fatalf("expected synthetic owner_id field in migration plan")
+	}
+	if ownerField.GoType != "UserID" {
+		t.Fatalf("expected migration field GoType UserID, got %q", ownerField.GoType)
+	}
+}
