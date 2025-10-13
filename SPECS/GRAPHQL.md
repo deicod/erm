@@ -2,7 +2,7 @@
 
 ## Targets
 - **Relay Server Spec compliance**.
-- `gqlgen`-based schema/resolvers with autobind to ORM types.
+- `gqlgen`-based schema/resolvers, with optional `autobind` to ORM types once Node helpers and enum wrapper shims are available.
 
 ## Global Object IDs
 - Encode as base64 of `<Type>:<uuidv7>`.
@@ -33,5 +33,5 @@ interface Node {
 - Default resolvers guard mutations with `@auth(roles: ["user"])`, customizable.
 
 ## gqlgen
-- `gqlgen.yml` with `autobind` to generated ORM Go types.
+- Default `gqlgen.yml` ships without `autobind`; re-enable it via `erm graphql init --autobind` or manual config only after the Node helpers and enum wrappers are generated to satisfy gqlgen's binding requirements.
 - Generated `schema.graphqls` + stubs live under `graphql`.
