@@ -1,0 +1,8 @@
+package dataloaders
+
+import (
+        "{{ .ModulePath }}/observability/metrics"
+        "{{ .ModulePath }}/orm/gen"
+)
+
+func configureEntityLoaders(*Loaders, *gen.Client, metrics.Collector) {}

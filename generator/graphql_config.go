@@ -8,10 +8,10 @@ import (
 	"strings"
 )
 
-func ensureGQLGenConfig(root string) (string, error) {
+func ensureGQLGenConfig(root, modulePath string) (string, error) {
 	path := filepath.Join(root, "graphql", "gqlgen.yml")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if _, err := writeFile(path, []byte(defaultGQLGenConfig)); err != nil {
+		if _, err := writeFile(path, []byte(defaultGQLGenConfig(modulePath))); err != nil {
 			return "", err
 		}
 	} else if err != nil {
@@ -38,10 +38,6 @@ var graphqlModelTypeMappings = map[string][]string{
 		"string",
 	},
 	"Decimal": {
-		"string",
-	},
-	"ID": {
-		"github.com/99designs/gqlgen/graphql.ID",
 		"string",
 	},
 	"Inet": {
@@ -106,7 +102,7 @@ var graphqlModelTypeMappings = map[string][]string{
 	},
 }
 
-var defaultGQLGenConfig = func() string {
+func defaultGQLGenConfig(modulePath string) string {
 	builder := &strings.Builder{}
 	fmt.Fprintln(builder, "schema:")
 	fmt.Fprintln(builder, "  - graphql/schema.graphqls")
@@ -118,9 +114,9 @@ var defaultGQLGenConfig = func() string {
 	fmt.Fprintln(builder, "  layout: follow-schema")
 	fmt.Fprintln(builder, "  dir: graphql/resolvers")
 	fmt.Fprintln(builder, "  package: resolvers")
-	builder.WriteString(GraphQLModelsSection())
+	builder.WriteString(GraphQLModelsSection(modulePath))
 	return builder.String()
-}()
+}
 
 // GraphQLModelTypeMappings returns a defensive copy of the scalar-to-Go type mappings used
 // when scaffolding gqlgen configuration.
@@ -135,24 +131,59 @@ func GraphQLModelTypeMappings() map[string][]string {
 }
 
 // GraphQLModelsSection renders the gqlgen `models` configuration block using the shared
-// scalar mappings.
-func GraphQLModelsSection() string {
+// scalar mappings and built-in scalar aliases.
+func GraphQLModelsSection(modulePath string) string {
 	builder := &strings.Builder{}
 	fmt.Fprintln(builder, "models:")
 
+	modulePath = normaliseModulePath(modulePath)
+
+	builtinOrder := []struct {
+		name    string
+		goTypes []string
+	}{
+		{name: "Boolean", goTypes: []string{fmt.Sprintf("%s/graphql.Boolean", modulePath)}},
+		{name: "Float", goTypes: []string{fmt.Sprintf("%s/graphql.Float", modulePath)}},
+		{name: "ID", goTypes: []string{fmt.Sprintf("%s/graphql.ID", modulePath)}},
+		{name: "Int", goTypes: []string{fmt.Sprintf("%s/graphql.Int", modulePath)}},
+		{name: "String", goTypes: []string{fmt.Sprintf("%s/graphql.String", modulePath)}},
+	}
+	for _, entry := range builtinOrder {
+		fmt.Fprintf(builder, "  %s:\n", entry.name)
+		fmt.Fprintln(builder, "    model:")
+		for _, goType := range entry.goTypes {
+			fmt.Fprintf(builder, "      - %s\n", goType)
+		}
+	}
+
+	introspectionOrder := []struct {
+		name    string
+		goTypes []string
+	}{
+		{name: "__Directive", goTypes: []string{"github.com/99designs/gqlgen/graphql/introspection.Directive"}},
+		{name: "__DirectiveLocation", goTypes: []string{fmt.Sprintf("%s/graphql.String", modulePath)}},
+		{name: "__EnumValue", goTypes: []string{"github.com/99designs/gqlgen/graphql/introspection.EnumValue"}},
+		{name: "__Field", goTypes: []string{"github.com/99designs/gqlgen/graphql/introspection.Field"}},
+		{name: "__InputValue", goTypes: []string{"github.com/99designs/gqlgen/graphql/introspection.InputValue"}},
+		{name: "__Schema", goTypes: []string{"github.com/99designs/gqlgen/graphql/introspection.Schema"}},
+		{name: "__Type", goTypes: []string{"github.com/99designs/gqlgen/graphql/introspection.Type"}},
+		{name: "__TypeKind", goTypes: []string{fmt.Sprintf("%s/graphql.String", modulePath)}},
+	}
+	for _, entry := range introspectionOrder {
+		fmt.Fprintf(builder, "  %s:\n", entry.name)
+		fmt.Fprintln(builder, "    model:")
+		for _, goType := range entry.goTypes {
+			fmt.Fprintf(builder, "      - %s\n", goType)
+		}
+	}
+
 	keys := make([]string, 0, len(graphqlModelTypeMappings))
 	for key := range graphqlModelTypeMappings {
-		if key == "ID" {
-			continue
-		}
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	ordered := make([]string, 0, len(graphqlModelTypeMappings))
-	ordered = append(ordered, "ID")
-	ordered = append(ordered, keys...)
 
-	for _, name := range ordered {
+	for _, name := range keys {
 		goTypes := graphqlModelTypeMappings[name]
 		if len(goTypes) == 0 {
 			continue

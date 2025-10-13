@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"text/template"
 
+	"github.com/deicod/erm/generator"
 	"github.com/spf13/cobra"
 )
 
@@ -54,6 +55,10 @@ func newInitCmd() *cobra.Command {
 					)
 				}
 			}
+			if err := generator.EnsureRuntimeScaffolds(".", modulePath); err != nil {
+				return wrapError("init: scaffold runtime packages", err, "Report this issue to the erm maintainers.", 1)
+			}
+
 			fmt.Fprintln(out, "Initialized erm workspace.")
 			return nil
 		},

@@ -16,6 +16,9 @@ func writeGraphQLArtifacts(root string, entities []Entity, modulePath string) er
 	if strings.TrimSpace(modulePath) == "" {
 		return fmt.Errorf("module path is required to generate GraphQL artifacts")
 	}
+	if err := EnsureRuntimeScaffolds(root, modulePath); err != nil {
+		return err
+	}
 	if err := writeGraphQLSchema(root, entities); err != nil {
 		return err
 	}

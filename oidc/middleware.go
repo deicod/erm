@@ -1,25 +1,12 @@
 package oidc
 
 import (
-	"context"
 	"net/http"
 	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/lestrrat-go/jwx/v2/jwt"
 )
-
-type Claims struct {
-	Subject       string
-	Email         string
-	Name          string
-	Username      string
-	GivenName     string
-	FamilyName    string
-	EmailVerified bool
-	Roles         []string
-	Raw           map[string]any
-}
 
 type ClaimsMapper interface {
 	Map(raw map[string]any) (Claims, error)
@@ -66,7 +53,7 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		ctx := context.WithValue(r.Context(), claimsCtxKey{}, claims)
+		ctx := ToContext(r.Context(), claims)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -85,11 +72,4 @@ func audAllowed(actual []string, expected []string) bool {
 		}
 	}
 	return false
-}
-
-type claimsCtxKey struct{}
-
-func FromContext(ctx context.Context) (Claims, bool) {
-	c, ok := ctx.Value(claimsCtxKey{}).(Claims)
-	return c, ok
 }
