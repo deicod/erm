@@ -1,7 +1,7 @@
 package graphql
 
 import (
-        introspection "github.com/99designs/gqlgen/graphql/introspection"
+	introspection "github.com/99designs/gqlgen/graphql/introspection"
 )
 
 // Built-in scalar aliases to keep gqlgen happy before generated code exists.
