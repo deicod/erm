@@ -8,11 +8,17 @@ practical examples you can adapt to your team’s workflow.
 
 ## Installation
 
+Download a pre-built binary from the [GitHub Releases page](https://github.com/deicod/erm/releases) and place it on your `PATH`
+for the quickest setup on macOS, Linux, or Windows. Each release includes checksums so you can verify the download before
+executing it.
+
+To build from source instead (recommended when contributing changes), run:
+
 ```bash
 go install github.com/deicod/erm/cmd/erm@latest
 ```
 
-You can also run the CLI directly from source:
+You can also run the CLI directly from source without installing it globally:
 
 ```bash
 go run ./cmd/erm <command>

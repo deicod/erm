@@ -16,6 +16,9 @@ See: [PRD](PRD.md), [Roadmap](ROADMAP.md), [Agents](AGENTS.md), [Orchestrator](O
 
 ## Quickstart (local)
 
+Download the latest binary from the [GitHub Releases page](https://github.com/deicod/erm/releases) and place it on your `PATH`,
+or use `go install github.com/deicod/erm/cmd/erm@latest` if you're iterating on the source.
+
 ```bash
 mkdir myproj && cd myproj
 go mod init github.com/yourname/myproj
