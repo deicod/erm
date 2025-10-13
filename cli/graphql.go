@@ -13,6 +13,8 @@ import (
 )
 
 func newGraphQLInitCmd() *cobra.Command {
+	var includeAutobind bool
+
 	cmd := &cobra.Command{
 		Use:   "graphql init",
 		Short: "Add gqlgen config and bootstrap Relay schema",
@@ -34,7 +36,7 @@ func newGraphQLInitCmd() *cobra.Command {
 			}
 
 			files := map[string][]byte{
-				filepath.Join(graphqlDir, "gqlgen.yml"):      []byte(renderGQLGenYAML(modulePath)),
+				filepath.Join(graphqlDir, "gqlgen.yml"):      []byte(renderGQLGenYAML(modulePath, includeAutobind)),
 				filepath.Join(graphqlDir, "schema.graphqls"): []byte(schemaGraphQLS),
 			}
 
@@ -59,10 +61,11 @@ func newGraphQLInitCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&includeAutobind, "autobind", false, "Include the gqlgen autobind configuration for the generated ORM package")
 	return cmd
 }
 
-func renderGQLGenYAML(modulePath string) string {
+func renderGQLGenYAML(modulePath string, includeAutobind bool) string {
 	builder := &strings.Builder{}
 	fmt.Fprintln(builder, "schema:")
 	fmt.Fprintln(builder, "  - graphql/schema.graphqls")
@@ -75,8 +78,10 @@ func renderGQLGenYAML(modulePath string) string {
 	fmt.Fprintln(builder, "  dir: graphql/resolvers")
 	fmt.Fprintln(builder, "  package: resolvers")
 	builder.WriteString(generator.GraphQLModelsSection(modulePath))
-	fmt.Fprintln(builder, "autobind:")
-	fmt.Fprintf(builder, "  - %s/orm/gen\n", modulePath)
+	if includeAutobind {
+		fmt.Fprintln(builder, "autobind:")
+		fmt.Fprintf(builder, "  - %s/orm/gen\n", modulePath)
+	}
 	return builder.String()
 }
 

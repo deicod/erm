@@ -61,6 +61,10 @@ func TestDefaultGQLGenConfigIncludesScalarMappings(t *testing.T) {
 			t.Fatalf("default gqlgen config missing Go type %s for introspection %s", goType, name)
 		}
 	}
+
+	if strings.Contains(config, "autobind:") {
+		t.Fatalf("default gqlgen config unexpectedly includes autobind block:\n%s", config)
+	}
 }
 
 func TestGraphQLModelsSectionRendersExpectedMappings(t *testing.T) {
