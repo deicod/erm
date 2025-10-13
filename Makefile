@@ -6,13 +6,13 @@ build:
 	go build ./...
 
 test:
-        go test ./...
+	go test ./...
 
 test-race:
-        go run ./cmd/erm test --race
+	go run ./cmd/erm test --race
 
 lint:
-	@gofmt -l . && test -z "$$(gofmt -l .)"
+	@gofmt -l . && test -z "$(gofmt -l .)"
 
 gen:
 	go run ./cmd/erm gen
