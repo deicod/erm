@@ -41,6 +41,8 @@ func TestInitCmdScaffoldsWorkspace(t *testing.T) {
 	assertFileContains(t, apiMain, "resolveHTTPAddr")
 	assertFileContains(t, filepath.Join("schema", "AGENTS.md"), "Schema Development Workflow")
 	assertFileContains(t, filepath.Join("graphql", "README.md"), "# GraphQL workspace")
+	assertNoFile(t, filepath.Join("graphql", "directives", "auth.go"))
+	assertNoFile(t, filepath.Join("graphql", "resolvers", "resolver.go"))
 
 	if err := cmd.RunE(cmd, []string{}); err != nil {
 		t.Fatalf("second init should be idempotent: %v", err)
@@ -49,6 +51,38 @@ func TestInitCmdScaffoldsWorkspace(t *testing.T) {
 	if got := buf.String(); got == "" {
 		t.Fatalf("expected init to print confirmation message")
 	}
+}
+
+func TestInitCmdDefersRuntimeScaffoldsUntilModuleDetected(t *testing.T) {
+	tmp := t.TempDir()
+	modulePath := "github.com/example/app"
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	t.Cleanup(func() {
+		if chdirErr := os.Chdir(wd); chdirErr != nil {
+			t.Fatalf("chdir back: %v", chdirErr)
+		}
+	})
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatalf("chdir temp dir: %v", err)
+	}
+
+	goMod := "module " + modulePath + "\n\ngo 1.21\n"
+	if err := os.WriteFile("go.mod", []byte(goMod), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+
+	cmd := newInitCmd()
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("run init: %v", err)
+	}
+
+	resolverPath := filepath.Join("graphql", "resolvers", "resolver.go")
+	assertFileContains(t, resolverPath, modulePath+"/graphql")
+	assertFileContains(t, resolverPath, modulePath+"/orm/gen")
 }
 
 func assertFileContains(t *testing.T, path, substr string) {
@@ -60,5 +94,15 @@ func assertFileContains(t *testing.T, path, substr string) {
 	}
 	if !bytes.Contains(data, []byte(substr)) {
 		t.Fatalf("file %s missing %q\ncontent:\n%s", path, substr, string(data))
+	}
+}
+
+func assertNoFile(t *testing.T, path string) {
+	t.Helper()
+
+	if _, err := os.Stat(path); err == nil {
+		t.Fatalf("expected %s to be absent", path)
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("stat %s: %v", path, err)
 	}
 }

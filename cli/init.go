@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 
+	"github.com/deicod/erm/generator"
 	"github.com/spf13/cobra"
 )
 
@@ -18,8 +20,8 @@ func newInitCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 
 			modulePath := detectModule(".")
-			if modulePath == "" {
-				fmt.Fprintln(out, "Warning: module path not detected; update go.mod or erm.yaml so GraphQL imports can be rewritten.")
+			if strings.TrimSpace(modulePath) == "" {
+				fmt.Fprintln(out, "Warning: module path not detected; skip GraphQL runtime scaffolds until go.mod or erm.yaml is configured.")
 			}
 
 			files := []struct{ path, content string }{
@@ -54,6 +56,12 @@ func newInitCmd() *cobra.Command {
 					)
 				}
 			}
+			if strings.TrimSpace(modulePath) != "" {
+				if err := generator.EnsureRuntimeScaffolds(".", modulePath); err != nil {
+					return wrapError("init: scaffold runtime packages", err, "Report this issue to the erm maintainers.", 1)
+				}
+			}
+
 			fmt.Fprintln(out, "Initialized erm workspace.")
 			return nil
 		},

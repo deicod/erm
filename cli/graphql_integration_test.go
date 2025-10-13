@@ -41,9 +41,12 @@ func TestGraphQLInitScaffoldsRuntimePackages(t *testing.T) {
 		"graphql/directives/auth.go",
 		"graphql/relay/id.go",
 		"graphql/scalars.go",
+		"graphql/types.go",
 		"graphql/server/schema.go",
 		"graphql/server/server.go",
 		"graphql/subscriptions/bus.go",
+		"observability/metrics/metrics.go",
+		"oidc/claims.go",
 	}
 
 	for _, path := range expectedFiles {

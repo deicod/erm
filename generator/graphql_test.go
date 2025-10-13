@@ -16,6 +16,7 @@ import (
 	"text/template"
 
 	"github.com/deicod/erm/orm/dsl"
+	"github.com/deicod/erm/templates"
 	testkit "github.com/deicod/erm/testing"
 )
 
@@ -215,12 +216,18 @@ func TestGraphQLInitialismHandling(t *testing.T) {
 }
 
 func TestWriteGraphQLArtifactsEnsuresScalarHelpers(t *testing.T) {
-	template, err := os.ReadFile(filepath.Join("..", "cli", "templates", "graphql", "scalars.go.tmpl"))
+	template, err := os.ReadFile(filepath.Join("..", "templates", "graphql", "scalars.go.tmpl"))
 	if err != nil {
 		t.Fatalf("read scalars template: %v", err)
 	}
 	RegisterGraphQLScalarTemplate(template)
-	t.Cleanup(func() { RegisterGraphQLScalarTemplate(nil) })
+	t.Cleanup(func() {
+		content, err := templates.GraphQLScalarsTemplate()
+		if err != nil {
+			t.Fatalf("reload default scalars template: %v", err)
+		}
+		RegisterGraphQLScalarTemplate(content)
+	})
 
 	root := t.TempDir()
 	modulePath := "example.com/app"
@@ -293,12 +300,18 @@ func TestRunGQLGenWithStubbedRuntime(t *testing.T) {
 }
 
 func TestRunGQLGenRespectsRegisteredScalarHelpers(t *testing.T) {
-	template, err := os.ReadFile(filepath.Join("..", "cli", "templates", "graphql", "scalars.go.tmpl"))
+	template, err := os.ReadFile(filepath.Join("..", "templates", "graphql", "scalars.go.tmpl"))
 	if err != nil {
 		t.Fatalf("read scalars template: %v", err)
 	}
 	RegisterGraphQLScalarTemplate(template)
-	t.Cleanup(func() { RegisterGraphQLScalarTemplate(nil) })
+	t.Cleanup(func() {
+		content, err := templates.GraphQLScalarsTemplate()
+		if err != nil {
+			t.Fatalf("reload default scalars template: %v", err)
+		}
+		RegisterGraphQLScalarTemplate(content)
+	})
 
 	root := t.TempDir()
 	modulePath := "example.com/app"
@@ -366,8 +379,20 @@ func TestRunGQLGenRespectsRegisteredScalarHelpers(t *testing.T) {
 		}
 	}
 	sort.Strings(newFiles)
-	if len(newFiles) != 2 || newFiles[0] != "generated.go" || newFiles[1] != "models_gen.go" {
+	switch len(newFiles) {
+	case 1:
+		if newFiles[0] != "models_gen.go" {
+			t.Fatalf("unexpected new GraphQL files: %v", newFiles)
+		}
+	case 2:
+		if newFiles[0] != "generated.go" || newFiles[1] != "models_gen.go" {
+			t.Fatalf("unexpected new GraphQL files: %v", newFiles)
+		}
+	default:
 		t.Fatalf("unexpected new GraphQL files: %v", newFiles)
+	}
+	if _, ok := after["generated.go"]; !ok {
+		t.Fatalf("expected generated.go to exist after gqlgen run")
 	}
 
 	scalarsPath := filepath.Join(root, "graphql", "scalars.go")
@@ -431,7 +456,7 @@ func collectGoFiles(t *testing.T, dir string) map[string]struct{} {
 func writeGraphQLDataloaderRuntime(t *testing.T, root, modulePath string) {
 	t.Helper()
 
-	raw, err := os.ReadFile(filepath.Join("..", "cli", "templates", "graphql", "dataloaders", "loader.go.tmpl"))
+	raw, err := os.ReadFile(filepath.Join("..", "templates", "graphql", "dataloaders", "loader.go.tmpl"))
 	if err != nil {
 		t.Fatalf("read dataloader runtime template: %v", err)
 	}

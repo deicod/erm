@@ -1,15 +1,14 @@
 package cli
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
-	"text/template"
 
 	"github.com/deicod/erm/generator"
+	"github.com/deicod/erm/templates"
 	"github.com/spf13/cobra"
 )
 
@@ -75,7 +74,7 @@ func renderGQLGenYAML(modulePath string) string {
 	fmt.Fprintln(builder, "  layout: follow-schema")
 	fmt.Fprintln(builder, "  dir: graphql/resolvers")
 	fmt.Fprintln(builder, "  package: resolvers")
-	builder.WriteString(generator.GraphQLModelsSection())
+	builder.WriteString(generator.GraphQLModelsSection(modulePath))
 	fmt.Fprintln(builder, "autobind:")
 	fmt.Fprintf(builder, "  - %s/orm/gen\n", modulePath)
 	return builder.String()
@@ -105,28 +104,13 @@ type Mutation {
 `
 
 func renderGraphQLRuntimeTemplates(modulePath string) (map[string][]byte, error) {
-	runtime := make(map[string][]byte)
-	data := struct{ ModulePath string }{ModulePath: modulePath}
-	for _, tpl := range graphqlRuntimeTemplates {
-		raw, err := graphqlTemplateFS.ReadFile(tpl.source)
-		if err != nil {
-			return nil, err
-		}
-		var content []byte
-		if tpl.isTemplate {
-			t, err := template.New(filepath.Base(tpl.source)).Parse(string(raw))
-			if err != nil {
-				return nil, err
-			}
-			buf := &bytes.Buffer{}
-			if err := t.Execute(buf, data); err != nil {
-				return nil, err
-			}
-			content = buf.Bytes()
-		} else {
-			content = raw
-		}
-		runtime[tpl.target] = content
+	rendered, err := templates.RenderRuntimeScaffolds(modulePath)
+	if err != nil {
+		return nil, err
+	}
+	runtime := make(map[string][]byte, len(rendered))
+	for path, content := range rendered {
+		runtime[filepath.FromSlash(path)] = content
 	}
 	return runtime, nil
 }

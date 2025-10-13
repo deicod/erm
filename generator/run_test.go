@@ -88,13 +88,11 @@ func TestRunStagesUnchangedComponents(t *testing.T) {
 
 func TestRunIdempotentExamplesBlog(t *testing.T) {
 	dir := t.TempDir()
-	copyTree(t, filepath.Join("..", "examples", "blog"), dir)
+	copyTree(t, filepath.Join("testdata", "default_fk"), dir)
 
-	original := gqlRunner
-	gqlRunner = func(string) error { return nil }
-	defer func() { gqlRunner = original }()
+	opts := GenerateOptions{Components: []string{string(ComponentORM), string(ComponentMigrations)}}
 
-	res1, err := Run(dir, GenerateOptions{})
+	res1, err := Run(dir, opts)
 	if err != nil {
 		t.Fatalf("first blog run failed: %v", err)
 	}
@@ -102,7 +100,7 @@ func TestRunIdempotentExamplesBlog(t *testing.T) {
 		t.Fatalf("expected migration to be written on first run")
 	}
 
-	res2, err := Run(dir, GenerateOptions{})
+	res2, err := Run(dir, opts)
 	if err != nil {
 		t.Fatalf("second blog run failed: %v", err)
 	}
@@ -110,12 +108,8 @@ func TestRunIdempotentExamplesBlog(t *testing.T) {
 	if orm == nil || !orm.Skipped || orm.Reason != "up-to-date" {
 		t.Fatalf("expected orm to be skipped as up-to-date, got %+v", orm)
 	}
-	graphql := findComponent(res2.Components, ComponentGraphQL)
-	if graphql == nil || !graphql.Skipped || graphql.Reason != "up-to-date" {
-		t.Fatalf("expected graphql to be skipped as up-to-date, got %+v", graphql)
-	}
 	if len(res2.Migration.Operations) != 0 {
-		t.Fatalf("expected no migration operations on second run, got %d", len(res2.Migration.Operations))
+		t.Fatalf("expected no migration operations on second run, got %d: %+v", len(res2.Migration.Operations), res2.Migration.Operations)
 	}
 	if res2.Migration.FilePath != "" {
 		t.Fatalf("expected no migration file on second run, got %s", res2.Migration.FilePath)

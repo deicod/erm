@@ -45,21 +45,33 @@ erm init --module github.com/acme/payment --oidc-issuer http://localhost:8080/re
 
 Actions performed:
 
-- Creates `erm.yaml` populated with module path, database defaults, and OIDC issuer.
-- Generates base folders: `cmd/server`, `graphql`, `orm/schema`, `docs/`, `migrations/`.
-- Writes starter mixins (`time`, `soft delete`), GraphQL resolver stubs, and `.env.example` with connection strings.
-- Adds Makefile targets for `gen`, `lint`, `test`, and `migrate`.
+- Creates `erm.yaml` populated with module, database defaults, and OIDC issuer.
+- Seeds workspace docs, a starter `cmd/api/main.go`, and empty `schema/` + `migrations/` folders.
+- Materialises GraphQL and observability scaffolds the generator relies on:
+  - `graphql/dataloaders/loader.go`
+  - `graphql/directives/auth.go`
+  - `graphql/relay/id.go`
+  - `graphql/resolvers/resolver.go`
+  - `graphql/resolvers/entities_hooks.go`
+  - `graphql/server/schema.go` & `graphql/server/server.go`
+  - `graphql/subscriptions/bus.go`
+  - `observability/metrics/metrics.go`
+  - `oidc/claims.go`
+  - `graphql/scalars.go` & `graphql/types.go`
+
+These files are only written when absent, so rerunning `erm init` preserves edits. After running `erm gen`, extend the scaffolds by editing:
+
+- `graphql/server/schema.go` to register middleware, transports, or directives.
+- `graphql/directives/auth.go` for RBAC helpers that consume your `oidc` claims.
+- `graphql/resolvers/resolver.go` to tune pagination defaults, subscription topics, or expose additional health probes.
+- `graphql/resolvers/entities_hooks.go` for pre/post mutation hooks and resolver-level instrumentation.
+- `graphql/types.go` to add scalar wrappers or adapters required by gqlgen.
+- `observability/metrics` to plug in real collectors.
+- `oidc/claims.go` to adapt identity providers.
 
 ### `erm new <Entity>`
 
-Generates a new schema skeleton under `orm/schema/<entity>.go`.
-
-```bash
-erm new Invoice --table invoices --description "Customer invoices with line items"
-```
-
-The generated file includes TODO comments for fields, edges, indexes, annotations, hooks, interceptors, and privacy policies.
-Use `.Mixins()` to embed reusable behaviors like `AuditMixin` or `SoftDeleteMixin`.
+Generates a new schema skeleton under `schema/<entity>.schema.go` with TODOs for fields, edges, indexes, annotations, hooks, interceptors, and privacy policies.
 
 ### `erm gen`
 
@@ -82,6 +94,8 @@ Key flags:
 - `--force` bypasses on-disk equality checks, rewriting artifacts when you need to regenerate after upgrading dependencies.
 - Ensure the project module path is set in `erm.yaml` (or inferred from `go.mod`). GraphQL resolvers and dataloaders import
   generated packages under `graphql/*` and `orm/*` using that module path; generation fails if it cannot be determined.
+- The generator hydrates missing runtime scaffolds (GraphQL server, dataloaders, directives, observability, OIDC helpers)
+  before invoking gqlgen so subsequent `go mod tidy` or `go test ./graphql/...` runs succeed without copying templates.
 
 Generation outputs when not running in dry-run mode:
 
@@ -120,7 +134,7 @@ The command streams progress to stdout and wraps errors from the underlying exec
 
 ### `erm graphql init`
 
-Configures gqlgen and GraphQL server scaffolding.
+Configures gqlgen and refreshes runtime scaffolds without overwriting local customizations.
 
 ```bash
 erm graphql init --playground --listen :8080
@@ -128,10 +142,11 @@ erm graphql init --playground --listen :8080
 
 Outputs include:
 
-- `graphql/server/server.go` – HTTP server with middleware chain (OIDC auth, tracing, logging).
-- `graphql/resolver/resolver.go` – Resolver root that delegates to generated ORM builders.
-- `graphql/node/registry.go` – Global Node lookup with base64 `<Type>:<uuidv7>` encoding helpers.
-- `cmd/server/main.go` – Entry point that wires gqlgen handlers, dataloaders, and health endpoints.
+- `graphql/gqlgen.yml` and `graphql/schema.graphqls` to seed gqlgen.
+- The runtime packages listed under `erm init`, written only when missing.
+- `graphql/scalars.go`, a helper file that `erm gen` will extend when new custom scalars are detected.
+
+Anything ending in `_gen.go` remains generator-owned; the runtime scaffolds above are safe to edit and will survive future runs.
 
 ### `erm doctor` *(experimental)*
 

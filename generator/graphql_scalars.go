@@ -5,12 +5,22 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/deicod/erm/templates"
 )
 
 var (
 	graphqlScalarTemplate []byte
 	graphqlScalarMu       sync.RWMutex
 )
+
+func init() {
+	content, err := templates.GraphQLScalarsTemplate()
+	if err != nil {
+		panic("generator: embedded GraphQL scalar template missing: " + err.Error())
+	}
+	RegisterGraphQLScalarTemplate(content)
+}
 
 // RegisterGraphQLScalarTemplate provides the default scalars helper template used when
 // ensuring GraphQL runtime helpers are present during generation. The content is copied
