@@ -39,7 +39,7 @@ The schema skeleton is designed to be evolved in tandem with tests. When you cha
 
 1. Add or update tests under `generator` or your application package to encode the expected behavior.
 2. Regenerate artifacts with `erm gen` and review the staged diff.
-3. Run the schema workflow commands captured in `schema/AGENTS.md` to keep the feedback loop fast (`go test`, `go test -race`, and `go vet`).【F:schema/AGENTS.md†L5-L11】
+3. Run the schema workflow commands captured in `schema/AGENTS.md` to keep the feedback loop fast (`go test`, `go test -race`, and `go vet`).【F:schema/AGENTS.md†L5-L11】 When you enable the race detector, lean on the batching tips in the [testing guide](testing.md#race-detector-workflow) so the slower run slots neatly into your day.
 
 ## Next steps
 

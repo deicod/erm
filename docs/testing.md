@@ -124,6 +124,38 @@ your primary safety net and reserve live database tests for cross-cutting concer
 
 ---
 
+## Race Detector Workflow
+
+`go test -race` instruments every load and store, so plan for the suite to take substantially longer than a normal run. On an
+8-core Apple Silicon laptop the full repository usually finishes in **7–9 minutes**, while our CI runners land closer to
+**12–15 minutes**. Use it as an overnight or pre-merge check for concurrency-heavy changes instead of running it on every edit.
+
+### When to run it
+
+- Before merging changes that touch goroutine orchestration, background workers, or shared caches.
+- After large refactors that move code between packages (the detector will also flush the build cache).
+- At least once per workday while iterating on the generator or runtime primitives so subtle data races do not slip through.
+
+### How to scope it
+
+- Prefer `erm test --race ./pkg/...` to focus on the packages you touched. The command expands patterns, batches packages eight at a time,
+  and reuses Go's build cache so reruns skip work that already passed.
+- For one-off investigations you can pass explicit package lists: `erm test --race ./orm/... ./graphql/...`.
+- Need the legacy workflow? `erm test` without `--race` simply delegates to `go test` with whatever package patterns you provide.
+
+### Caching tips
+
+- Because the helper runs in batches you can re-run only the failing chunk—subsequent batches that are still cached finish instantly.
+- CI jobs should set `GOCACHE` to a persistent volume so the expensive instrumented builds are reused across branches.
+- If you need to invalidate state, run `go clean -cache` before invoking `erm test --race`.
+
+### Recommended commands
+
+- `erm test --race` – Batches the entire repository and prints each `go test -race` invocation so you can copy/paste reruns.
+- `make test-race` – Convenience wrapper around `go run ./cmd/erm test --race` for developers who prefer the Makefile entry points.
+
+---
+
 ## CI Recommendations
 
 1. Run `go test ./...` to execute both sandbox-based unit tests and live integration suites.

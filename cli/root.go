@@ -22,11 +22,12 @@ func NewRootCmd() *cobra.Command {
 	cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging output")
 	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newNewCmd())
-	cmd.AddCommand(newGenCmd())
-	cmd.AddCommand(newMigrateCmd())
-	cmd.AddCommand(newGraphQLInitCmd())
-	cmd.AddCommand(newDoctorCmd())
-	return cmd
+        cmd.AddCommand(newGenCmd())
+        cmd.AddCommand(newMigrateCmd())
+        cmd.AddCommand(newGraphQLInitCmd())
+        cmd.AddCommand(newDoctorCmd())
+        cmd.AddCommand(newTestCmd())
+        return cmd
 }
 
 // Execute runs the CLI entrypoint.
