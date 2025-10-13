@@ -991,13 +991,32 @@ func renderInputAssignment(inputVar, targetVar string, field dsl.Field, includeI
 		fmt.Fprintf(builder, "    }\n")
 		return builder.String()
 	}
+	customGoType := hasCustomGoType(field)
 	if len(field.EnumValues) > 0 && field.EnumName != "" {
 		fmt.Fprintf(builder, "    if %s.%s != nil {\n", inputVar, inputField)
 		enumType := fmt.Sprintf("graphql.%s", field.EnumName)
-		if strings.HasPrefix(defaultGoType(field), "*") {
-			fmt.Fprintf(builder, "        %s.%s = fromGraphQLEnumPtr[%s](%s.%s)\n", targetVar, fieldName, enumType, inputVar, inputField)
+		goType := defaultGoType(field)
+		if strings.HasPrefix(goType, "*") {
+			if customGoType {
+				baseType := baseGoType(field)
+				for strings.HasPrefix(baseType, "*") {
+					baseType = strings.TrimPrefix(baseType, "*")
+				}
+				if baseType == "" {
+					baseType = strings.TrimPrefix(goType, "*")
+				}
+				fmt.Fprintf(builder, "        value := %s(fromGraphQLEnum[%s](*%s.%s))\n", baseType, enumType, inputVar, inputField)
+				fmt.Fprintf(builder, "        %s.%s = &value\n", targetVar, fieldName)
+			} else {
+				fmt.Fprintf(builder, "        %s.%s = fromGraphQLEnumPtr[%s](%s.%s)\n", targetVar, fieldName, enumType, inputVar, inputField)
+			}
 		} else {
-			fmt.Fprintf(builder, "        %s.%s = fromGraphQLEnum[%s](*%s.%s)\n", targetVar, fieldName, enumType, inputVar, inputField)
+			valueExpr := fmt.Sprintf("fromGraphQLEnum[%s](*%s.%s)", enumType, inputVar, inputField)
+			if customGoType {
+				fmt.Fprintf(builder, "        %s.%s = %s(%s)\n", targetVar, fieldName, goType, valueExpr)
+			} else {
+				fmt.Fprintf(builder, "        %s.%s = %s\n", targetVar, fieldName, valueExpr)
+			}
 		}
 		fmt.Fprintf(builder, "    }\n")
 		return builder.String()
@@ -1006,7 +1025,23 @@ func renderInputAssignment(inputVar, targetVar string, field dsl.Field, includeI
 	fmt.Fprintf(builder, "    if %s.%s != nil {\n", inputVar, inputField)
 	switch {
 	case strings.HasPrefix(goType, "*"):
-		fmt.Fprintf(builder, "        %s.%s = %s.%s\n", targetVar, fieldName, inputVar, inputField)
+		if customGoType {
+			baseType := baseGoType(field)
+			for strings.HasPrefix(baseType, "*") {
+				baseType = strings.TrimPrefix(baseType, "*")
+			}
+			if baseType == "" {
+				baseType = strings.TrimPrefix(goType, "*")
+			}
+			if baseType == "" {
+				fmt.Fprintf(builder, "        %s.%s = %s.%s\n", targetVar, fieldName, inputVar, inputField)
+			} else {
+				fmt.Fprintf(builder, "        value := %s(*%s.%s)\n", baseType, inputVar, inputField)
+				fmt.Fprintf(builder, "        %s.%s = &value\n", targetVar, fieldName)
+			}
+		} else {
+			fmt.Fprintf(builder, "        %s.%s = %s.%s\n", targetVar, fieldName, inputVar, inputField)
+		}
 	case strings.HasPrefix(goType, "sql.Null"):
 		field := sqlNullFieldName(goType)
 		if field == "" {
@@ -1015,12 +1050,24 @@ func renderInputAssignment(inputVar, targetVar string, field dsl.Field, includeI
 			fmt.Fprintf(builder, "        %s.%s = %s{%s: *%s.%s, Valid: true}\n", targetVar, fieldName, goType, field, inputVar, inputField)
 		}
 	default:
-		fmt.Fprintf(builder, "        %s.%s = *%s.%s\n", targetVar, fieldName, inputVar, inputField)
+		if customGoType {
+			fmt.Fprintf(builder, "        %s.%s = %s(*%s.%s)\n", targetVar, fieldName, goType, inputVar, inputField)
+		} else {
+			fmt.Fprintf(builder, "        %s.%s = *%s.%s\n", targetVar, fieldName, inputVar, inputField)
+		}
 	}
 	fmt.Fprintf(builder, "    }\n")
 	return builder.String()
 }
 
+func hasCustomGoType(field dsl.Field) bool {
+	if field.GoType == "" {
+		return false
+	}
+	clone := field
+	clone.GoType = ""
+	return baseGoType(clone) != field.GoType
+}
 func writeGraphQLDataloaders(root string, entities []Entity, modulePath string) error {
 	sort.Slice(entities, func(i, j int) bool { return entities[i].Name < entities[j].Name })
 	buf := &bytes.Buffer{}

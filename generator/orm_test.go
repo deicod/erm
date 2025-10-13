@@ -457,7 +457,9 @@ func TestFieldWithGoTypePropagates(t *testing.T) {
 		t.Fatalf("read resolvers: %v", err)
 	}
 	resolvers := string(resolversSrc)
-	mustContain(t, resolvers, "fromGraphQLEnum[graphql.TaskStatus]")
+	mustContain(t, resolvers, "model.Status = Status(fromGraphQLEnum[graphql.TaskStatus](*input.Status))")
+	mustContain(t, resolvers, "value := UserID(*input.OwnerID)")
+	mustContain(t, resolvers, "model.OwnerID = &value")
 	mustContain(t, resolvers, "toGraphQLEnum[graphql.TaskStatus]")
 
 	dataloadersPath := filepath.Join(root, "graphql", "dataloaders", "entities_gen.go")
