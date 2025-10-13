@@ -256,11 +256,36 @@ Selected modifiers:
 - `.Nillable()` – Distinguishes between “not set” and `null` in updates; generates pointer fields in Go builders.
 - `.Default(value)` – Static default expressed as a Go value. Strings are quoted and escaped, numerics render as literals, and temporal types become `DATE`/`TIMESTAMP` casts. Enum defaults validate against the declared value set.
 - `.DefaultFunc(fn)` – Call Go function to set default at runtime (`uuid.New` etc.).
+- `.WithGoType(typeName)` – Override the generated Go type while preserving SQL and GraphQL metadata (useful for domain aliases like `Email` or `Status`).
 - `.Immutable()` – Prevents updates after initial creation.
 - `.Sensitive()` – Excludes from GraphQL outputs and JSON logs (still stored in DB).
 - `.Comment(text)` – Adds database comment and docstring for GraphQL schema.
 - `.Length(n)` / `.Precision(n)` / `.Scale(n)` – Override size metadata for `VARCHAR`, numeric, and temporal columns.
 - `.Identity(mode)` – Toggle identity generation (`dsl.IdentityAlways` or `dsl.IdentityByDefault`) on supported integer types.
+
+Custom Go types flow through all generators. Mapping an enum to a dedicated domain type keeps business logic explicit while GraphQL continues to expose the enum values:
+
+```go
+// app/domain/status.go
+type Status string
+
+const (
+    StatusNew    Status = "NEW"
+    StatusClosed Status = "CLOSED"
+)
+
+// schema/task.schema.go
+func (Task) Fields() []dsl.Field {
+    return []dsl.Field{
+        dsl.UUIDv7("id").Primary(),
+        dsl.Enum("status", "NEW", "CLOSED").
+            WithGoType("Status").
+            Default(string(StatusNew)),
+    }
+}
+```
+
+The ORM models, GraphQL resolvers, and migration planner all honor the override—`gen.Task.Status` now uses the `Status` type, while GraphQL continues to emit a `TaskStatus` enum backed by the same string literals.
 
 ### Computed Columns
 

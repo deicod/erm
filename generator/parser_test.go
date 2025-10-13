@@ -200,6 +200,7 @@ func (User) Edges() []dsl.Edge {
                 dsl.ToMany("orders", "Order").Ref("customer_fk").Inverse("customer"),
         }
 }
+
 func (User) Indexes() []dsl.Index { return nil }
 
 func (Tenant) Fields() []dsl.Field { return nil }
@@ -353,5 +354,62 @@ func (Task) Indexes() []dsl.Index { return nil }
 	}
 	if archivedField.DefaultExpr != "FALSE" {
 		t.Fatalf("expected boolean default FALSE, got %q", archivedField.DefaultExpr)
+	}
+}
+
+func TestFieldWithGoTypeModifier(t *testing.T) {
+	dir := t.TempDir()
+	schemaDir := filepath.Join(dir, "schema")
+	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
+		t.Fatalf("mkdir schema: %v", err)
+	}
+
+	source := `package schema
+
+import "github.com/deicod/erm/orm/dsl"
+
+type Task struct{ dsl.Schema }
+
+func (Task) Fields() []dsl.Field {
+        return []dsl.Field{
+                dsl.Enum("status", "NEW", "DONE").WithGoType("Status"),
+        }
+}
+
+func (Task) Edges() []dsl.Edge { return nil }
+func (Task) Indexes() []dsl.Index { return nil }
+`
+	if err := os.WriteFile(filepath.Join(schemaDir, "task.schema.go"), []byte(source), 0o644); err != nil {
+		t.Fatalf("write schema: %v", err)
+	}
+
+	entities, err := loadEntities(dir)
+	if err != nil {
+		t.Fatalf("loadEntities: %v", err)
+	}
+
+	task := findEntity(entities, "Task")
+	if task.Name != "Task" {
+		t.Fatalf("expected Task entity, got %q", task.Name)
+	}
+
+	var statusField dsl.Field
+	for _, field := range task.Fields {
+		if field.Name == "status" {
+			statusField = field
+			break
+		}
+	}
+	if statusField.Name == "" {
+		t.Fatalf("expected status field to be parsed")
+	}
+	if statusField.GoType != "Status" {
+		t.Fatalf("expected GoType override 'Status', got %q", statusField.GoType)
+	}
+	if len(statusField.EnumValues) != 2 {
+		t.Fatalf("expected enum values to be preserved, got %#v", statusField.EnumValues)
+	}
+	if statusField.EnumName == "" {
+		t.Fatalf("expected enum name to be populated")
 	}
 }

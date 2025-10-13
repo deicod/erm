@@ -799,6 +799,8 @@ func executeFieldMethod(f dsl.Field, name string, args []any) (any, error) {
 		return f.UpdateNow(), nil
 	case "WithDefault":
 		return f.WithDefault(argString(args, 0)), nil
+	case "WithGoType":
+		return f.WithGoType(argString(args, 0)), nil
 	case "Default":
 		if len(args) == 0 {
 			return nil, fmt.Errorf("Default expects a value")
