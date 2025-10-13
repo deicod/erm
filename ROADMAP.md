@@ -15,7 +15,7 @@
 - Migrations (versioned), extension enablement (PostGIS/pgvector/TimescaleDB).
 
 ## Milestone 2 — GraphQL Relay (Week 3–6, overlaps M1 tail)
-- gqlgen config + autobind.
+- gqlgen config, with guarded autobind support once Node helpers and enum wrappers land.
 - Node interface + global object ID encoder/decoder.
 - Connections/cursors; PageInfo; generic connection builders.
 - Dataloaders; N+1 test.

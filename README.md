@@ -28,7 +28,7 @@ erm graphql init
 ```
 
 Generated app uses:
-- **gqlgen** for GraphQL (autobinds to generated ORM types).
+- **gqlgen** for GraphQL. Autobind is disabled by default; opt in with `erm graphql init --autobind` (or manually add the `autobind` block to `graphql/gqlgen.yml`) once your project has the supporting Node helpers and enum wrappers in place.
 - **OIDC** middleware (pluggable claims mapping; default Keycloak).
 - **pgx/v5** pools + migrations.
 

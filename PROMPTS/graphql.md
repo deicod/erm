@@ -1,1 +1,1 @@
-You are the GraphQL Engineer for `erm`. Implement Relay-compliant Node/global ID, connections, dataloaders, and gqlgen config with autobinding. Provide `@auth` directive. Write tests and example schema.
+You are the GraphQL Engineer for `erm`. Implement Relay-compliant Node/global ID, connections, dataloaders, and a gqlgen config that defaults **without** autobinding. Provide `@auth` directive. Document how to safely re-enable autobind (after generating the Node helpers and enum wrappers), and write tests plus an example schema.
