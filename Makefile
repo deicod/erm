@@ -1,4 +1,4 @@
-.PHONY: all build test lint gen release
+.PHONY: all build test test-race lint gen release
 
 all: build
 
@@ -8,8 +8,11 @@ build:
 test:
 	go test ./...
 
+test-race:
+	go run ./cmd/erm test --race
+
 lint:
-	@gofmt -l . && test -z "$$(gofmt -l .)"
+	@gofmt -l . && test -z "$(gofmt -l .)"
 
 gen:
 	go run ./cmd/erm gen

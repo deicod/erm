@@ -8,4 +8,5 @@ When touching files in this directory:
    - `go test ./...`
    - `go test -race ./...`
    - `go vet ./...`
+   (See [`docs/testing.md`](../docs/testing.md#race-detector-workflow) for batching tips, expected runtimes, and the `erm test --race` helper.)
 4. Regenerate code with `erm gen` when the schema shape changes and review the diff before committing.
