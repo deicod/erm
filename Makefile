@@ -18,4 +18,4 @@ gen:
 	go run ./cmd/erm gen
 
 release:
-	goreleaser release --snapshot --clean
+        goreleaser release --snapshot --clean --config .goreleaser.yaml

@@ -1,12 +1,8 @@
 project_name: erm
-
-before:
-  hooks:
-    - go mod tidy
-
 builds:
   - id: erm
     main: ./cmd/erm
+    binary: erm
     env:
       - CGO_ENABLED=0
     goos:
@@ -16,20 +12,25 @@ builds:
     goarch:
       - amd64
       - arm64
-
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
 archives:
-  - builds: [erm]
+  - id: default
     format: tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - LICENSE
       - README.md
-
+    format_overrides:
+      - goos: windows
+        format: zip
 checksum:
-  name_template: "checksums.txt"
-
-snapshot:
-  name_template: "{{ .Tag }}-next"
-
+  name_template: "{{ .ProjectName }}_checksums.txt"
 changelog:
+  sort: asc
   use: git
+release:
+  prerelease: auto
