@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/deicod/erm/generator"
 	testkit "github.com/deicod/erm/testing"
 )
 
@@ -63,15 +64,58 @@ func TestGraphQLInitScaffoldsRuntimePackages(t *testing.T) {
 		t.Fatalf("module path not substituted in directives/auth.go: %s", content)
 	}
 
+	if err := os.MkdirAll(filepath.Join(tmpDir, "schema"), 0o755); err != nil {
+		t.Fatalf("mkdir schema: %v", err)
+	}
+
+	newCmd := newNewCmd()
+	if err := newCmd.RunE(newCmd, []string{"User"}); err != nil {
+		t.Fatalf("execute new: %v", err)
+	}
+
 	testkit.ScaffoldGraphQLRuntime(t, tmpDir, modulePath)
+
+	preGenTidy := exec.Command("go", "mod", "tidy")
+	preGenTidy.Dir = tmpDir
+	if output, err := preGenTidy.CombinedOutput(); err != nil {
+		t.Fatalf("go mod tidy before generation: %v\n%s", err, output)
+	}
+
+	genCmd := newGenCmd()
+	if err := genCmd.RunE(genCmd, []string{}); err != nil {
+		t.Fatalf("execute gen: %v", err)
+	}
+
+	gqlgenOutput, err := os.ReadFile(filepath.Join(tmpDir, "graphql", "generated.go"))
+	if err != nil {
+		t.Fatalf("read graphql/generated.go: %v", err)
+	}
+	if !strings.Contains(string(gqlgenOutput), "return &executableSchema") {
+		t.Fatalf("expected gqlgen output to include executable schema constructor; got:\n%s", gqlgenOutput)
+	}
+
+	rerun, err := generator.Run(tmpDir, generator.GenerateOptions{})
+	if err != nil {
+		t.Fatalf("second generation: %v", err)
+	}
+	for _, comp := range rerun.Components {
+		if comp.Name != generator.ComponentGraphQL && comp.Name != generator.ComponentORM {
+			continue
+		}
+		if comp.Changed {
+			t.Fatalf("expected %s to be up-to-date on second generation; reason=%s files=%v", comp.Name, comp.Reason, comp.Files)
+		}
+	}
+
+	testkit.RemoveGraphQLRuntimeStub(t, tmpDir)
 
 	tidyCmd := exec.Command("go", "mod", "tidy")
 	tidyCmd.Dir = tmpDir
 	if output, err := tidyCmd.CombinedOutput(); err != nil {
-		t.Fatalf("go mod tidy: %v\n%s", err, output)
+		t.Fatalf("go mod tidy after generation: %v\n%s", err, output)
 	}
 
-	buildCmd := exec.Command("go", "test", "./graphql/dataloaders", "./graphql/directives", "./graphql/relay", "./graphql/server", "./graphql/subscriptions")
+	buildCmd := exec.Command("go", "test", "./graphql/...", "./orm/gen")
 	buildCmd.Dir = tmpDir
 	output, err := buildCmd.CombinedOutput()
 	if err != nil {

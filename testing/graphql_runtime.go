@@ -63,3 +63,13 @@ func normaliseModulePath(modulePath string) string {
 	}
 	return trimmed
 }
+
+// RemoveGraphQLRuntimeStub removes the minimal ORM stub added by ScaffoldGraphQLRuntime.
+func RemoveGraphQLRuntimeStub(tb stdtesting.TB, root string) {
+	tb.Helper()
+
+	stub := filepath.Join(root, "orm", "gen", "client.go")
+	if err := os.Remove(stub); err != nil && !os.IsNotExist(err) {
+		tb.Fatalf("remove stub %s: %v", stub, err)
+	}
+}
