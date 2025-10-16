@@ -383,7 +383,7 @@ func TestNullableFieldGeneration_EndToEnd(t *testing.T) {
 	mustContain(t, resolvers, "LoginAttempts: nullableInt32(record.LoginAttempts)")
 	mustContain(t, resolvers, "func nullableTime(input sql.NullTime) *time.Time")
 	mustContain(t, resolvers, "func nullableBool(input sql.NullBool) *bool")
-	mustContain(t, resolvers, "func nullableInt32(input sql.NullInt32) *int32")
+	mustContain(t, resolvers, "func nullableInt32(input sql.NullInt32) *int")
 	if _, err := parser.ParseFile(token.NewFileSet(), resolversPath, resolversSrc, parser.AllErrors); err != nil {
 		t.Fatalf("parse resolvers: %v", err)
 	}
