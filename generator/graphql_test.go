@@ -97,6 +97,7 @@ func TestGraphQLResolverGeneration(t *testing.T) {
 			dsl.UUIDv7("id").Primary(),
 			dsl.Text("name"),
 			dsl.Integer("version"),
+			dsl.Integer("optional_version").Optional(),
 		},
 	}}
 
@@ -131,6 +132,9 @@ func TestGraphQLResolverGeneration(t *testing.T) {
 		"applyBeforeReturnWidget",
 		modulePath + "/graphql",
 		modulePath + "/graphql/dataloaders",
+		"int(record.Version)",
+		"toGraphQLIntPtr(record.OptionalVersion)",
+		"func toGraphQLIntPtr[",
 	}
 	for _, needle := range expectations {
 		if !strings.Contains(string(resolverSrc), needle) {

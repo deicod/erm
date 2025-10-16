@@ -512,10 +512,8 @@ func sqlNullValueType(goType string) string {
 		return "bool"
 	case "sql.NullFloat64":
 		return "float64"
-	case "sql.NullInt16":
-		return "int16"
-	case "sql.NullInt32":
-		return "int32"
+	case "sql.NullInt16", "sql.NullInt32":
+		return "int"
 	case "sql.NullInt64":
 		return "int64"
 	case "sql.NullByte":
@@ -526,6 +524,19 @@ func sqlNullValueType(goType string) string {
 		return "time.Time"
 	default:
 		return ""
+	}
+}
+
+func sqlNullConversionExpr(goType string) string {
+	field := sqlNullFieldName(goType)
+	if field == "" {
+		return ""
+	}
+	switch goType {
+	case "sql.NullInt16", "sql.NullInt32":
+		return fmt.Sprintf("int(input.%s)", field)
+	default:
+		return fmt.Sprintf("input.%s", field)
 	}
 }
 
@@ -606,23 +617,50 @@ func writeGraphQLResolvers(root string, entities []Entity, modulePath string) er
 	if hasEnums {
 		buf.WriteString(renderGraphQLEnumHelpers())
 	}
+	needsIntPtrHelper := needsGraphQLIntPointerHelper(entities)
 	if helperUsage.HasSQLNull {
 		for _, goType := range helperUsage.GoTypes() {
 			helper := nullableHelperName(goType)
 			valueType := sqlNullValueType(goType)
 			field := sqlNullFieldName(goType)
-			if helper == "" || valueType == "" || field == "" {
+			conversion := sqlNullConversionExpr(goType)
+			if helper == "" || valueType == "" || field == "" || conversion == "" {
 				continue
 			}
 			fmt.Fprintf(buf, "func %s(input %s) *%s {\n", helper, goType, valueType)
 			fmt.Fprintf(buf, "    if !input.Valid {\n        return nil\n    }\n")
-			fmt.Fprintf(buf, "    value := input.%s\n", field)
+			fmt.Fprintf(buf, "    value := %s\n", conversion)
 			fmt.Fprintf(buf, "    return &value\n}\n\n")
 		}
+	}
+	if needsIntPtrHelper {
+		buf.WriteString(renderGraphQLIntPointerHelper())
 	}
 
 	path := filepath.Join(root, "graphql", "resolvers", "entities_gen.go")
 	return writeGoFile(path, buf.Bytes())
+}
+
+func needsGraphQLIntPointerHelper(entities []Entity) bool {
+	for _, ent := range entities {
+		for _, field := range ent.Fields {
+			goType := defaultGoType(field)
+			if goType == "*int16" || goType == "*int32" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func renderGraphQLIntPointerHelper() string {
+	return strings.TrimSpace(`func toGraphQLIntPtr[T ~int16 | ~int32](input *T) *int {
+    if input == nil {
+        return nil
+    }
+    value := int(*input)
+    return &value
+}`) + "\n\n"
 }
 
 func ensureGraphQLEntityHooksFile(root string) error {
@@ -779,7 +817,24 @@ func graphqlFieldValue(field dsl.Field) string {
 			return fmt.Sprintf("%s(%s)", helper, base)
 		}
 	}
+	if isGraphQLIntType(field.Type) {
+		switch goType {
+		case "int16", "int32":
+			return fmt.Sprintf("int(%s)", base)
+		case "*int16", "*int32":
+			return fmt.Sprintf("toGraphQLIntPtr(%s)", base)
+		}
+	}
 	return base
+}
+
+func isGraphQLIntType(ft dsl.FieldType) bool {
+	switch ft {
+	case dsl.TypeSmallInt, dsl.TypeInteger, dsl.TypeSmallSerial, dsl.TypeSerial:
+		return true
+	default:
+		return false
+	}
 }
 
 func renderEntityQueryResolvers(ent Entity) string {
