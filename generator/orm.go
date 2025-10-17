@@ -111,14 +111,14 @@ func writeModels(root string, entities []Entity) error {
 
 func fieldColumn(field dsl.Field) string {
 	if field.Column != "" {
-		return field.Column
+		return normalizeIdentifier(field.Column)
 	}
 	return toSnakeCase(field.Name)
 }
 
 func edgeColumn(edge dsl.Edge) string {
 	if edge.Column != "" {
-		return edge.Column
+		return normalizeIdentifier(edge.Column)
 	}
 	switch edge.Kind {
 	case dsl.EdgeToOne:
@@ -1310,7 +1310,7 @@ func sqlNullValueFieldAccessor(field dsl.Field) string {
 
 func edgeRefColumn(source Entity, edge dsl.Edge, primary dsl.Field) string {
 	if edge.RefName != "" {
-		return edge.RefName
+		return normalizeIdentifier(edge.RefName)
 	}
 	if primary.Name == "" {
 		return ""

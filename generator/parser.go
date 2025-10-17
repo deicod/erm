@@ -174,6 +174,7 @@ func loadEntities(root string) ([]Entity, error) {
 	}
 	synthesizeInverseEdges(out)
 	assignEnumMetadata(out)
+	normalizeEntityColumns(out)
 	return out, nil
 }
 

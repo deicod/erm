@@ -473,6 +473,96 @@ func TestDiffColumn_ComputedTriggersDropAdd(t *testing.T) {
 	}
 }
 
+func TestRenderInitialMigration_NormalizesIdentifiers(t *testing.T) {
+	entities := []Entity{
+		{
+			Name: "User",
+			Fields: []dsl.Field{
+				dsl.UUIDv7("id").Primary(),
+				dsl.Text("Email").UniqueConstraint(),
+			},
+		},
+		{
+			Name: "MediaItem",
+			Fields: []dsl.Field{
+				dsl.UUIDv7("id").Primary(),
+				dsl.Text("Filename"),
+				dsl.UUID("parentPostID").Optional().ColumnName("parentPostID"),
+			},
+			Edges: []dsl.Edge{
+				dsl.ToOne("UploadedBy", "User").Ref("uploadedByID"),
+			},
+			Indexes: []dsl.Index{
+				dsl.Idx("mediaitem_uploaded_by").On("uploadedByID"),
+				dsl.Idx("mediaitem_parent_post").On("parentPostID"),
+			},
+		},
+		{
+			Name: "Post",
+			Fields: []dsl.Field{
+				dsl.UUIDv7("id").Primary(),
+				dsl.Text("Title"),
+			},
+			Edges: []dsl.Edge{
+				dsl.ToOne("Author", "User").Ref("authorID"),
+				dsl.ToOne("HeroMedia", "MediaItem").Ref("heroMediaID").Optional(),
+			},
+		},
+		{
+			Name: "Comment",
+			Fields: []dsl.Field{
+				dsl.UUIDv7("id").Primary(),
+				dsl.Text("AuthorEmail"),
+			},
+			Edges: []dsl.Edge{
+				dsl.ToOne("Post", "Post").Ref("postID"),
+				dsl.ToOne("Author", "User").Ref("authorID"),
+			},
+			Indexes: []dsl.Index{
+				dsl.Idx("comment_author_email").On("authorEmail"),
+			},
+		},
+	}
+
+	sql := renderInitialMigration(entities, extensionFlags{})
+
+	forbidden := []string{"uploadedByID", "parentPostID", "heroMediaID", "authorEmail"}
+	for _, token := range forbidden {
+		if strings.Contains(sql, token) {
+			t.Fatalf("expected migration to normalize %q, got:\n%s", token, sql)
+		}
+	}
+
+	expectedIndexes := []string{
+		"CREATE INDEX IF NOT EXISTS mediaitem_uploaded_by ON media_items (uploaded_by_id);",
+		"CREATE INDEX IF NOT EXISTS mediaitem_parent_post ON media_items (parent_post_id);",
+		"CREATE INDEX IF NOT EXISTS comment_author_email ON comments (author_email);",
+	}
+	for _, stmt := range expectedIndexes {
+		if !strings.Contains(sql, stmt) {
+			t.Fatalf("expected migration to contain %q, got:\n%s", stmt, sql)
+		}
+	}
+
+	order := []string{
+		"CREATE TABLE IF NOT EXISTS users",
+		"CREATE TABLE IF NOT EXISTS media_items",
+		"CREATE TABLE IF NOT EXISTS posts",
+		"CREATE TABLE IF NOT EXISTS comments",
+	}
+	last := -1
+	for _, marker := range order {
+		pos := strings.Index(sql, marker)
+		if pos == -1 {
+			t.Fatalf("expected migration to include %q, got:\n%s", marker, sql)
+		}
+		if pos < last {
+			t.Fatalf("expected migration to order tables by dependency, got:\n%s", sql)
+		}
+		last = pos
+	}
+}
+
 func fixedClock(year int, month time.Month, day, hour, min, sec int) func() time.Time {
 	return func() time.Time {
 		return time.Date(year, month, day, hour, min, sec, 0, time.UTC)

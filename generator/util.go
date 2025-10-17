@@ -6,6 +6,8 @@ import (
 	"unicode"
 )
 
+var identifierSanitizer = strings.NewReplacer("-", "_", " ", "_")
+
 func toSnakeCase(in string) string {
 	if in == "" {
 		return in
@@ -23,6 +25,19 @@ func toSnakeCase(in string) string {
 		out = append(out, r)
 	}
 	return string(out)
+}
+
+func normalizeIdentifier(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return ""
+	}
+	cleaned := identifierSanitizer.Replace(trimmed)
+	cleaned = strings.Trim(cleaned, "_")
+	if cleaned == "" {
+		return ""
+	}
+	return toSnakeCase(cleaned)
 }
 
 func pluralize(name string) string {

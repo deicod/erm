@@ -305,6 +305,9 @@ func renderInitialMigration(entities []Entity, flags extensionFlags) string {
 }
 
 func buildMigrationPlan(entities []Entity) ([]entityMigration, []joinTableSpec) {
+	normalized := append([]Entity(nil), entities...)
+	normalizeEntityColumns(normalized)
+	entities = normalized
 	// Migrations operate on the fully-derived entity metadata so generated DDL
 	// mirrors the defaults and overrides resolved by the DSL parser.
 	plan := make([]entityMigration, len(entities))
@@ -574,6 +577,7 @@ func findEdgeByName(edges []dsl.Edge, name string) (dsl.Edge, bool) {
 }
 
 func makeForeignKeyField(column string, refField dsl.Field, nullable, unique bool) dsl.Field {
+	column = normalizeIdentifier(column)
 	field := dsl.Field{
 		Name:     column,
 		Column:   column,
