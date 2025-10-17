@@ -1096,6 +1096,11 @@ func renderInputAssignment(inputVar, targetVar string, field dsl.Field, includeI
 		fmt.Fprintf(builder, "    }\n")
 		return builder.String()
 	}
+	if field.Type == dsl.TypeJSON || field.Type == dsl.TypeJSONB {
+		fmt.Fprintf(builder, "        %s.%s = %s.%s\n", targetVar, fieldName, inputVar, inputField)
+		fmt.Fprintf(builder, "    }\n")
+		return builder.String()
+	}
 	switch {
 	case strings.HasPrefix(goType, "*"):
 		if customGoType {
