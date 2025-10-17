@@ -122,6 +122,39 @@ func TestGenCmdDryRunPrintsSQL(t *testing.T) {
 	}
 }
 
+func TestGenCmdSurfacesSchemaDiscoveryErrors(t *testing.T) {
+	original := runGenerator
+	defer func() { runGenerator = original }()
+
+	runGenerator = func(root string, opts generator.GenerateOptions) (generator.RunResult, error) {
+		return generator.RunResult{}, generator.SchemaDiscoveryError{
+			Path:   "schema",
+			Detail: "no schema entities found in schema",
+			Hints:  []string{"Add at least one schema file."},
+		}
+	}
+
+	cmd := newGenCmd()
+	err := cmd.RunE(cmd, []string{})
+	if err == nil {
+		t.Fatalf("expected generation to fail")
+	}
+
+	var cmdErr CommandError
+	if !errors.As(err, &cmdErr) {
+		t.Fatalf("expected CommandError, got %v", err)
+	}
+	if !strings.Contains(cmdErr.Message, "schema discovery failed") {
+		t.Fatalf("unexpected error message: %q", cmdErr.Message)
+	}
+	if cmdErr.Suggestion != "Add at least one schema file." {
+		t.Fatalf("unexpected suggestion: %q", cmdErr.Suggestion)
+	}
+	if status := cmdErr.ExitStatus(); status != 2 {
+		t.Fatalf("expected exit status 2, got %d", status)
+	}
+}
+
 func TestGenCmdDryRunDiffSummary(t *testing.T) {
 	original := runGenerator
 	defer func() { runGenerator = original }()

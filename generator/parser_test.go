@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -441,5 +442,60 @@ func (Task) Indexes() []dsl.Index { return nil }
 	}
 	if statusField.EnumName == "" {
 		t.Fatalf("expected enum name to be populated")
+	}
+}
+
+func TestLoadEntitiesSupportsGenericGoFilenames(t *testing.T) {
+	dir := t.TempDir()
+	schemaDir := filepath.Join(dir, "schema")
+	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
+		t.Fatalf("mkdir schema: %v", err)
+	}
+
+	source := `package schema
+
+import "github.com/deicod/erm/orm/dsl"
+
+type Widget struct{ dsl.Schema }
+
+func (Widget) Fields() []dsl.Field {
+        return []dsl.Field{
+                dsl.UUIDv7("id").Primary(),
+        }
+}
+
+func (Widget) Edges() []dsl.Edge { return nil }
+func (Widget) Indexes() []dsl.Index { return nil }
+`
+	if err := os.WriteFile(filepath.Join(schemaDir, "entities.go"), []byte(source), 0o644); err != nil {
+		t.Fatalf("write schema: %v", err)
+	}
+
+	entities, err := loadEntities(dir)
+	if err != nil {
+		t.Fatalf("loadEntities: %v", err)
+	}
+	if findEntity(entities, "Widget").Name != "Widget" {
+		t.Fatalf("expected to discover Widget schema")
+	}
+}
+
+func TestLoadEntitiesErrorsWhenNoSchemas(t *testing.T) {
+	dir := t.TempDir()
+	schemaDir := filepath.Join(dir, "schema")
+	if err := os.MkdirAll(schemaDir, 0o755); err != nil {
+		t.Fatalf("mkdir schema: %v", err)
+	}
+
+	_, err := loadEntities(dir)
+	if err == nil {
+		t.Fatalf("expected loadEntities to fail")
+	}
+	var discoveryErr SchemaDiscoveryError
+	if !errors.As(err, &discoveryErr) {
+		t.Fatalf("expected SchemaDiscoveryError, got %v", err)
+	}
+	if !strings.Contains(discoveryErr.Error(), "no schema Go files") {
+		t.Fatalf("unexpected error message: %v", discoveryErr.Error())
 	}
 }
