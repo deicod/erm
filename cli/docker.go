@@ -48,7 +48,7 @@ func newDockerCmd() *cobra.Command {
 func newDockerSyncCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Generate docker-compose scaffolding aligned with erm.yaml",
+		Short: "Generate Docker Compose scaffolding aligned with erm.yaml",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadProjectConfig(".")
 			if err != nil {
@@ -73,13 +73,13 @@ func syncDockerAssets(root string, cfg projectConfig) error {
 	compose, note, err := renderDockerCompose(cfg)
 	if err != nil {
 		return wrapError(
-			"docker sync: render docker-compose.yml",
+			"docker sync: render compose.yaml",
 			err,
 			"Report this issue to the erm maintainers with your configuration.",
 			1,
 		)
 	}
-	composePath := filepath.Join(root, "docker", "local", "docker-compose.yml")
+	composePath := filepath.Join(root, "docker", "local", "compose.yaml")
 	if err := ensureDir(filepath.Dir(composePath)); err != nil {
 		return wrapError(
 			fmt.Sprintf("docker sync: create directory %s", filepath.Dir(composePath)),
