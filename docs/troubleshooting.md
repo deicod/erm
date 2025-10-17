@@ -39,6 +39,14 @@ symptoms, root causes, and remediation steps.
 
 ---
 
+## GraphQL Code Generation Issues
+
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| Generated GraphQL code fails to compile after adding `JSONB` fields | Known bug in the `JSONB` scalar templates that produces pointer type mismatches between the scalar implementation, wrapper helpers, and resolvers. | Update the generated files manually (ensure unmarshaler returns `json.RawMessage` values, pass pointers to the scalar marshal helper, and avoid double dereferencing in resolvers) until the generator is patched. Report the issue to the ERM team referencing version `v0.0.0-20251017170401-a3d93a3f0249` and include failing snippets so the templates can be corrected and regression tests added. |
+
+---
+
 ## Authentication Problems
 
 | Symptom | Likely Cause | Fix |

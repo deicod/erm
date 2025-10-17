@@ -429,10 +429,140 @@ func TestRunGQLGenRespectsRegisteredScalarHelpers(t *testing.T) {
 	}
 }
 
+func TestGraphQLJSONBScalarGeneration(t *testing.T) {
+	root := t.TempDir()
+	modulePath := "example.com/app"
+
+	goMod := "module " + modulePath + "\n\n" +
+		"go 1.21\n\n" +
+		"require (\n" +
+		"\tgithub.com/99designs/gqlgen v0.17.80\n" +
+		"\tgithub.com/vektah/gqlparser/v2 v2.5.30\n" +
+		")\n"
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+
+	entities := []Entity{{
+		Name: "Document",
+		Fields: []dsl.Field{
+			dsl.UUIDv7("id").Primary(),
+			dsl.JSONB("metadata"),
+			dsl.JSON("payload").Optional(),
+		},
+	}}
+
+	if err := writeGraphQLArtifacts(root, entities, modulePath); err != nil {
+		t.Fatalf("writeGraphQLArtifacts: %v", err)
+	}
+
+	writeGraphQLDataloaderRuntime(t, root, modulePath)
+	writeORMEntityStubs(t, root, entities)
+
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get wd: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(wd) })
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir temp project: %v", err)
+	}
+
+	testkit.ScaffoldGraphQLRuntime(t, root, modulePath)
+
+	if err := os.Remove(filepath.Join(root, "graphql", "graphql.go")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("remove placeholder graphql.go: %v", err)
+	}
+
+	writeGraphQLResolverRuntime(t, root, modulePath)
+	writeGraphQLRelayRuntime(t, root)
+
+	tidy := exec.Command("go", "mod", "tidy")
+	tidy.Dir = root
+	if output, err := tidy.CombinedOutput(); err != nil {
+		t.Fatalf("go mod tidy: %v\n%s", err, output)
+	}
+
+	debugDir := filepath.Join(os.TempDir(), "jsonb-debug")
+	if err := os.RemoveAll(debugDir); err != nil {
+		t.Fatalf("remove debug dir: %v", err)
+	}
+	t.Cleanup(func() {
+		if !t.Failed() {
+			_ = os.RemoveAll(debugDir)
+		}
+	})
+	if err := runGQLGen(root); err != nil {
+		t.Fatalf("runGQLGen: %v", err)
+	}
+	copyDir(t, root, debugDir)
+
+	resolverPath := filepath.Join(root, "graphql", "resolvers", "entities_gen.go")
+	resolverSrc, err := os.ReadFile(resolverPath)
+	if err != nil {
+		t.Fatalf("read resolvers: %v", err)
+	}
+	if strings.Contains(string(resolverSrc), "*input.Metadata") {
+		t.Fatalf("resolver still dereferences JSONB input\n%s", resolverSrc)
+	}
+	if strings.Contains(string(resolverSrc), "*input.Payload") {
+		t.Fatalf("resolver still dereferences JSON input\n%s", resolverSrc)
+	}
+
+	generatedPath := filepath.Join(root, "graphql", "generated.go")
+	generatedSrc, err := os.ReadFile(generatedPath)
+	if err != nil {
+		t.Fatalf("read generated schema: %v", err)
+	}
+	if strings.Contains(string(generatedSrc), "unmarshalOJSONB2ᚖencoding/json.RawMessage") {
+		t.Fatalf("optional JSONB wrapper still returns pointer\n%s", generatedSrc)
+	}
+	if strings.Contains(string(generatedSrc), "marshalJSONB2ᚖencoding/json.RawMessage") {
+		t.Fatalf("JSONB marshal wrapper still expects pointer\n%s", generatedSrc)
+	}
+
+	build := exec.Command("go", "build", "./...")
+	build.Dir = root
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v\n%s", err, output)
+	}
+}
+
 func mustNotContain(t *testing.T, content, needle string) {
 	t.Helper()
 	if strings.Contains(content, needle) {
 		t.Fatalf("expected GraphQL schema to omit %q\nactual: %s", needle, content)
+	}
+}
+
+func copyDir(t *testing.T, src, dst string) {
+	t.Helper()
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		t.Fatalf("readdir %s: %v", src, err)
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", dst, err)
+	}
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+		info, err := entry.Info()
+		if err != nil {
+			t.Fatalf("stat %s: %v", srcPath, err)
+		}
+		if info.IsDir() {
+			copyDir(t, srcPath, dstPath)
+			continue
+		}
+		data, err := os.ReadFile(srcPath)
+		if err != nil {
+			t.Fatalf("read %s: %v", srcPath, err)
+		}
+		if err := os.WriteFile(dstPath, data, info.Mode()); err != nil {
+			t.Fatalf("write %s: %v", dstPath, err)
+		}
 	}
 }
 
@@ -505,6 +635,9 @@ func writeORMEntityStubs(t *testing.T, root string, entities []Entity) {
 			goType := defaultGoType(field)
 			if strings.Contains(goType, "time.") {
 				imports["time"] = struct{}{}
+			}
+			if strings.Contains(goType, "json.RawMessage") {
+				imports["encoding/json"] = struct{}{}
 			}
 		}
 	}

@@ -35,6 +35,9 @@ func runGQLGenInternal(root string) error {
 	if err := api.Generate(cfg); err != nil {
 		return err
 	}
+	if err := patchJSONScalarWrappers(root); err != nil {
+		return err
+	}
 	resolverStub := filepath.Join(root, "graphql", "resolvers", "schema.resolvers.go")
 	_ = os.Remove(resolverStub)
 	return nil
