@@ -153,6 +153,36 @@ func (Profile) Edges() []dsl.Edge {
                 dsl.ToOne("user", "User").Inverse("profiles"),
         }
 }
+
+func TestExecuteFieldMethodSuggestsNearestName(t *testing.T) {
+        _, err := executeFieldMethod(dsl.String("name"), "Uniqe", nil)
+        if err == nil {
+                t.Fatalf("expected error for unknown field method")
+        }
+        if !strings.Contains(err.Error(), "Did you mean \"Unique\"?") {
+                t.Fatalf("expected suggestion, got %q", err)
+        }
+}
+
+func TestArgFieldTypeSuggestsNearestType(t *testing.T) {
+        _, err := argFieldType([]any{"dsl.TypeStrng"}, 0)
+        if err == nil {
+                t.Fatalf("expected error for unknown field type")
+        }
+        if !strings.Contains(err.Error(), "Did you mean \"dsl.TypeString\"?") {
+                t.Fatalf("expected suggestion, got %q", err)
+        }
+}
+
+func TestExecuteDSLFuncSuggestsNearestName(t *testing.T) {
+        _, err := executeDSLFunc("Strng", []any{"title"})
+        if err == nil {
+                t.Fatalf("expected error for unknown DSL function")
+        }
+        if !strings.Contains(err.Error(), "Did you mean \"String\"?") {
+                t.Fatalf("expected suggestion, got %q", err)
+        }
+}
 func (Profile) Indexes() []dsl.Index { return nil }
 `
 	if err := os.WriteFile(filepath.Join(schemaDir, "profile.schema.go"), []byte(source), 0o644); err != nil {

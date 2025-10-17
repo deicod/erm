@@ -91,6 +91,8 @@ erm gen --name add_users_email     # Override the generated migration slug
 erm gen --force                    # Rewrite generated files even if contents are unchanged
 ```
 
+> **Tip:** Start with `erm gen --dry-run --diff` to validate migrations without touching the filesystem. Add `--force` after dependency upgrades if generated packages look stale.
+
 Key flags:
 
 - `--only` limits generation to `orm`, `graphql`, or `migrations`. Omit the flag to run the full pipeline.

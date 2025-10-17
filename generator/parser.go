@@ -7,8 +7,11 @@ import (
 	"go/parser"
 	"go/token"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/agnivade/levenshtein"
 
 	"github.com/deicod/erm/orm/dsl"
 )
@@ -777,7 +780,7 @@ func executeDSLFunc(name string, args []any) (any, error) {
 	case "Idx":
 		return dsl.Idx(argString(args, 0)), nil
 	default:
-		return nil, fmt.Errorf("unsupported dsl function %s", name)
+		return nil, errorWithSuggestion("unsupported dsl function %s", name, dslFunctionNames)
 	}
 }
 
@@ -840,7 +843,7 @@ func executeFieldMethod(f dsl.Field, name string, args []any) (any, error) {
 			return nil, fmt.Errorf("Computed expects dsl.ComputedColumn, got %T", args[0])
 		}
 	default:
-		return nil, fmt.Errorf("unsupported field method %s", name)
+		return nil, errorWithSuggestion("unsupported field method %s", name, fieldMethodNames)
 	}
 }
 
@@ -899,7 +902,7 @@ func executeEdgeMethod(edge dsl.Edge, name string, args []any) (any, error) {
 	case "OnUpdateNoAction":
 		return edge.OnUpdateNoAction(), nil
 	default:
-		return nil, fmt.Errorf("unsupported edge method %s", name)
+		return nil, errorWithSuggestion("unsupported edge method %s", name, edgeMethodNames)
 	}
 }
 
@@ -1001,7 +1004,7 @@ func executeIndexMethod(index dsl.Index, name string, args []any) (any, error) {
 	case "NullsNotDistinctConstraint":
 		return index.NullsNotDistinctConstraint(), nil
 	default:
-		return nil, fmt.Errorf("unsupported index method %s", name)
+		return nil, errorWithSuggestion("unsupported index method %s", name, indexMethodNames)
 	}
 }
 
@@ -1042,7 +1045,7 @@ func executeQuerySpecMethod(spec dsl.QuerySpec, name string, args []any) (any, e
 	case "WithMaxLimit":
 		return spec.WithMaxLimit(argInt(args, 0)), nil
 	default:
-		return nil, fmt.Errorf("unsupported query spec method %s", name)
+		return nil, errorWithSuggestion("unsupported query spec method %s", name, querySpecMethodNames)
 	}
 }
 
@@ -1051,7 +1054,7 @@ func executePredicateMethod(pred dsl.Predicate, name string, args []any) (any, e
 	case "Named":
 		return pred.Named(argString(args, 0)), nil
 	default:
-		return nil, fmt.Errorf("unsupported predicate method %s", name)
+		return nil, errorWithSuggestion("unsupported predicate method %s", name, predicateMethodNames)
 	}
 }
 
@@ -1060,7 +1063,7 @@ func executeOrderMethod(order dsl.Order, name string, args []any) (any, error) {
 	case "Named":
 		return order.Named(argString(args, 0)), nil
 	default:
-		return nil, fmt.Errorf("unsupported order method %s", name)
+		return nil, errorWithSuggestion("unsupported order method %s", name, orderMethodNames)
 	}
 }
 
@@ -1071,7 +1074,7 @@ func executeAggregateMethod(agg dsl.Aggregate, name string, args []any) (any, er
 	case "WithGoType":
 		return agg.WithGoType(argString(args, 0)), nil
 	default:
-		return nil, fmt.Errorf("unsupported aggregate method %s", name)
+		return nil, errorWithSuggestion("unsupported aggregate method %s", name, aggregateMethodNames)
 	}
 }
 
@@ -1158,17 +1161,131 @@ func argFieldType(args []any, idx int) (dsl.FieldType, error) {
 		if ft, ok := fieldTypeLookup[v]; ok {
 			return ft, nil
 		}
-		if ft, ok := fieldTypeLookup[strings.TrimPrefix(v, "dsl.")]; ok {
+		trimmed := strings.TrimPrefix(v, "dsl.")
+		if ft, ok := fieldTypeLookup[trimmed]; ok {
 			return ft, nil
+		}
+		suggestion := nearestSuggestion(trimmed, fieldTypeNames)
+		if suggestion != "" {
+			if strings.HasPrefix(v, "dsl.") {
+				suggestion = "dsl." + suggestion
+			}
+			return "", fmt.Errorf("unsupported field type %v. Did you mean %q?", args[idx], suggestion)
 		}
 	}
 	return "", fmt.Errorf("unsupported field type %v", args[idx])
+}
+
+func errorWithSuggestion(format, name string, options []string) error {
+	msg := fmt.Sprintf(format, name)
+	if suggestion := nearestSuggestion(name, options); suggestion != "" {
+		msg = fmt.Sprintf("%s. Did you mean %q?", msg, suggestion)
+	}
+	return fmt.Errorf("%s", msg)
+}
+
+func nearestSuggestion(name string, options []string) string {
+	if name == "" {
+		return ""
+	}
+	normalized := strings.ToLower(name)
+	best := ""
+	bestDist := len(name) + 1
+	for _, opt := range options {
+		dist := levenshtein.ComputeDistance(strings.ToLower(opt), normalized)
+		if dist < bestDist {
+			bestDist = dist
+			best = opt
+		}
+	}
+	if best == "" {
+		return ""
+	}
+	threshold := 1
+	switch {
+	case len(name) <= 4:
+		threshold = 1
+	case len(name) <= 8:
+		threshold = 2
+	default:
+		threshold = 3
+	}
+	if bestDist <= threshold {
+		return best
+	}
+	return ""
 }
 
 var identityModeLookup = map[string]dsl.IdentityMode{
 	"IdentityByDefault": dsl.IdentityByDefault,
 	"IdentityAlways":    dsl.IdentityAlways,
 }
+
+var fieldMethodNames = []string{
+	"Primary",
+	"Optional",
+	"ColumnName",
+	"Unique",
+	"UniqueConstraint",
+	"NotEmpty",
+	"DefaultNow",
+	"UpdateNow",
+	"WithDefault",
+	"WithGoType",
+	"Default",
+	"SRID",
+	"TimeSeries",
+	"Identity",
+	"Length",
+	"Precision",
+	"Scale",
+	"ArrayElement",
+	"Computed",
+}
+
+var edgeMethodNames = []string{
+	"Field",
+	"Ref",
+	"ThroughTable",
+	"Optional",
+	"UniqueEdge",
+	"Inverse",
+	"Polymorphic",
+	"PolymorphicTargets",
+	"OnDelete",
+	"OnUpdate",
+	"OnDeleteCascade",
+	"OnDeleteSetNull",
+	"OnDeleteRestrict",
+	"OnDeleteNoAction",
+	"OnUpdateCascade",
+	"OnUpdateSetNull",
+	"OnUpdateRestrict",
+	"OnUpdateNoAction",
+}
+
+var indexMethodNames = []string{
+	"On",
+	"Unique",
+	"UniqueConstraint",
+	"WhereClause",
+	"MethodUsing",
+	"NullsNotDistinctConstraint",
+}
+
+var querySpecMethodNames = []string{
+	"WithPredicates",
+	"WithOrders",
+	"WithAggregates",
+	"WithDefaultLimit",
+	"WithMaxLimit",
+}
+
+var predicateMethodNames = []string{"Named"}
+
+var orderMethodNames = []string{"Named"}
+
+var aggregateMethodNames = []string{"On", "WithGoType"}
 
 func argSubscriptionEvent(args []any, idx int) (dsl.SubscriptionEvent, error) {
 	if idx >= len(args) {
@@ -1320,6 +1437,95 @@ var fieldTypeLookup = map[string]dsl.FieldType{
 	"TypeGeometry":        dsl.TypeGeometry,
 	"TypeGeography":       dsl.TypeGeography,
 	"TypeVector":          dsl.TypeVector,
+}
+
+var fieldTypeNames = sortedKeys(fieldTypeLookup)
+
+var dslFunctionNames = []string{
+	"UUIDv7",
+	"UUID",
+	"Text",
+	"Enum",
+	"String",
+	"VarChar",
+	"Char",
+	"Boolean",
+	"Int",
+	"Integer",
+	"SmallInt",
+	"BigInt",
+	"SmallSerial",
+	"Serial",
+	"BigSerial",
+	"SmallIntIdentity",
+	"IntegerIdentity",
+	"BigIntIdentity",
+	"Float",
+	"Real",
+	"DoublePrecision",
+	"Decimal",
+	"Numeric",
+	"Bool",
+	"Bytes",
+	"Bytea",
+	"Money",
+	"Date",
+	"Time",
+	"TimeTZ",
+	"Timestamp",
+	"TimestampTZ",
+	"Interval",
+	"JSON",
+	"JSONB",
+	"XML",
+	"Inet",
+	"CIDR",
+	"MACAddr",
+	"MACAddr8",
+	"Bit",
+	"VarBit",
+	"TSVector",
+	"TSQuery",
+	"Point",
+	"Line",
+	"Lseg",
+	"Box",
+	"Path",
+	"Polygon",
+	"Circle",
+	"Int4Range",
+	"Int8Range",
+	"NumRange",
+	"TSRange",
+	"TSTZRange",
+	"DateRange",
+	"Array",
+	"Query",
+	"NewPredicate",
+	"OrderBy",
+	"NewAggregate",
+	"CountAggregate",
+	"GraphQL",
+	"GraphQLSubscriptions",
+	"Geometry",
+	"Geography",
+	"Vector",
+	"Expression",
+	"Computed",
+	"ToOne",
+	"ToMany",
+	"ManyToMany",
+	"PolymorphicTarget",
+	"Idx",
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 var comparisonLookup = map[string]dsl.ComparisonOperator{
