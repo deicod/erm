@@ -245,16 +245,17 @@ func selectDockerImage(cfg projectConfig) (string, string) {
 		if cfg.Extensions.PGVector {
 			comment += " Add pgvector to this image manually."
 		}
-		return "timescale/timescaledb-ha:pg16.2-ts2.14.2", comment
+		// update to pg18 when available
+		return "timescale/timescaledb:latest-pg17", comment
 	}
 
 	switch {
 	case cfg.Extensions.PostGIS && !cfg.Extensions.PGVector:
-		return "postgis/postgis:16-3.4", "Includes PostGIS support."
+		return "postgis/postgis:18-3.6", "Includes PostGIS support."
 	case cfg.Extensions.PGVector && !cfg.Extensions.PostGIS:
-		return "pgvector/pgvector:pg16", "Includes the pgvector extension."
+		return "pgvector/pgvector:pg18", "Includes the pgvector extension."
 	default:
-		return "postgres:16", "Use a custom image to bundle additional extensions."
+		return "postgres:18", "Use a custom image to bundle additional extensions."
 	}
 }
 
