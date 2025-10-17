@@ -90,6 +90,43 @@ func TestGraphQLEnumGeneration(t *testing.T) {
 	mustContain(t, schema, "status: TaskStatus!")
 }
 
+func TestGraphQLAuthorizationDirectives(t *testing.T) {
+	entities := []Entity{{
+		Name: "Post",
+		Fields: []dsl.Field{
+			dsl.UUIDv7("id").Primary(),
+			dsl.Text("title"),
+		},
+		Annotations: []dsl.Annotation{
+			dsl.Authorization(dsl.AuthRules{
+				Create: dsl.RequireRole("editor"),
+				Read:   dsl.RequireAuth(),
+				Update: dsl.RequireAuth("editor", "admin"),
+				Delete: dsl.AdminOnly(),
+			}),
+			dsl.GraphQL("Post",
+				dsl.GraphQLSubscriptions(
+					dsl.SubscriptionEventCreate,
+					dsl.SubscriptionEventUpdate,
+					dsl.SubscriptionEventDelete,
+				),
+			),
+		},
+	}}
+
+	assignAuthorizationMetadata(entities)
+
+	schema := buildGraphQLGeneratedSection(entities)
+	mustContain(t, schema, "post(id: ID!): Post @auth")
+	mustContain(t, schema, "posts(first: Int, after: String, last: Int, before: String): PostConnection! @auth")
+	mustContain(t, schema, "createPost(input: CreatePostInput!): CreatePostPayload! @auth(roles: [\"editor\"])\n")
+	mustContain(t, schema, "updatePost(input: UpdatePostInput!): UpdatePostPayload! @auth(roles: [\"admin\", \"editor\"])\n")
+	mustContain(t, schema, "deletePost(input: DeletePostInput!): DeletePostPayload! @auth(roles: [\"admin\"])\n")
+	mustContain(t, schema, "postCreated: Post! @auth(roles: [\"editor\"])\n")
+	mustContain(t, schema, "postUpdated: Post! @auth(roles: [\"admin\", \"editor\"])\n")
+	mustContain(t, schema, "postDeleted: ID! @auth(roles: [\"admin\"])\n")
+}
+
 func TestGraphQLResolverGeneration(t *testing.T) {
 	entities := []Entity{{
 		Name: "Widget",

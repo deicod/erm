@@ -14,7 +14,124 @@ type Annotation struct {
 	Payload map[string]any
 }
 
-const AnnotationGraphQL = "graphql"
+const (
+	AnnotationGraphQL       = "graphql"
+	AnnotationAuthorization = "authorization"
+)
+
+type AuthRequirement string
+
+const (
+	AuthRequirementPublic         AuthRequirement = "public"
+	AuthRequirementAuthenticated  AuthRequirement = "authenticated"
+	AuthRequirementRoleRestricted AuthRequirement = "role"
+)
+
+type AuthRule struct {
+	Requirement AuthRequirement
+	Roles       []string
+}
+
+func (r *AuthRule) Clone() *AuthRule {
+	if r == nil {
+		return nil
+	}
+	cloned := &AuthRule{Requirement: r.Requirement}
+	if len(r.Roles) > 0 {
+		cloned.Roles = append([]string(nil), r.Roles...)
+	}
+	return cloned
+}
+
+type AuthRules struct {
+	Create *AuthRule
+	Read   *AuthRule
+	Update *AuthRule
+	Delete *AuthRule
+}
+
+func (r AuthRules) Clone() AuthRules {
+	return AuthRules{
+		Create: r.Create.Clone(),
+		Read:   r.Read.Clone(),
+		Update: r.Update.Clone(),
+		Delete: r.Delete.Clone(),
+	}
+}
+
+func Authorization(rules AuthRules) Annotation {
+	cloned := rules.Clone()
+	payload := map[string]any{
+		"rules": cloned,
+	}
+	if cloned.Create != nil {
+		payload["create"] = cloned.Create.Clone()
+	}
+	if cloned.Read != nil {
+		payload["read"] = cloned.Read.Clone()
+	}
+	if cloned.Update != nil {
+		payload["update"] = cloned.Update.Clone()
+	}
+	if cloned.Delete != nil {
+		payload["delete"] = cloned.Delete.Clone()
+	}
+	return Annotation{Name: AnnotationAuthorization, Payload: payload}
+}
+
+func RequireAuth(roles ...string) *AuthRule {
+	rule := &AuthRule{Requirement: AuthRequirementAuthenticated}
+	if len(roles) > 0 {
+		rule.Roles = append([]string(nil), roles...)
+	}
+	return rule
+}
+
+func RequireRole(role string) *AuthRule {
+	if strings.TrimSpace(role) == "" {
+		return RequireAuth()
+	}
+	return &AuthRule{Requirement: AuthRequirementRoleRestricted, Roles: []string{role}}
+}
+
+func PublicAccess() *AuthRule {
+	return &AuthRule{Requirement: AuthRequirementPublic}
+}
+
+func Public() *AuthRule {
+	return PublicAccess()
+}
+
+func AdminOnly() *AuthRule {
+	return RequireRole("admin")
+}
+
+func ContentAuth() AuthRules {
+	return AuthRules{
+		Create: RequireRole("user"),
+		Read:   PublicAccess(),
+		Update: RequireRole("user"),
+		Delete: RequireRole("user"),
+	}
+}
+
+func UserAuth() AuthRules {
+	return AuthRules{
+		Create: AdminOnly(),
+		Read:   RequireAuth(),
+		Update: AdminOnly(),
+		Delete: AdminOnly(),
+	}
+}
+
+func ReadOnlyAuth() AuthRules {
+	return AuthRules{
+		Read:   PublicAccess(),
+		Create: AdminOnly(),
+		Update: AdminOnly(),
+		Delete: AdminOnly(),
+	}
+}
 
 type GraphQLOption struct {
 	Key   string
