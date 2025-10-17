@@ -586,6 +586,9 @@ func writeGraphQLResolvers(root string, entities []Entity, modulePath string) er
 	if helperUsage.NeedsTime() {
 		imports["time"] = struct{}{}
 	}
+	if needsGraphQLIntRangeCheck(entities) {
+		imports["math"] = struct{}{}
+	}
 	if len(imports) > 0 {
 		fmt.Fprintf(buf, "import (\n")
 		keys := make([]string, 0, len(imports))
@@ -646,6 +649,17 @@ func needsGraphQLIntPointerHelper(entities []Entity) bool {
 		for _, field := range ent.Fields {
 			goType := defaultGoType(field)
 			if goType == "*int16" || goType == "*int32" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func needsGraphQLIntRangeCheck(entities []Entity) bool {
+	for _, ent := range entities {
+		for _, field := range ent.Fields {
+			if requiresSmallIntRangeCheck(field) {
 				return true
 			}
 		}
@@ -1135,6 +1149,23 @@ func renderGraphQLIntInputAssignment(builder *strings.Builder, inputVar, inputFi
 		baseType = goType
 	}
 
+	if requiresSmallIntRangeCheck(field) {
+		graphqlFieldName := lowerCamel(field.Name)
+		if graphqlFieldName == "" {
+			graphqlFieldName = fieldName
+		}
+		if graphqlFieldName == "" {
+			graphqlFieldName = field.Name
+		}
+		if graphqlFieldName == "" {
+			graphqlFieldName = "field"
+		}
+		message := fmt.Sprintf("%s must be between %%d and %%d", graphqlFieldName)
+		fmt.Fprintf(builder, "        if *%s.%s < math.MinInt16 || *%s.%s > math.MaxInt16 {\n", inputVar, inputField, inputVar, inputField)
+		fmt.Fprintf(builder, "            return nil, fmt.Errorf(\"%s\", math.MinInt16, math.MaxInt16)\n", message)
+		fmt.Fprintf(builder, "        }\n")
+	}
+
 	switch {
 	case strings.HasPrefix(goType, "*"):
 		pointerType := strings.TrimPrefix(goType, "*")
@@ -1165,6 +1196,15 @@ func renderGraphQLIntInputAssignment(builder *strings.Builder, inputVar, inputFi
 		}
 		fmt.Fprintf(builder, "        %s.%s = %s\n", targetVar, fieldName, conversion)
 		return true
+	}
+}
+
+func requiresSmallIntRangeCheck(field dsl.Field) bool {
+	switch field.Type {
+	case dsl.TypeSmallInt, dsl.TypeSmallSerial:
+		return true
+	default:
+		return false
 	}
 }
 

@@ -98,6 +98,8 @@ func TestGraphQLResolverGeneration(t *testing.T) {
 			dsl.Text("name"),
 			dsl.Integer("version"),
 			dsl.Integer("optional_version").Optional(),
+			dsl.SmallInt("login_attempts"),
+			dsl.SmallInt("optional_login_attempts").Optional(),
 		},
 	}}
 
@@ -132,9 +134,12 @@ func TestGraphQLResolverGeneration(t *testing.T) {
 		"applyBeforeReturnWidget",
 		modulePath + "/graphql",
 		modulePath + "/graphql/dataloaders",
+		"\"math\"",
 		"int(record.Version)",
 		"toGraphQLIntPtr(record.OptionalVersion)",
 		"func toGraphQLIntPtr[",
+		"if *input.LoginAttempts < math.MinInt16 || *input.LoginAttempts > math.MaxInt16",
+		"return nil, fmt.Errorf(\"loginAttempts must be between %d and %d\", math.MinInt16, math.MaxInt16)",
 	}
 	for _, needle := range expectations {
 		if !strings.Contains(string(resolverSrc), needle) {
