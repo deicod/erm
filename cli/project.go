@@ -21,6 +21,11 @@ type projectConfig struct {
 		Routing      replicaRoutingConfig           `yaml:"routing"`
 		Environments map[string]databaseEnvironment `yaml:"environments"`
 	} `yaml:"database"`
+	Extensions struct {
+		PostGIS   bool `yaml:"postgis"`
+		PGVector  bool `yaml:"pgvector"`
+		Timescale bool `yaml:"timescaledb"`
+	} `yaml:"extensions"`
 	Observability struct {
 		ORM struct {
 			QueryLogging   bool `yaml:"query_logging"`
