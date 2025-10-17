@@ -1,6 +1,6 @@
 # Schema DSL Quick Reference
 
-Keep this cheat sheet open while editing files under `schema/*.schema.go`. It lists the constructors and modifiers the `erm` generator understands so you can reach for the right helper without scanning package docs.
+Keep this cheat sheet open while editing the Go files under `schema/` (the generator looks for `*.schema.go` but also accepts other filenames). It lists the constructors and modifiers the `erm` generator understands so you can reach for the right helper without scanning package docs.
 
 ## Field Constructors
 

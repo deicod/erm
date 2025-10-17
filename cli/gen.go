@@ -70,6 +70,11 @@ func newGenCmd() *cobra.Command {
 func executeGeneration(cmd *cobra.Command, opts generator.GenerateOptions, showDiff bool) error {
 	result, err := runGenerator(".", opts)
 	if err != nil {
+		var discoveryErr generator.SchemaDiscoveryError
+		if errors.As(err, &discoveryErr) {
+			message := fmt.Sprintf("gen: schema discovery failed: %s", discoveryErr.Error())
+			return wrapError(message, err, discoveryErr.Suggestion(), 2)
+		}
 		return wrapError(fmt.Sprintf("gen: generation failed: %v", err), err, "Resolve the schema or configuration issue above and re-run `erm gen`.", 1)
 	}
 	out := cmd.OutOrStdout()

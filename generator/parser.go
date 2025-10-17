@@ -16,6 +16,36 @@ import (
 	"github.com/deicod/erm/orm/dsl"
 )
 
+// SchemaDiscoveryError captures failures while attempting to load user-authored schema files.
+type SchemaDiscoveryError struct {
+	Path   string
+	Detail string
+	Hints  []string
+}
+
+// Error implements the error interface.
+func (e SchemaDiscoveryError) Error() string {
+	if e.Detail != "" {
+		return e.Detail
+	}
+	if e.Path != "" {
+		return fmt.Sprintf("schema discovery failed in %s", e.Path)
+	}
+	return "schema discovery failed"
+}
+
+// Suggestion aggregates hints for display in CLI error messages.
+func (e SchemaDiscoveryError) Suggestion() string {
+	switch len(e.Hints) {
+	case 0:
+		return ""
+	case 1:
+		return e.Hints[0]
+	default:
+		return strings.Join(e.Hints, " ")
+	}
+}
+
 type Entity struct {
 	Name        string
 	Fields      []dsl.Field
@@ -27,12 +57,19 @@ type Entity struct {
 
 func loadEntities(root string) ([]Entity, error) {
 	schemaDir := filepath.Join(root, "schema")
-	matches, err := filepath.Glob(filepath.Join(schemaDir, "*.schema.go"))
+	matches, err := discoverSchemaFiles(schemaDir)
 	if err != nil {
 		return nil, err
 	}
 	if len(matches) == 0 {
-		return nil, nil
+		return nil, SchemaDiscoveryError{
+			Path:   schemaDir,
+			Detail: fmt.Sprintf("no schema Go files found in %s", schemaDir),
+			Hints: []string{
+				"Create a schema file that embeds dsl.Schema.",
+				"Run `erm new <Entity>` to scaffold an example schema file.",
+			},
+		}
 	}
 
 	fset := token.NewFileSet()
@@ -121,6 +158,16 @@ func loadEntities(root string) ([]Entity, error) {
 		ent := findEntity(entities, name)
 		out = append(out, ent)
 	}
+	if len(out) == 0 {
+		return nil, SchemaDiscoveryError{
+			Path:   schemaDir,
+			Detail: fmt.Sprintf("no schema entities found in %s", schemaDir),
+			Hints: []string{
+				"Ensure each schema type embeds dsl.Schema and exports DSL methods like Fields().",
+				"Check for typos in package names or receiver definitions.",
+			},
+		}
+	}
 	for i := range out {
 		ensureDefaultField(&out[i])
 		ensureDefaultQuery(&out[i])
@@ -128,6 +175,28 @@ func loadEntities(root string) ([]Entity, error) {
 	synthesizeInverseEdges(out)
 	assignEnumMetadata(out)
 	return out, nil
+}
+
+func discoverSchemaFiles(schemaDir string) ([]string, error) {
+	matches, err := filepath.Glob(filepath.Join(schemaDir, "*.schema.go"))
+	if err != nil {
+		return nil, err
+	}
+	if len(matches) == 0 {
+		fallback, err := filepath.Glob(filepath.Join(schemaDir, "*.go"))
+		if err != nil {
+			return nil, err
+		}
+		for _, file := range fallback {
+			base := filepath.Base(file)
+			if strings.HasSuffix(base, "_test.go") || strings.HasSuffix(base, "_gen.go") {
+				continue
+			}
+			matches = append(matches, file)
+		}
+	}
+	sort.Strings(matches)
+	return matches, nil
 }
 
 func embedsDSLSchema(st *ast.StructType) bool {

@@ -10,6 +10,7 @@ symptoms, root causes, and remediation steps.
 | Symptom | Likely Cause | Fix |
 |---------|--------------|-----|
 | `erm gen` exits with “no module found” | `go.mod` missing or `erm.yaml.module` mismatch | Run `go mod init` and update `erm.yaml` to match. |
+| `erm gen` fails with “schema discovery failed” | No Go files in `schema/` embed `dsl.Schema` | Ensure schema types embed `dsl.Schema` and live under `schema/`; run `erm new <Entity>` to scaffold an example. |
 | `erm new` fails with permission error | Running outside repository or lacking write access | Execute inside repo root and check filesystem permissions. |
 | Generated files keep changing | Editor modifies imports or whitespace | Run `gofmt` on schema files; avoid manual edits to generated files. |
 | `erm graphql init` overwrites custom code | Modifications made inside generated files | Move custom logic to `_extension.go` files before re-running command. |

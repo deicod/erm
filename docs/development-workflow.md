@@ -4,7 +4,7 @@ This project relies on deterministic code generation. The generator now fingerpr
 
 ## Everyday iteration
 
-1. Edit your `*.schema.go` files.
+1. Edit your schema Go files (the generator looks for `*.schema.go` by default but accepts any Go file under `schema/`).
 2. Run `erm gen` from the project root.
    - The command updates only the impacted artifacts. Up-to-date components are reported as "up-to-date" and left untouched.
    - Migrations are generated only when the schema snapshot changes. Re-running without changes keeps the migration directory clean.
