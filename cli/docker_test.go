@@ -44,8 +44,8 @@ extensions:
 		t.Fatalf("run docker sync: %v", err)
 	}
 
-	compose := filepath.Join("docker", "local", "docker-compose.yml")
-	assertFileContains(t, compose, "timescale/timescaledb-ha")
+	compose := filepath.Join("docker", "local", "compose.yaml")
+	assertFileContains(t, compose, "timescale/timescaledb:")
 	assertFileContains(t, compose, "6543:5432")
 	assertFileContains(t, compose, "app-dev-postgres")
 	assertFileContains(t, compose, "Enabled extensions: postgis, timescaledb")
