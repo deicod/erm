@@ -464,7 +464,8 @@ When touching files in this directory:
    - 'go test ./...'
    - 'go test -race ./...'
    - 'go vet ./...'
-4. Regenerate code with 'erm gen' when the schema shape changes and review the diff before committing.
+4. Prefer snake_case for all schema field names to match generated database columns.
+5. Regenerate code with 'erm gen' when the schema shape changes and review the diff before committing.
 `
 
 const gqlReadme = `# GraphQL workspace
