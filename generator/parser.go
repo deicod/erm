@@ -173,10 +173,13 @@ func loadEntities(root string) ([]Entity, error) {
 		ensureDefaultField(&out[i])
 		ensureDefaultQuery(&out[i])
 	}
-	synthesizeInverseEdges(out)
-	assignEnumMetadata(out)
-	assignAuthorizationMetadata(out)
-	return out, nil
+    synthesizeInverseEdges(out)
+    assignEnumMetadata(out)
+    assignAuthorizationMetadata(out)
+    if err := validateEntities(out); err != nil {
+            return nil, err
+    }
+    return out, nil
 }
 
 func discoverSchemaFiles(schemaDir string) ([]string, error) {
