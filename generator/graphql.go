@@ -586,6 +586,9 @@ func writeGraphQLResolvers(root string, entities []Entity, modulePath string) er
 	if helperUsage.NeedsTime() {
 		imports["time"] = struct{}{}
 	}
+	if needsGraphQLIntRangeCheck(entities) {
+		imports["math"] = struct{}{}
+	}
 	if len(imports) > 0 {
 		fmt.Fprintf(buf, "import (\n")
 		keys := make([]string, 0, len(imports))
@@ -646,6 +649,17 @@ func needsGraphQLIntPointerHelper(entities []Entity) bool {
 		for _, field := range ent.Fields {
 			goType := defaultGoType(field)
 			if goType == "*int16" || goType == "*int32" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func needsGraphQLIntRangeCheck(entities []Entity) bool {
+	for _, ent := range entities {
+		for _, field := range ent.Fields {
+			if requiresSmallIntRangeCheck(field) {
 				return true
 			}
 		}
@@ -1078,6 +1092,10 @@ func renderInputAssignment(inputVar, targetVar string, field dsl.Field, includeI
 	}
 	goType := defaultGoType(field)
 	fmt.Fprintf(builder, "    if %s.%s != nil {\n", inputVar, inputField)
+	if renderGraphQLIntInputAssignment(builder, inputVar, inputField, targetVar, fieldName, field, goType, customGoType) {
+		fmt.Fprintf(builder, "    }\n")
+		return builder.String()
+	}
 	switch {
 	case strings.HasPrefix(goType, "*"):
 		if customGoType {
@@ -1113,6 +1131,81 @@ func renderInputAssignment(inputVar, targetVar string, field dsl.Field, includeI
 	}
 	fmt.Fprintf(builder, "    }\n")
 	return builder.String()
+}
+
+func renderGraphQLIntInputAssignment(builder *strings.Builder, inputVar, inputField, targetVar, fieldName string, field dsl.Field, goType string, customGoType bool) bool {
+	if !isGraphQLIntType(field.Type) {
+		return false
+	}
+
+	baseType := baseGoType(field)
+	for strings.HasPrefix(baseType, "*") {
+		baseType = strings.TrimPrefix(baseType, "*")
+	}
+	if baseType == "" {
+		baseType = strings.TrimPrefix(goType, "*")
+	}
+	if baseType == "" {
+		baseType = goType
+	}
+
+	if requiresSmallIntRangeCheck(field) {
+		graphqlFieldName := lowerCamel(field.Name)
+		if graphqlFieldName == "" {
+			graphqlFieldName = fieldName
+		}
+		if graphqlFieldName == "" {
+			graphqlFieldName = field.Name
+		}
+		if graphqlFieldName == "" {
+			graphqlFieldName = "field"
+		}
+		message := fmt.Sprintf("%s must be between %%d and %%d", graphqlFieldName)
+		fmt.Fprintf(builder, "        if *%s.%s < math.MinInt16 || *%s.%s > math.MaxInt16 {\n", inputVar, inputField, inputVar, inputField)
+		fmt.Fprintf(builder, "            return nil, fmt.Errorf(\"%s\", math.MinInt16, math.MaxInt16)\n", message)
+		fmt.Fprintf(builder, "        }\n")
+	}
+
+	switch {
+	case strings.HasPrefix(goType, "*"):
+		pointerType := strings.TrimPrefix(goType, "*")
+		if pointerType == "" {
+			pointerType = baseType
+		}
+		conversion := fmt.Sprintf("%s(*%s.%s)", pointerType, inputVar, inputField)
+		if customGoType && pointerType != baseType && baseType != "" {
+			conversion = fmt.Sprintf("%s(%s(*%s.%s))", pointerType, baseType, inputVar, inputField)
+		}
+		fmt.Fprintf(builder, "        value := %s\n", conversion)
+		fmt.Fprintf(builder, "        %s.%s = &value\n", targetVar, fieldName)
+		return true
+	case strings.HasPrefix(goType, "sql.Null"):
+		sqlField := sqlNullFieldName(goType)
+		if sqlField == "" {
+			conversion := fmt.Sprintf("%s(*%s.%s)", goType, inputVar, inputField)
+			fmt.Fprintf(builder, "        %s.%s = %s\n", targetVar, fieldName, conversion)
+			return true
+		}
+		conversion := fmt.Sprintf("%s(*%s.%s)", baseType, inputVar, inputField)
+		fmt.Fprintf(builder, "        %s.%s = %s{%s: %s, Valid: true}\n", targetVar, fieldName, goType, sqlField, conversion)
+		return true
+	default:
+		conversion := fmt.Sprintf("%s(*%s.%s)", goType, inputVar, inputField)
+		if customGoType && goType != baseType && baseType != "" {
+			conversion = fmt.Sprintf("%s(%s(*%s.%s))", goType, baseType, inputVar, inputField)
+		}
+		fmt.Fprintf(builder, "        %s.%s = %s\n", targetVar, fieldName, conversion)
+		return true
+	}
+}
+
+func requiresSmallIntRangeCheck(field dsl.Field) bool {
+	switch field.Type {
+	case dsl.TypeSmallInt, dsl.TypeSmallSerial:
+		return true
+	default:
+		return false
+	}
 }
 
 func hasCustomGoType(field dsl.Field) bool {

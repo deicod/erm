@@ -377,7 +377,7 @@ func TestNullableFieldGeneration_EndToEnd(t *testing.T) {
 	mustContain(t, resolvers, "model.Nickname = input.Nickname")
 	mustContain(t, resolvers, "model.LastSeen = sql.NullTime{Time: *input.LastSeen, Valid: true}")
 	mustContain(t, resolvers, "model.Active = sql.NullBool{Bool: *input.Active, Valid: true}")
-	mustContain(t, resolvers, "model.LoginAttempts = sql.NullInt32{Int32: *input.LoginAttempts, Valid: true}")
+	mustContain(t, resolvers, "model.LoginAttempts = sql.NullInt32{Int32: int32(*input.LoginAttempts), Valid: true}")
 	mustContain(t, resolvers, "LastSeen: nullableTime(record.LastSeen)")
 	mustContain(t, resolvers, "Active: nullableBool(record.Active)")
 	mustContain(t, resolvers, "LoginAttempts: nullableInt32(record.LoginAttempts)")
