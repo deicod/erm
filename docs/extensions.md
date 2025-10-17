@@ -18,7 +18,7 @@ func (Location) Annotations() []dsl.Annotation {
 }
 ```
 
-You can also enable extensions globally in `erm.yaml`:
+You can also enable extensions globally in `erm.yaml` (all flags default to `false` in newly generated configs):
 
 ```yaml
 extensions:

@@ -27,6 +27,7 @@ func NewRootCmd() *cobra.Command {
 	cmd.AddCommand(newGraphQLInitCmd())
 	cmd.AddCommand(newDoctorCmd())
 	cmd.AddCommand(newTestCmd())
+	cmd.AddCommand(newDockerCmd())
 	return cmd
 }
 

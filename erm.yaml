@@ -46,6 +46,6 @@ graphql:
       websocket: true
       graphql_ws: false
 extensions:
-  postgis: true
-  pgvector: true
+  postgis: false
+  pgvector: false
   timescaledb: false

@@ -58,6 +58,18 @@ func newInitCmd() *cobra.Command {
 					)
 				}
 			}
+			cfg, err := loadProjectConfig(".")
+			if err != nil {
+				return wrapError(
+					"init: parse project config",
+					err,
+					"Ensure erm.yaml is valid YAML after scaffolding.",
+					1,
+				)
+			}
+			if err := syncDockerAssets(".", cfg); err != nil {
+				return err
+			}
 			if strings.TrimSpace(modulePath) != "" {
 				if err := generator.EnsureRuntimeScaffolds(".", modulePath); err != nil {
 					return wrapError("init: scaffold runtime packages", err, "Report this issue to the erm maintainers.", 1)
@@ -85,8 +97,8 @@ graphql:
   # 4. The HTTP path your API will be served on.
   path: "/graphql"
 extensions:
-  postgis: true
-  pgvector: true
+  postgis: false
+  pgvector: false
   timescaledb: false
 `
 
