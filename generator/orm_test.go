@@ -303,6 +303,11 @@ func TestDefaultGoType_Nullable(t *testing.T) {
 	if got := defaultGoType(nullTime); got != "sql.NullTime" {
 		t.Fatalf("expected optional timestamptz with sql null strategy to map to sql.NullTime, got %q", got)
 	}
+
+	jsonField := dsl.JSONB("payload").Optional()
+	if got := defaultGoType(jsonField); got != "json.RawMessage" {
+		t.Fatalf("expected optional jsonb field to map to json.RawMessage, got %q", got)
+	}
 }
 
 func TestNullableFieldGeneration_EndToEnd(t *testing.T) {
