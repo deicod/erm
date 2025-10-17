@@ -4,6 +4,7 @@ import "context"
 
 // Claims captures identity metadata extracted from verified tokens.
 type Claims struct {
+	// Subject is the stable identifier sourced from the OIDC `sub` claim.
 	Subject       string
 	Email         string
 	Name          string

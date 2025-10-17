@@ -39,6 +39,12 @@ After updating configuration, run `erm gen` so generated middleware picks up new
 
 ## Middleware Flow
 
+> **Use the generated middleware.** `erm gen` wires the OIDC middleware into
+> `graphql/server/server.go` for you. Dropping in a custom middleware often
+> skips JWKS caching, audience checks, or context population, which leads to
+> resolvers seeing an anonymous viewer. Prefer configuring the scaffolded
+> middleware rather than re-implementing it.
+
 1. **Token Extraction** – `oidc/middleware.go` pulls the `Authorization: Bearer <token>` header.
 2. **Verification** – The token is validated using the provider’s JWKS. Signature, expiration, issuer, and audience checks run
    automatically.
@@ -49,6 +55,36 @@ After updating configuration, run `erm gen` so generated middleware picks up new
 
 The middleware is inserted in `graphql/server/server.go` during `erm graphql init`.
 
+### Attaching the Middleware
+
+`erm` exposes a ready-to-use HTTP middleware so your server only needs to supply
+configuration:
+
+```go
+import (
+    "log"
+    "net/http"
+
+    "<module>/graphql/server"
+    "<module>/oidc"
+)
+
+middleware, err := oidc.NewMiddleware(ctx, oidc.Config{
+    Issuer:    cfg.OIDC.Issuer,
+    Audiences: []string{cfg.OIDC.Audience},
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+handler := server.NewServer(server.Options{})
+http.Handle("/query", middleware.Wrap(handler))
+```
+
+Because the middleware stores the verified claims on the request context, the
+generated GraphQL resolvers and privacy rules automatically receive the viewer
+metadata they require.
+
 ---
 
 ## Custom Claims Mapping
@@ -58,20 +94,43 @@ Create a new mapper by implementing the `ClaimsMapper` interface:
 ```go
 package mapper
 
+import (
+    "strings"
+
+    "<module>/oidc"
+)
+
 type CustomMapper struct{}
 
-func (CustomMapper) Map(ctx context.Context, token *oidc.IDToken, claims map[string]interface{}) (authz.Viewer, error) {
-    roles := authz.RolesFromPath(claims, "app_roles")
-    return authz.Viewer{
-        ID:    claims["sub"].(string),
-        Email: claims["email"].(string),
-        Name:  claims["preferred_username"].(string),
-        Roles: roles,
+func (CustomMapper) Map(raw map[string]any) (oidc.Claims, error) {
+    var roles []string
+    if vals, ok := raw["app_roles"].([]any); ok {
+        roles = make([]string, 0, len(vals))
+        for _, v := range vals {
+            if role, ok := v.(string); ok {
+                roles = append(roles, strings.ToUpper(role))
+            }
+        }
+    }
+    return oidc.Claims{
+        Subject: raw["sub"].(string),
+        Email:   raw["email"].(string),
+        Name:    raw["preferred_username"].(string),
+        Roles:   roles,
+        Raw:     raw,
     }, nil
 }
 ```
 
-Register the mapper in `oidc/mapper/registry.go` and reference it in `erm.yaml`.
+Provide the mapper when building the middleware:
+
+```go
+middleware, err := oidc.NewMiddleware(ctx, oidc.Config{
+    Issuer:    cfg.OIDC.Issuer,
+    Audiences: []string{cfg.OIDC.Audience},
+    Mapper:    mapper.CustomMapper{},
+})
+```
 
 ### Mapping Tips
 
@@ -150,6 +209,33 @@ oidc:
 ```
 
 The middleware chooses the mapper based on matching claims, allowing you to grant CI pipelines limited access.
+
+### Example Viewer Structure
+
+When the default Keycloak mapper processes a user token that contains:
+
+```json
+{
+  "sub": "user-123",
+  "email": "ada@example.com",
+  "preferred_username": "ada",
+  "realm_access": { "roles": ["ADMIN", "OWNER"] }
+}
+```
+
+the resulting viewer available in resolvers resembles:
+
+```go
+authz.Viewer{
+    ID:    "user-123", // populated from the OIDC `sub` claim
+    Email: "ada@example.com",
+    Name:  "ada",
+    Roles: []string{"ADMIN", "OWNER"},
+}
+```
+
+Downstream privacy checks can rely on `Viewer.ID` being stable because it
+originates from the `sub` claim provided by your identity provider.
 
 ---
 
