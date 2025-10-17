@@ -1078,6 +1078,10 @@ func renderInputAssignment(inputVar, targetVar string, field dsl.Field, includeI
 	}
 	goType := defaultGoType(field)
 	fmt.Fprintf(builder, "    if %s.%s != nil {\n", inputVar, inputField)
+	if renderGraphQLIntInputAssignment(builder, inputVar, inputField, targetVar, fieldName, field, goType, customGoType) {
+		fmt.Fprintf(builder, "    }\n")
+		return builder.String()
+	}
 	switch {
 	case strings.HasPrefix(goType, "*"):
 		if customGoType {
@@ -1113,6 +1117,55 @@ func renderInputAssignment(inputVar, targetVar string, field dsl.Field, includeI
 	}
 	fmt.Fprintf(builder, "    }\n")
 	return builder.String()
+}
+
+func renderGraphQLIntInputAssignment(builder *strings.Builder, inputVar, inputField, targetVar, fieldName string, field dsl.Field, goType string, customGoType bool) bool {
+	if !isGraphQLIntType(field.Type) {
+		return false
+	}
+
+	baseType := baseGoType(field)
+	for strings.HasPrefix(baseType, "*") {
+		baseType = strings.TrimPrefix(baseType, "*")
+	}
+	if baseType == "" {
+		baseType = strings.TrimPrefix(goType, "*")
+	}
+	if baseType == "" {
+		baseType = goType
+	}
+
+	switch {
+	case strings.HasPrefix(goType, "*"):
+		pointerType := strings.TrimPrefix(goType, "*")
+		if pointerType == "" {
+			pointerType = baseType
+		}
+		conversion := fmt.Sprintf("%s(*%s.%s)", pointerType, inputVar, inputField)
+		if customGoType && pointerType != baseType && baseType != "" {
+			conversion = fmt.Sprintf("%s(%s(*%s.%s))", pointerType, baseType, inputVar, inputField)
+		}
+		fmt.Fprintf(builder, "        value := %s\n", conversion)
+		fmt.Fprintf(builder, "        %s.%s = &value\n", targetVar, fieldName)
+		return true
+	case strings.HasPrefix(goType, "sql.Null"):
+		sqlField := sqlNullFieldName(goType)
+		if sqlField == "" {
+			conversion := fmt.Sprintf("%s(*%s.%s)", goType, inputVar, inputField)
+			fmt.Fprintf(builder, "        %s.%s = %s\n", targetVar, fieldName, conversion)
+			return true
+		}
+		conversion := fmt.Sprintf("%s(*%s.%s)", baseType, inputVar, inputField)
+		fmt.Fprintf(builder, "        %s.%s = %s{%s: %s, Valid: true}\n", targetVar, fieldName, goType, sqlField, conversion)
+		return true
+	default:
+		conversion := fmt.Sprintf("%s(*%s.%s)", goType, inputVar, inputField)
+		if customGoType && goType != baseType && baseType != "" {
+			conversion = fmt.Sprintf("%s(%s(*%s.%s))", goType, baseType, inputVar, inputField)
+		}
+		fmt.Fprintf(builder, "        %s.%s = %s\n", targetVar, fieldName, conversion)
+		return true
+	}
 }
 
 func hasCustomGoType(field dsl.Field) bool {
