@@ -104,6 +104,20 @@ func validateEntities(entities []Entity) error {
 			column := edgeColumn(edge)
 			field, exists := fieldsByColumn[column]
 			if !exists {
+				if edge.Column == "" || isGeneratedInverse(edge) {
+					continue
+				}
+				detail := fmt.Sprintf("foreign key column %q referenced by edge %s.%s is missing from %s.Fields()", column, ent.Name, edge.Name, ent.Name)
+				suggestion := fmt.Sprintf("Add %q to %s.Fields() using the same type as %s.%s.", column, ent.Name, target.Name, targetPrimary.Name)
+				problems = append(problems, SchemaValidationError{
+					Entity:     ent.Name,
+					Edge:       edge.Name,
+					Field:      column,
+					Column:     column,
+					Target:     target.Name,
+					Detail:     detail,
+					Suggestion: suggestion,
+				})
 				continue
 			}
 			if field.Type == targetPrimary.Type {
@@ -137,4 +151,16 @@ func buildTypeMismatchSuggestion(ent Entity, field dsl.Field, target Entity, tar
 	default:
 		return fmt.Sprintf("Ensure %s.%s uses the same type as %s.%s (%s).", ent.Name, field.Name, target.Name, targetPrimary.Name, targetPrimary.Type)
 	}
+}
+
+func isGeneratedInverse(edge dsl.Edge) bool {
+	if edge.Annotations == nil {
+		return false
+	}
+	if v, ok := edge.Annotations[generatedInverseAnnotation]; ok {
+		if flag, ok := v.(bool); ok {
+			return flag
+		}
+	}
+	return false
 }
