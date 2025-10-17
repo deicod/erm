@@ -164,6 +164,9 @@ func defaultGoType(field dsl.Field) string {
 	if strings.HasPrefix(base, "[]") || strings.HasPrefix(base, "map[") {
 		return base
 	}
+	if base == "json.RawMessage" {
+		return base
+	}
 	return "*" + base
 }
 
