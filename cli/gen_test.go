@@ -89,8 +89,11 @@ func TestGenCmdDryRunPrintsSQL(t *testing.T) {
 	runGenerator = func(root string, opts generator.GenerateOptions) (generator.RunResult, error) {
 		return generator.RunResult{
 			Migration: generator.MigrationResult{
-				Operations: []generator.Operation{{Kind: generator.OpCreateTable, SQL: "CREATE TABLE users (...)"}},
-				SQL:        "-- migration preview\nCREATE TABLE users (...);",
+				Operations: []generator.Operation{{Kind: generator.OpCreateTable, SQL: "CREATE TABLE users (...);"}},
+				Files: []generator.MigrationFile{{
+					Name: "20240101000000_create_users.sql",
+					SQL:  "-- preview\nCREATE TABLE users (...);\n",
+				}},
 			},
 		}, nil
 	}
@@ -116,6 +119,9 @@ func TestGenCmdDryRunPrintsSQL(t *testing.T) {
 	}
 	if !strings.Contains(output, "generator: migration dry-run preview") {
 		t.Fatalf("expected preview header, got:\n%s", output)
+	}
+	if !strings.Contains(output, "-- file: 20240101000000_create_users.sql") {
+		t.Fatalf("expected file header, got:\n%s", output)
 	}
 	if !strings.Contains(output, "CREATE TABLE users (...);") {
 		t.Fatalf("expected SQL preview, got:\n%s", output)
@@ -163,7 +169,10 @@ func TestGenCmdDryRunDiffSummary(t *testing.T) {
 		return generator.RunResult{
 			Migration: generator.MigrationResult{
 				Operations: []generator.Operation{{Kind: generator.OpCreateTable, Target: "users", SQL: "CREATE TABLE users (...);"}},
-				SQL:        "-- preview\nCREATE TABLE users (...);",
+				Files: []generator.MigrationFile{{
+					Name: "20240101010101_create_users.sql",
+					SQL:  "-- preview\nCREATE TABLE users (...);\n",
+				}},
 			},
 		}, nil
 	}

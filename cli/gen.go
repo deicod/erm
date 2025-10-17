@@ -98,7 +98,19 @@ func printDryRunSummary(out io.Writer, opts generator.GenerateOptions, result ge
 			fmt.Fprintln(out, "generator: no schema changes detected (dry-run)")
 		} else {
 			fmt.Fprintln(out, "generator: migration dry-run preview")
-			fmt.Fprintln(out, result.Migration.SQL)
+			if len(result.Migration.Files) == 0 {
+				fmt.Fprintln(out, renderFallbackSQL(result.Migration.Operations))
+			} else {
+				for idx, file := range result.Migration.Files {
+					if file.Name != "" {
+						fmt.Fprintf(out, "-- file: %s\n", file.Name)
+					}
+					fmt.Fprintln(out, file.SQL)
+					if idx < len(result.Migration.Files)-1 {
+						fmt.Fprintln(out)
+					}
+				}
+			}
 		}
 		if showDiff {
 			fmt.Fprintln(out, "generator: diff summary")
@@ -144,8 +156,24 @@ func printMigrationSummary(out io.Writer, opts generator.GenerateOptions, result
 		fmt.Fprintln(out, "generator: migrations skipped (--only)")
 		return
 	}
-	if result.Migration.FilePath != "" {
-		fmt.Fprintf(out, "generator: wrote migration %s\n", filepath.Base(result.Migration.FilePath))
+	if len(result.Migration.Files) > 0 {
+		if len(result.Migration.Files) == 1 {
+			file := result.Migration.Files[0]
+			name := file.Name
+			if name == "" && file.Path != "" {
+				name = filepath.Base(file.Path)
+			}
+			fmt.Fprintf(out, "generator: wrote migration %s\n", name)
+			return
+		}
+		fmt.Fprintln(out, "generator: wrote migrations:")
+		for _, file := range result.Migration.Files {
+			name := file.Name
+			if name == "" && file.Path != "" {
+				name = filepath.Base(file.Path)
+			}
+			fmt.Fprintf(out, "  - %s\n", name)
+		}
 		return
 	}
 	if len(result.Migration.Operations) == 0 {
@@ -153,6 +181,23 @@ func printMigrationSummary(out io.Writer, opts generator.GenerateOptions, result
 		return
 	}
 	fmt.Fprintln(out, "generator: migration operations pending (dry-run or staged)")
+}
+
+func renderFallbackSQL(ops []generator.Operation) string {
+	if len(ops) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for i, op := range ops {
+		b.WriteString(op.SQL)
+		if !strings.HasSuffix(op.SQL, "\n") {
+			b.WriteString("\n")
+		}
+		if i < len(ops)-1 {
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
 }
 
 func runWatch(cmd *cobra.Command, opts generator.GenerateOptions, showDiff bool) error {

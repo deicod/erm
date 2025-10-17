@@ -158,12 +158,19 @@ func Run(root string, opts GenerateOptions) (RunResult, error) {
 		migResult.Changed = len(result.Migration.Operations) > 0
 		if opts.DryRun {
 			migResult.Reason = "dry-run"
-		} else if result.Migration.FilePath != "" {
-			if rel, err := filepath.Rel(root, result.Migration.FilePath); err == nil {
-				migResult.Files = []string{filepath.ToSlash(rel)}
-			} else {
-				migResult.Files = []string{filepath.ToSlash(result.Migration.FilePath)}
+		} else if len(result.Migration.Files) > 0 {
+			paths := make([]string, 0, len(result.Migration.Files))
+			for _, file := range result.Migration.Files {
+				if file.Path == "" {
+					continue
+				}
+				if rel, err := filepath.Rel(root, file.Path); err == nil {
+					paths = append(paths, filepath.ToSlash(rel))
+				} else {
+					paths = append(paths, filepath.ToSlash(file.Path))
+				}
 			}
+			migResult.Files = paths
 		} else if len(result.Migration.Operations) == 0 {
 			migResult.Reason = "up-to-date"
 		}

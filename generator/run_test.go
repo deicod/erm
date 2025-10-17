@@ -96,7 +96,7 @@ func TestRunIdempotentExamplesBlog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first blog run failed: %v", err)
 	}
-	if res1.Migration.FilePath == "" {
+	if len(res1.Migration.Files) == 0 || res1.Migration.Files[0].Path == "" {
 		t.Fatalf("expected migration to be written on first run")
 	}
 
@@ -111,8 +111,8 @@ func TestRunIdempotentExamplesBlog(t *testing.T) {
 	if len(res2.Migration.Operations) != 0 {
 		t.Fatalf("expected no migration operations on second run, got %d: %+v", len(res2.Migration.Operations), res2.Migration.Operations)
 	}
-	if res2.Migration.FilePath != "" {
-		t.Fatalf("expected no migration file on second run, got %s", res2.Migration.FilePath)
+	if len(res2.Migration.Files) != 0 {
+		t.Fatalf("expected no migration file on second run, got %d", len(res2.Migration.Files))
 	}
 }
 
