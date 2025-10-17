@@ -45,6 +45,53 @@ func TestGenerateMigrations_TableAddition(t *testing.T) {
 	}
 }
 
+func TestGenerateMigrations_DefersForeignKeysUntilTablesExist(t *testing.T) {
+	root := t.TempDir()
+	base := []Entity{{
+		Name:   "User",
+		Fields: []dsl.Field{dsl.UUIDv7("id").Primary()},
+	}}
+	if _, err := generateMigrations(root, base, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 1, 2, 0, 0, 0)}); err != nil {
+		t.Fatalf("initial migration: %v", err)
+	}
+
+	updated := []Entity{
+		base[0],
+		{
+			Name:   "Post",
+			Fields: []dsl.Field{dsl.UUIDv7("id").Primary()},
+			Edges: []dsl.Edge{
+				dsl.ToOne("author", "User").Field("author_id"),
+			},
+		},
+		{
+			Name:   "Comment",
+			Fields: []dsl.Field{dsl.UUIDv7("id").Primary()},
+			Edges: []dsl.Edge{
+				dsl.ToOne("post", "Post").Field("post_id"),
+			},
+		},
+	}
+
+	res, err := generateMigrations(root, updated, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 1, 2, 1, 0, 0)})
+	if err != nil {
+		t.Fatalf("follow-up migration: %v", err)
+	}
+
+	sql := res.SQL
+	postCreate := strings.Index(sql, "CREATE TABLE posts")
+	if postCreate == -1 {
+		t.Fatalf("expected SQL to create posts table, got:\n%s", sql)
+	}
+	commentFK := strings.Index(sql, "ALTER TABLE comments ADD CONSTRAINT fk_comments_post_id")
+	if commentFK == -1 {
+		t.Fatalf("expected SQL to add comments.post_id foreign key, got:\n%s", sql)
+	}
+	if commentFK < postCreate {
+		t.Fatalf("expected comments.post_id foreign key to be deferred until after posts table creation, got:\n%s", sql)
+	}
+}
+
 func TestGenerateMigrations_ColumnDiffs(t *testing.T) {
 	root := t.TempDir()
 	base := []Entity{{
