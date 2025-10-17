@@ -147,7 +147,11 @@ Use annotations to declare access requirements:
 ```go
 func (Workspace) Annotations() []dsl.Annotation {
     return []dsl.Annotation{
-        dsl.Authz().Roles("ADMIN", "OWNER"),
+        dsl.Authorization(dsl.AuthRules{
+            Read:   dsl.RequireAuth("ADMIN", "OWNER"),
+            Update: dsl.RequireRole("OWNER"),
+            Delete: dsl.AdminOnly(),
+        }),
         dsl.GraphQL("Workspace").Description("A collaborative space for teams."),
     }
 }
@@ -156,26 +160,15 @@ func (Workspace) Annotations() []dsl.Annotation {
 This generates a GraphQL directive:
 
 ```graphql
-type Workspace implements Node @auth(require: [ADMIN, OWNER]) {
+type Workspace implements Node @auth(roles: ["ADMIN", "OWNER"]) {
   id: ID!
   name: String!
 }
 ```
 
-Resolvers call `authz.Check(ctx, authz.RequireRoles("ADMIN", "OWNER"))`. Failures return `PERMISSION_DENIED` before ORM queries
-run.
+Resolvers enforce these directives before touching the ORM layer, returning `PERMISSION_DENIED` if the viewer lacks the required roles.
 
-### Field-Level Guards
-
-```go
-func (Invoice) Annotations() []dsl.Annotation {
-    return []dsl.Annotation{
-        dsl.GraphQL("Invoice").FieldAuth("amount", dsl.RequireRoles("FINANCE")),
-    }
-}
-```
-
-Field guards hide sensitive data while still allowing the node to resolve.
+Field-level authorization is on the roadmap; today, wrap resolver logic or use privacy policies for fine-grained checks.
 
 ---
 

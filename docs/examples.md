@@ -55,7 +55,11 @@ func (Workspace) Policy() dsl.Policy {
 
 func (Workspace) Annotations() []dsl.Annotation {
     return []dsl.Annotation{
-        dsl.Authz().Roles("ADMIN", "MEMBER"),
+        dsl.Authorization(dsl.AuthRules{
+            Read:   dsl.RequireAuth("ADMIN", "MEMBER"),
+            Update: dsl.RequireRole("ADMIN"),
+            Delete: dsl.AdminOnly(),
+        }),
         dsl.GraphQL("Workspace").Description("Team workspace containing projects."),
     }
 }

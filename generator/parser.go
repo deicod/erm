@@ -47,12 +47,13 @@ func (e SchemaDiscoveryError) Suggestion() string {
 }
 
 type Entity struct {
-	Name        string
-	Fields      []dsl.Field
-	Edges       []dsl.Edge
-	Indexes     []dsl.Index
-	Query       dsl.QuerySpec
-	Annotations []dsl.Annotation
+	Name          string
+	Fields        []dsl.Field
+	Edges         []dsl.Edge
+	Indexes       []dsl.Index
+	Query         dsl.QuerySpec
+	Annotations   []dsl.Annotation
+	Authorization dsl.AuthRules
 }
 
 func loadEntities(root string) ([]Entity, error) {
@@ -174,6 +175,7 @@ func loadEntities(root string) ([]Entity, error) {
 	}
 	synthesizeInverseEdges(out)
 	assignEnumMetadata(out)
+	assignAuthorizationMetadata(out)
 	return out, nil
 }
 
@@ -314,6 +316,121 @@ func assignEnumMetadata(entities []Entity) {
 			ent.Fields[j] = field
 		}
 	}
+}
+
+func assignAuthorizationMetadata(entities []Entity) {
+	for i := range entities {
+		ent := &entities[i]
+		if len(ent.Annotations) == 0 {
+			continue
+		}
+		rules := ent.Authorization.Clone()
+		found := false
+		for _, ann := range ent.Annotations {
+			if !strings.EqualFold(ann.Name, dsl.AnnotationAuthorization) {
+				continue
+			}
+			found = true
+			current := dsl.AuthRules{}
+			if ann.Payload != nil {
+				if payload, ok := ann.Payload["rules"].(dsl.AuthRules); ok {
+					current = payload.Clone()
+				}
+				if rule, ok := extractAuthRule(ann.Payload["create"]); ok {
+					current.Create = rule
+				}
+				if rule, ok := extractAuthRule(ann.Payload["read"]); ok {
+					current.Read = rule
+				}
+				if rule, ok := extractAuthRule(ann.Payload["update"]); ok {
+					current.Update = rule
+				}
+				if rule, ok := extractAuthRule(ann.Payload["delete"]); ok {
+					current.Delete = rule
+				}
+			}
+			if current.Create != nil {
+				rules.Create = current.Create
+			}
+			if current.Read != nil {
+				rules.Read = current.Read
+			}
+			if current.Update != nil {
+				rules.Update = current.Update
+			}
+			if current.Delete != nil {
+				rules.Delete = current.Delete
+			}
+		}
+		if found {
+			ent.Authorization = normalizeAuthRules(rules)
+		}
+	}
+}
+
+func extractAuthRule(value any) (*dsl.AuthRule, bool) {
+	switch v := value.(type) {
+	case *dsl.AuthRule:
+		if v == nil {
+			return nil, false
+		}
+		return v.Clone(), true
+	case dsl.AuthRule:
+		clone := v.Clone()
+		return clone, true
+	case map[string]any:
+		rule := &dsl.AuthRule{}
+		if raw, ok := v["requirement"].(dsl.AuthRequirement); ok {
+			rule.Requirement = raw
+		} else if rawStr, ok := v["requirement"].(string); ok {
+			rule.Requirement = dsl.AuthRequirement(strings.ToLower(rawStr))
+		}
+		if raw, ok := v["roles"].([]string); ok {
+			rule.Roles = append([]string(nil), raw...)
+		} else if raw, ok := v["roles"].([]any); ok {
+			roles := make([]string, 0, len(raw))
+			for _, item := range raw {
+				if s, ok := item.(string); ok {
+					roles = append(roles, s)
+				}
+			}
+			rule.Roles = roles
+		}
+		return normalizeAuthRule(rule), true
+	}
+	return nil, false
+}
+
+func normalizeAuthRules(rules dsl.AuthRules) dsl.AuthRules {
+	return dsl.AuthRules{
+		Create: normalizeAuthRule(rules.Create),
+		Read:   normalizeAuthRule(rules.Read),
+		Update: normalizeAuthRule(rules.Update),
+		Delete: normalizeAuthRule(rules.Delete),
+	}
+}
+
+func normalizeAuthRule(rule *dsl.AuthRule) *dsl.AuthRule {
+	if rule == nil {
+		return nil
+	}
+	normalized := &dsl.AuthRule{Requirement: rule.Requirement}
+	if len(rule.Roles) > 0 {
+		seen := map[string]struct{}{}
+		for _, role := range rule.Roles {
+			trimmed := strings.TrimSpace(role)
+			if trimmed == "" {
+				continue
+			}
+			if _, exists := seen[trimmed]; exists {
+				continue
+			}
+			seen[trimmed] = struct{}{}
+			normalized.Roles = append(normalized.Roles, trimmed)
+		}
+		sort.Strings(normalized.Roles)
+	}
+	return normalized
 }
 
 type exprEvaluator struct{}
@@ -578,8 +695,112 @@ func (e *exprEvaluator) evalCompositeLit(lit *ast.CompositeLit) (any, error) {
 				return annotations, nil
 			}
 		}
+	case *ast.SelectorExpr:
+		pkg, ok := typ.X.(*ast.Ident)
+		if !ok || pkg.Name != "dsl" {
+			return nil, fmt.Errorf("unsupported selector type %T", typ)
+		}
+		switch typ.Sel.Name {
+		case "AuthRules":
+			return e.evalAuthRulesLiteral(lit)
+		case "AuthRule":
+			rule, err := e.evalAuthRuleLiteral(lit)
+			if err != nil {
+				return nil, err
+			}
+			return rule, nil
+		}
 	}
 	return nil, fmt.Errorf("unsupported composite literal %T", lit.Type)
+}
+
+func (e *exprEvaluator) evalAuthRulesLiteral(lit *ast.CompositeLit) (any, error) {
+	rules := dsl.AuthRules{}
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			return nil, fmt.Errorf("dsl.AuthRules literal expects key-value pairs")
+		}
+		ident, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			return nil, fmt.Errorf("unsupported key type %T in dsl.AuthRules literal", kv.Key)
+		}
+		val, err := e.evalExpr(kv.Value)
+		if err != nil {
+			return nil, err
+		}
+		if val == nil {
+			continue
+		}
+		rule, ok := extractAuthRule(val)
+		if !ok {
+			return nil, fmt.Errorf("expected dsl.AuthRule for %s, got %T", ident.Name, val)
+		}
+		switch ident.Name {
+		case "Create":
+			rules.Create = rule
+		case "Read":
+			rules.Read = rule
+		case "Update":
+			rules.Update = rule
+		case "Delete":
+			rules.Delete = rule
+		default:
+			return nil, fmt.Errorf("unsupported field %s in dsl.AuthRules literal", ident.Name)
+		}
+	}
+	return normalizeAuthRules(rules), nil
+}
+
+func (e *exprEvaluator) evalAuthRuleLiteral(lit *ast.CompositeLit) (*dsl.AuthRule, error) {
+	rule := &dsl.AuthRule{}
+	for _, elt := range lit.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			return nil, fmt.Errorf("dsl.AuthRule literal expects key-value pairs")
+		}
+		ident, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			return nil, fmt.Errorf("unsupported key type %T in dsl.AuthRule literal", kv.Key)
+		}
+		switch ident.Name {
+		case "Requirement":
+			val, err := e.evalExpr(kv.Value)
+			if err != nil {
+				return nil, err
+			}
+			switch v := val.(type) {
+			case dsl.AuthRequirement:
+				rule.Requirement = v
+			case string:
+				rule.Requirement = dsl.AuthRequirement(strings.ToLower(v))
+			default:
+				return nil, fmt.Errorf("unsupported requirement type %T", val)
+			}
+		case "Roles":
+			val, err := e.evalExpr(kv.Value)
+			if err != nil {
+				return nil, err
+			}
+			switch v := val.(type) {
+			case []string:
+				rule.Roles = append([]string(nil), v...)
+			case []any:
+				roles := make([]string, 0, len(v))
+				for _, item := range v {
+					if s, ok := item.(string); ok {
+						roles = append(roles, s)
+					}
+				}
+				rule.Roles = roles
+			default:
+				return nil, fmt.Errorf("unsupported roles type %T", val)
+			}
+		default:
+			return nil, fmt.Errorf("unsupported field %s in dsl.AuthRule literal", ident.Name)
+		}
+	}
+	return normalizeAuthRule(rule), nil
 }
 
 func (e *exprEvaluator) evalCallExpr(call *ast.CallExpr) (any, error) {
@@ -848,6 +1069,39 @@ func executeDSLFunc(name string, args []any) (any, error) {
 		return dsl.PolymorphicTarget(argString(args, 0), argString(args, 1)), nil
 	case "Idx":
 		return dsl.Idx(argString(args, 0)), nil
+	case "Authorization":
+		if len(args) == 0 {
+			return nil, fmt.Errorf("Authorization requires rules")
+		}
+		rules, ok := args[0].(dsl.AuthRules)
+		if !ok {
+			return nil, fmt.Errorf("Authorization expects dsl.AuthRules, got %T", args[0])
+		}
+		return dsl.Authorization(rules), nil
+	case "RequireAuth":
+		roles := make([]string, 0, len(args))
+		for i := range args {
+			candidate := strings.TrimSpace(argString(args, i))
+			if candidate == "" {
+				continue
+			}
+			roles = append(roles, candidate)
+		}
+		return dsl.RequireAuth(roles...), nil
+	case "RequireRole":
+		return dsl.RequireRole(argString(args, 0)), nil
+	case "PublicAccess":
+		return dsl.PublicAccess(), nil
+	case "Public":
+		return dsl.Public(), nil
+	case "AdminOnly":
+		return dsl.AdminOnly(), nil
+	case "ContentAuth":
+		return dsl.ContentAuth(), nil
+	case "UserAuth":
+		return dsl.UserAuth(), nil
+	case "ReadOnlyAuth":
+		return dsl.ReadOnlyAuth(), nil
 	default:
 		return nil, errorWithSuggestion("unsupported dsl function %s", name, dslFunctionNames)
 	}
@@ -1586,6 +1840,15 @@ var dslFunctionNames = []string{
 	"ManyToMany",
 	"PolymorphicTarget",
 	"Idx",
+	"Authorization",
+	"RequireAuth",
+	"RequireRole",
+	"PublicAccess",
+	"Public",
+	"AdminOnly",
+	"ContentAuth",
+	"UserAuth",
+	"ReadOnlyAuth",
 }
 
 func sortedKeys[V any](m map[string]V) []string {

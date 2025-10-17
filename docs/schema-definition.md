@@ -702,6 +702,12 @@ Annotations drive cross-cutting features. They are typed for clarity.
 ```go
 func (User) Annotations() []dsl.Annotation {
     return []dsl.Annotation{
+        dsl.Authorization(dsl.AuthRules{
+            Read:   dsl.RequireAuth(),
+            Create: dsl.AdminOnly(),
+            Update: dsl.RequireRole("ADMIN"),
+            Delete: dsl.AdminOnly(),
+        }),
         dsl.GraphQL("User").
             Description("A registered account").
             Implements("Node").
@@ -717,7 +723,7 @@ func (User) Annotations() []dsl.Annotation {
 Common annotations:
 
 - `dsl.GraphQL(name)` – Override type name, descriptions, expose/hide fields, configure custom payload fragments.
-- `dsl.Authz()` – Attach `@auth` directives, role requirements, or viewer capabilities used by GraphQL resolvers.
+- `dsl.Authorization(rules)` – Attach `@auth` directives by declaring CRUD-specific requirements with helpers like `dsl.RequireAuth()` or `dsl.PublicAccess()`.
 - `dsl.Observability()` – Emit spans/log fields when the entity is loaded or mutated.
 - `dsl.Extension(name)` – Enable Postgres extensions automatically in migrations (`vector`, `postgis`, `timescaledb`).
 

@@ -200,17 +200,19 @@ func renderEntityInputTypes(ent Entity) string {
 func renderEntityQueryFields(ent Entity) []string {
 	plural := lowerCamel(pluralize(ent.Name))
 	singular := lowerCamel(ent.Name)
-	return []string{
-		fmt.Sprintf("%s(id: ID!): %s", singular, ent.Name),
-		fmt.Sprintf("%s(first: Int, after: String, last: Int, before: String): %sConnection!", plural, ent.Name),
+	rule := ent.Authorization.Read
+	fields := []string{
+		appendAuthDirective(fmt.Sprintf("%s(id: ID!): %s", singular, ent.Name), rule),
+		appendAuthDirective(fmt.Sprintf("%s(first: Int, after: String, last: Int, before: String): %sConnection!", plural, ent.Name), rule),
 	}
+	return fields
 }
 
 func renderEntityMutationFields(ent Entity) []string {
 	return []string{
-		fmt.Sprintf("create%s(input: Create%sInput!): Create%sPayload!", ent.Name, ent.Name, ent.Name),
-		fmt.Sprintf("update%s(input: Update%sInput!): Update%sPayload!", ent.Name, ent.Name, ent.Name),
-		fmt.Sprintf("delete%s(input: Delete%sInput!): Delete%sPayload!", ent.Name, ent.Name, ent.Name),
+		appendAuthDirective(fmt.Sprintf("create%s(input: Create%sInput!): Create%sPayload!", ent.Name, ent.Name, ent.Name), ent.Authorization.Create),
+		appendAuthDirective(fmt.Sprintf("update%s(input: Update%sInput!): Update%sPayload!", ent.Name, ent.Name, ent.Name), ent.Authorization.Update),
+		appendAuthDirective(fmt.Sprintf("delete%s(input: Delete%sInput!): Delete%sPayload!", ent.Name, ent.Name, ent.Name), ent.Authorization.Delete),
 	}
 }
 
@@ -224,14 +226,46 @@ func renderEntitySubscriptionFields(ent Entity) []string {
 	for _, event := range events {
 		switch event {
 		case dsl.SubscriptionEventCreate:
-			fields = append(fields, fmt.Sprintf("%sCreated: %s!", prefix, ent.Name))
+			fields = append(fields, appendAuthDirective(fmt.Sprintf("%sCreated: %s!", prefix, ent.Name), ent.Authorization.Create))
 		case dsl.SubscriptionEventUpdate:
-			fields = append(fields, fmt.Sprintf("%sUpdated: %s!", prefix, ent.Name))
+			fields = append(fields, appendAuthDirective(fmt.Sprintf("%sUpdated: %s!", prefix, ent.Name), ent.Authorization.Update))
 		case dsl.SubscriptionEventDelete:
-			fields = append(fields, fmt.Sprintf("%sDeleted: ID!", prefix))
+			fields = append(fields, appendAuthDirective(fmt.Sprintf("%sDeleted: ID!", prefix), ent.Authorization.Delete))
 		}
 	}
 	return fields
+}
+
+func appendAuthDirective(def string, rule *dsl.AuthRule) string {
+	directive := buildAuthDirective(rule)
+	if directive == "" {
+		return def
+	}
+	return def + " " + directive
+}
+
+func buildAuthDirective(rule *dsl.AuthRule) string {
+	if rule == nil {
+		return ""
+	}
+	requirement := rule.Requirement
+	if requirement == "" || requirement == dsl.AuthRequirementPublic {
+		return ""
+	}
+	if len(rule.Roles) == 0 {
+		return "@auth"
+	}
+	roles := make([]string, 0, len(rule.Roles))
+	for _, role := range rule.Roles {
+		if strings.TrimSpace(role) == "" {
+			continue
+		}
+		roles = append(roles, fmt.Sprintf("\"%s\"", role))
+	}
+	if len(roles) == 0 {
+		return "@auth"
+	}
+	return fmt.Sprintf("@auth(roles: [%s])", strings.Join(roles, ", "))
 }
 
 func entitySubscriptionEvents(ent Entity) []dsl.SubscriptionEvent {

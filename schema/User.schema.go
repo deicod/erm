@@ -37,6 +37,7 @@ func (User) Query() dsl.QuerySpec {
 
 func (User) Annotations() []dsl.Annotation {
 	return []dsl.Annotation{
+		dsl.Authorization(dsl.ContentAuth()),
 		dsl.GraphQL("User",
 			dsl.GraphQLSubscriptions(
 				dsl.SubscriptionEventCreate,
