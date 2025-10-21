@@ -33,7 +33,7 @@ func runGQLGenInternal(root string) error {
 	}
 	cfg.SkipValidation = true
 	if err := api.Generate(cfg); err != nil {
-		return err
+		return rewriteGQLGenError(err)
 	}
 	if err := patchJSONScalarWrappers(root); err != nil {
 		return err
@@ -95,4 +95,22 @@ func runGoModTidy(root string, env []string) (string, error) {
 	cmd.Env = env
 	output, err := cmd.CombinedOutput()
 	return string(output), err
+}
+
+func rewriteGQLGenError(err error) error {
+	msg := err.Error()
+	const marker = "FindObject for type:"
+	if strings.Contains(msg, marker) {
+		idx := strings.Index(msg, marker)
+		scalar := strings.TrimSpace(msg[idx+len(marker):])
+		if newline := strings.IndexByte(scalar, '\n'); newline >= 0 {
+			scalar = scalar[:newline]
+		}
+		scalar = strings.TrimSuffix(scalar, ".")
+		if scalar == "" {
+			return fmt.Errorf("gqlgen: failed to resolve Go type for a custom scalar; ensure graphql/gqlgen.yml maps each scalar to a Go type or rerun `erm graphql init`: %w", err)
+		}
+		return fmt.Errorf("gqlgen: failed to resolve Go type %q for a custom scalar. Update graphql/gqlgen.yml to map it to a Go type (rerun `erm graphql init` to restore defaults): %w", scalar, err)
+	}
+	return err
 }
