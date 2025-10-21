@@ -30,6 +30,8 @@ Keep this cheat sheet open while editing files under `schema/*.schema.go`. It li
 | `dsl.Geometry`, `dsl.Geography`, `dsl.Vector` | PostGIS / pgvector | Ensure the corresponding extension flag is enabled in `erm.yaml`.
 | Range helpers (`dsl.Int4Range`, `dsl.TSRange`, …) | Range types | Use for temporal windows or numeric intervals.
 
+> Tip: If gqlgen raises `package cannot be nil in FindObject for type: int64` after introducing a `dsl.BigInt` field, re-run `erm graphql init` to restore the scalar mappings or update `graphql/gqlgen.yml` so that `BigInt` maps to a Go type such as `int64`.
+
 ### Field type constants
 
 Use `dsl.Type*` constants when a modifier expects a field type (for example `ArrayElement`). Common values include `dsl.TypeText`, `dsl.TypeUUID`, `dsl.TypeInteger`, `dsl.TypeTimestampTZ`, and `dsl.TypeJSONB`. This cheat sheet ships with `erm init`; peek at the generator tests for the exhaustive list.
@@ -102,7 +104,7 @@ Use `dsl.Type*` constants when a modifier expects a field type (for example `Arr
 
 | Helper | Description |
 | ------ | ----------- |
-| `dsl.GraphQL("FieldName", options...)` | Registers an entity in the GraphQL schema. Options include `dsl.GraphQLRelayConnection()` and `dsl.GraphQLDisableMutations()`.
+| `dsl.GraphQL("FieldName", options...)` | Registers an entity in the GraphQL schema. Options include `dsl.GraphQLDisableMutations()`. Relay helpers such as `dsl.GraphQLRelayConnection()` will land in a future release.
 | `dsl.GraphQLSubscriptions(dsl.SubscriptionEventCreate, ...)` | Enables subscription events per entity.
 | `dsl.Expression("SELECT ...", deps...)` | Describes SQL snippets referenced by computed columns.
 | `dsl.Computed(expr)` | Wraps a computed expression descriptor for reuse in `.Computed()` field modifiers.

@@ -159,20 +159,19 @@ func printMigrationSummary(out io.Writer, opts generator.GenerateOptions, result
 	if len(result.Migration.Files) > 0 {
 		if len(result.Migration.Files) == 1 {
 			file := result.Migration.Files[0]
-			name := file.Name
-			if name == "" && file.Path != "" {
-				name = filepath.Base(file.Path)
-			}
+			name := displayMigrationName(file)
 			fmt.Fprintf(out, "generator: wrote migration %s\n", name)
 			return
 		}
 		fmt.Fprintln(out, "generator: wrote migrations:")
 		for _, file := range result.Migration.Files {
-			name := file.Name
-			if name == "" && file.Path != "" {
-				name = filepath.Base(file.Path)
+			fmt.Fprintf(out, "  - %s\n", displayMigrationName(file))
+		}
+		if groups := summarizeMigrationGroups(result.Migration.Files); len(groups) > 0 {
+			fmt.Fprintln(out, "generator: migration groups:")
+			for _, group := range groups {
+				fmt.Fprintf(out, "  - %s (%d): %s\n", group.Name, len(group.Files), strings.Join(group.Files, ", "))
 			}
-			fmt.Fprintf(out, "  - %s\n", name)
 		}
 		return
 	}
@@ -198,6 +197,124 @@ func renderFallbackSQL(ops []generator.Operation) string {
 		}
 	}
 	return b.String()
+}
+
+type migrationGroupSummary struct {
+	Name  string
+	Files []string
+}
+
+func summarizeMigrationGroups(files []generator.MigrationFile) []migrationGroupSummary {
+	if len(files) < 2 {
+		return nil
+	}
+	order := make([]string, 0)
+	grouped := make(map[string][]string)
+	hasSharedPrefix := false
+	for _, file := range files {
+		slug := migrationSlug(displayMigrationName(file))
+		key := migrationGroupKey(slug)
+		if key == "" {
+			key = "schema"
+		}
+		if _, ok := grouped[key]; !ok {
+			order = append(order, key)
+		}
+		short := shortMigrationName(file)
+		grouped[key] = append(grouped[key], short)
+		if len(grouped[key]) > 1 {
+			hasSharedPrefix = true
+		}
+	}
+	if !hasSharedPrefix && len(grouped) == len(files) {
+		return nil
+	}
+	summaries := make([]migrationGroupSummary, 0, len(order))
+	for _, key := range order {
+		summaries = append(summaries, migrationGroupSummary{Name: key, Files: grouped[key]})
+	}
+	return summaries
+}
+
+func displayMigrationName(file generator.MigrationFile) string {
+	if file.Name != "" {
+		return file.Name
+	}
+	if file.Path != "" {
+		return filepath.Base(file.Path)
+	}
+	return "(migration)"
+}
+
+func shortMigrationName(file generator.MigrationFile) string {
+	name := displayMigrationName(file)
+	slug := migrationSlug(name)
+	if slug == "" {
+		return name
+	}
+	ext := filepath.Ext(name)
+	if ext != "" {
+		return slug + ext
+	}
+	return slug
+}
+
+var migrationVerbPrefixes = map[string]struct{}{
+	"add":    {},
+	"alter":  {},
+	"create": {},
+	"drop":   {},
+	"remove": {},
+	"rename": {},
+	"update": {},
+}
+
+func migrationGroupKey(slug string) string {
+	if slug == "" {
+		return ""
+	}
+	parts := strings.Split(slug, "_")
+	if len(parts) == 0 {
+		return slug
+	}
+	if _, isVerb := migrationVerbPrefixes[parts[0]]; isVerb && len(parts) > 1 {
+		return parts[1]
+	}
+	return parts[0]
+}
+
+func migrationSlug(name string) string {
+	if name == "" {
+		return ""
+	}
+	ext := filepath.Ext(name)
+	base := name
+	if ext != "" {
+		base = strings.TrimSuffix(name, ext)
+	}
+	parts := strings.SplitN(base, "_", 2)
+	if len(parts) == 2 && isDigits(parts[0]) {
+		return parts[1]
+	}
+	if len(parts) == 2 {
+		return parts[1]
+	}
+	if len(parts) == 1 && !isDigits(parts[0]) {
+		return parts[0]
+	}
+	return base
+}
+
+func isDigits(input string) bool {
+	if input == "" {
+		return false
+	}
+	for _, r := range input {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func runWatch(cmd *cobra.Command, opts generator.GenerateOptions, showDiff bool) error {

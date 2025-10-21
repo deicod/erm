@@ -184,6 +184,8 @@ PostgreSQL column families map to dedicated helpers. Unless you override `GoType
 | `dsl.DoublePrecision(name)` | `double precision` | `float64` | `Float` |
 | `dsl.Money(name)` | `money` | `string` | `Money` |
 
+If gqlgen reports `package cannot be nil in FindObject for type: int64` while using `dsl.BigInt`, refresh the default scalar mappings with `erm graphql init` or verify that `graphql/gqlgen.yml` maps the `BigInt` scalar to a Go type (typically `int64`).
+
 Use `dsl.IdentityAlways` or `dsl.IdentityByDefault` as the second parameter when you need identity columns. When omitted, identity helpers default to `BY DEFAULT` semantics.
 
 #### Temporal

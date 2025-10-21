@@ -201,6 +201,42 @@ func TestGenCmdDryRunDiffSummary(t *testing.T) {
 	}
 }
 
+func TestGenCmdPrintsMigrationGroups(t *testing.T) {
+	original := runGenerator
+	defer func() { runGenerator = original }()
+
+	runGenerator = func(root string, opts generator.GenerateOptions) (generator.RunResult, error) {
+		return generator.RunResult{
+			Migration: generator.MigrationResult{
+				Files: []generator.MigrationFile{
+					{Name: "20240101000000_post_01.sql"},
+					{Name: "20240101000000_post_02.sql"},
+					{Name: "20240101000000_comment.sql"},
+				},
+			},
+		}, nil
+	}
+
+	cmd := newGenCmd()
+	buf := &bytes.Buffer{}
+	cmd.SetOut(buf)
+
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("run gen: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "generator: migration groups:") {
+		t.Fatalf("expected migration group summary, got:\n%s", output)
+	}
+	if !strings.Contains(output, "  - post (2): post_01.sql, post_02.sql") {
+		t.Fatalf("expected post group summary, got:\n%s", output)
+	}
+	if !strings.Contains(output, "  - comment (1): comment.sql") {
+		t.Fatalf("expected comment group summary, got:\n%s", output)
+	}
+}
+
 func TestGenCmdRejectsUnknownComponent(t *testing.T) {
 	cmd := newGenCmd()
 	if err := cmd.Flags().Set("only", "foo"); err != nil {
