@@ -11,19 +11,6 @@ type PageInfo {
 
 directive @auth(roles: [String!]) on FIELD_DEFINITION
 
-type Query {
-  node(id: ID!): Node
-  health: String!
-}
-
-type Mutation {
-  _noop: Boolean
-}
-
-type Subscription {
-  _noop: Boolean
-}
-
 # BEGIN GENERATED
 scalar Timestamptz
 
@@ -78,18 +65,22 @@ type DeleteUserPayload {
   deletedUserID: ID!
 }
 
-extend type Query {
+type Query {
+  node(id: ID!): Node
+  health: String!
   user(id: ID!): User
   users(first: Int, after: String, last: Int, before: String): UserConnection!
 }
 
-extend type Mutation {
+type Mutation {
+  _noop: Boolean
   createUser(input: CreateUserInput!): CreateUserPayload!
   updateUser(input: UpdateUserInput!): UpdateUserPayload!
   deleteUser(input: DeleteUserInput!): DeleteUserPayload!
 }
 
-extend type Subscription {
+type Subscription {
+  _noop: Boolean
   userCreated: User!
   userUpdated: User!
   userDeleted: ID!
