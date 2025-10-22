@@ -46,72 +46,118 @@ func writeGraphQLSchema(root string, entities []Entity) error {
 }
 
 func buildGraphQLGeneratedSection(entities []Entity) string {
-	if len(entities) == 0 {
-		return "# No entities defined"
-	}
 	sort.Slice(entities, func(i, j int) bool { return entities[i].Name < entities[j].Name })
 	builder := &strings.Builder{}
 
+	if len(entities) == 0 {
+		builder.WriteString("# No entities defined\n")
+	}
+
+	needsSeparator := builder.Len() > 0
+
 	scalars := collectCustomScalars(entities)
 	if len(scalars) > 0 {
+		if needsSeparator {
+			builder.WriteString("\n")
+		}
 		for _, scalar := range scalars {
 			builder.WriteString(fmt.Sprintf("scalar %s\n", scalar))
 		}
-		builder.WriteString("\n")
+		needsSeparator = true
 	}
 
 	enums := collectGraphQLEnums(entities)
 	if len(enums) > 0 {
+		if needsSeparator {
+			builder.WriteString("\n")
+		}
 		names := make([]string, 0, len(enums))
 		for name := range enums {
 			names = append(names, name)
 		}
 		sort.Strings(names)
-		for _, name := range names {
+		for i, name := range names {
 			builder.WriteString(fmt.Sprintf("enum %s {\n", name))
 			for _, value := range enums[name] {
 				builder.WriteString(fmt.Sprintf("  %s\n", value))
 			}
-			builder.WriteString("}\n\n")
+			builder.WriteString("}\n")
+			if i < len(names)-1 {
+				builder.WriteString("\n")
+			}
 		}
+		needsSeparator = true
 	}
 
-	queryFields := make([]string, 0, len(entities)*2)
-	mutationFields := make([]string, 0, len(entities)*3)
-	subscriptionFields := make([]string, 0, len(entities)*3)
+	queryEntityFields := make([]string, 0, len(entities)*2)
+	mutationEntityFields := make([]string, 0, len(entities)*3)
+	subscriptionEntityFields := make([]string, 0, len(entities)*3)
 	for _, ent := range entities {
+		if needsSeparator {
+			builder.WriteString("\n")
+		}
 		builder.WriteString(renderEntityType(ent))
 		builder.WriteString("\n")
 		builder.WriteString(renderConnectionTypes(ent))
 		builder.WriteString("\n")
 		builder.WriteString(renderEntityInputTypes(ent))
 		builder.WriteString("\n")
-		queryFields = append(queryFields, renderEntityQueryFields(ent)...)
-		mutationFields = append(mutationFields, renderEntityMutationFields(ent)...)
-		subscriptionFields = append(subscriptionFields, renderEntitySubscriptionFields(ent)...)
-	}
-	if len(queryFields) > 0 {
-		builder.WriteString("extend type Query {\n")
-		for _, field := range queryFields {
-			builder.WriteString(fmt.Sprintf("  %s\n", field))
-		}
-		builder.WriteString("}\n")
-	}
-	if len(mutationFields) > 0 {
-		builder.WriteString("\nextend type Mutation {\n")
-		for _, field := range mutationFields {
-			builder.WriteString(fmt.Sprintf("  %s\n", field))
-		}
-		builder.WriteString("}\n")
-	}
-	if len(subscriptionFields) > 0 {
-		builder.WriteString("\nextend type Subscription {\n")
-		for _, field := range subscriptionFields {
-			builder.WriteString(fmt.Sprintf("  %s\n", field))
-		}
-		builder.WriteString("}\n")
+		queryEntityFields = append(queryEntityFields, renderEntityQueryFields(ent)...)
+		mutationEntityFields = append(mutationEntityFields, renderEntityMutationFields(ent)...)
+		subscriptionEntityFields = append(subscriptionEntityFields, renderEntitySubscriptionFields(ent)...)
+		needsSeparator = true
 	}
 
+	rootBlocks := []string{
+		renderRootTypeDefinition("Query", baseQueryFields, queryEntityFields),
+		renderRootTypeDefinition("Mutation", baseMutationFields, mutationEntityFields),
+		renderRootTypeDefinition("Subscription", baseSubscriptionFields, subscriptionEntityFields),
+	}
+
+	nonEmpty := make([]string, 0, len(rootBlocks))
+	for _, block := range rootBlocks {
+		if block == "" {
+			continue
+		}
+		nonEmpty = append(nonEmpty, block)
+	}
+
+	if len(nonEmpty) > 0 {
+		if needsSeparator {
+			builder.WriteString("\n\n")
+		}
+		builder.WriteString(strings.Join(nonEmpty, "\n"))
+	}
+
+	return builder.String()
+}
+
+var (
+	baseQueryFields = []string{
+		"node(id: ID!): Node",
+		"health: String!",
+	}
+	baseMutationFields = []string{
+		"_noop: Boolean",
+	}
+	baseSubscriptionFields = []string{
+		"_noop: Boolean",
+	}
+)
+
+func renderRootTypeDefinition(name string, baseFields, entityFields []string) string {
+	combined := make([]string, 0, len(baseFields)+len(entityFields))
+	combined = append(combined, baseFields...)
+	combined = append(combined, entityFields...)
+	if len(combined) == 0 {
+		return ""
+	}
+	builder := &strings.Builder{}
+	fmt.Fprintf(builder, "type %s {\n", name)
+	for _, field := range combined {
+		builder.WriteString(fmt.Sprintf("  %s\n", field))
+	}
+	builder.WriteString("}\n")
 	return builder.String()
 }
 
@@ -1386,17 +1432,4 @@ type PageInfo {
   endCursor: String
 }
 
-directive @auth(roles: [String!]) on FIELD_DEFINITION
-
-type Query {
-  node(id: ID!): Node
-  health: String!
-}
-
-type Mutation {
-  _noop: Boolean
-}
-
-type Subscription {
-  _noop: Boolean
-}`
+directive @auth(roles: [String!]) on FIELD_DEFINITION`
