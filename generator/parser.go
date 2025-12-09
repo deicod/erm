@@ -16,6 +16,8 @@ import (
 	"github.com/deicod/erm/orm/dsl"
 )
 
+const generatedInverseAnnotation = "erm:generated_inverse"
+
 // SchemaDiscoveryError captures failures while attempting to load user-authored schema files.
 type SchemaDiscoveryError struct {
 	Path   string
@@ -173,13 +175,13 @@ func loadEntities(root string) ([]Entity, error) {
 		ensureDefaultField(&out[i])
 		ensureDefaultQuery(&out[i])
 	}
-    synthesizeInverseEdges(out)
-    assignEnumMetadata(out)
-    assignAuthorizationMetadata(out)
-    if err := validateEntities(out); err != nil {
-            return nil, err
-    }
-    return out, nil
+	synthesizeInverseEdges(out)
+	assignEnumMetadata(out)
+	assignAuthorizationMetadata(out)
+	if err := validateEntities(out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func discoverSchemaFiles(schemaDir string) ([]string, error) {
@@ -1278,6 +1280,16 @@ func buildInverseEdge(source Entity, edge dsl.Edge) dsl.Edge {
 	}
 	if len(edge.PolymorphicTargets) > 0 {
 		inverse.PolymorphicTargets = append([]dsl.EdgeTarget(nil), edge.PolymorphicTargets...)
+	}
+	if len(edge.Annotations) > 0 {
+		ann := make(map[string]any, len(edge.Annotations)+1)
+		for k, v := range edge.Annotations {
+			ann[k] = v
+		}
+		ann[generatedInverseAnnotation] = true
+		inverse.Annotations = ann
+	} else {
+		inverse.Annotations = map[string]any{generatedInverseAnnotation: true}
 	}
 	switch edge.Kind {
 	case dsl.EdgeToOne:

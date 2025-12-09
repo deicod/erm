@@ -25,7 +25,11 @@ type User struct{ dsl.Schema }
 
 type Pet struct{ dsl.Schema }
 
-func (User) Fields() []dsl.Field { return nil }
+func (User) Fields() []dsl.Field {
+        return []dsl.Field{
+                dsl.UUIDv7("id").Primary(),
+        }
+}
 func (User) Edges() []dsl.Edge {
         return []dsl.Edge{
                 dsl.ToMany("pets", "Pet").Inverse("owner"),
@@ -241,7 +245,7 @@ func (User) Indexes() []dsl.Index { return nil }
 func (Tenant) Fields() []dsl.Field {
         return []dsl.Field{
                 dsl.UUIDv7("id").Primary(),
-                dsl.UUIDv7("tenant_owner"),
+                dsl.UUIDv7("tenant_owner").Optional(),
         }
 }
 func (Tenant) Edges() []dsl.Edge {
@@ -254,7 +258,7 @@ func (Tenant) Indexes() []dsl.Index { return nil }
 func (Order) Fields() []dsl.Field {
         return []dsl.Field{
                 dsl.UUIDv7("id").Primary(),
-                dsl.UUIDv7("customer_fk"),
+                dsl.UUIDv7("customer_fk").Optional(),
         }
 }
 func (Order) Edges() []dsl.Edge { return nil }
