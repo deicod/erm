@@ -577,6 +577,10 @@ func (r *observedRow) Scan(dest ...any) error {
 				if fbObs.Context() != nil {
 					fbObs.End(fbErr)
 				}
+				// If fallback setup failed, we must still close the original observation
+				// with the original error.
+				r.obs.End(err)
+				r.obs = runtime.QueryObservation{}
 				return
 			}
 			r.obs.End(err)
