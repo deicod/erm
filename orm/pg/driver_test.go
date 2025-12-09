@@ -326,3 +326,99 @@ func (r stubRow) Scan(dest ...any) error {
 	}
 	return r.err
 }
+
+type capturingLogger struct {
+	logs []runtime.QueryLog
+}
+
+func (c *capturingLogger) LogQuery(ctx context.Context, entry runtime.QueryLog) {
+	c.logs = append(c.logs, entry)
+}
+
+func TestReplicaFallbackSetupFailureEndsOriginalObservationCorrectly(t *testing.T) {
+	// 1. Setup mocks
+	replicaRows := &stubRow{err: errors.New("replica failure")}
+	replica := &fakePool{
+		queryRowFunc: func(ctx context.Context, sql string, args ...any) pgx.Row {
+			return replicaRows
+		},
+	}
+
+	primary := &fakePool{
+		// Should not be called because we will remove it before fallback
+	}
+
+	logger := &capturingLogger{}
+	observer := runtime.QueryObserver{
+		Logger: logger,
+	}
+
+	db := &DB{
+		Pool:     primary,
+		writer:   primary,
+		replicas: []*replicaPool{{name: "replica-a", pool: replica, config: ReplicaConfig{ReadOnly: true}}},
+		Observer: observer,
+		healthCheck: func(context.Context, Pool) (ReplicaHealthReport, error) {
+			return ReplicaHealthReport{ReadOnly: true}, nil
+		},
+		healthProbeSQL: "SELECT 1",
+		healthInterval: time.Hour,
+	}
+
+	// 2. Execute QueryRow (selects replica)
+	// We use WithReplicaRead to force replica usage
+	row := db.QueryRow(WithReplicaRead(context.Background(), ReplicaReadOptions{}), "users", "SELECT 1")
+
+	// 3. Sabotage primary to cause fallback setup failure
+	db.Pool = nil
+	db.writer = nil
+
+	// 4. Scan (triggers fallback)
+	var val int
+	err := row.Scan(&val)
+
+	// 5. Verify errors
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	expectedFbErr := "pg: primary pool unavailable for failover"
+	if err.Error() != expectedFbErr {
+		t.Fatalf("expected error %q, got %q", expectedFbErr, err.Error())
+	}
+
+	// 6. Verify logs
+	// Filter out health check logs
+	var relevantLogs []runtime.QueryLog
+	for _, l := range logger.logs {
+		if l.Table != "pg_replica_health" {
+			relevantLogs = append(relevantLogs, l)
+		}
+	}
+
+	if len(relevantLogs) != 2 {
+		for i, l := range relevantLogs {
+			t.Logf("Log %d: table=%s op=%s err=%v", i, l.Table, l.Operation, l.Err)
+		}
+		t.Fatalf("expected 2 relevant logs, got %d", len(relevantLogs))
+	}
+
+	// Log 0: Fallback attempt (Obs2)
+	logObs2 := relevantLogs[0]
+	if logObs2.Err == nil || logObs2.Err.Error() != expectedFbErr {
+		t.Errorf("log[0] (fallback attempt) should have error %q, got %v", expectedFbErr, logObs2.Err)
+	}
+
+	// Log 1: Original attempt (Obs1)
+	logObs1 := relevantLogs[1]
+	if logObs1.Err == nil {
+		t.Fatal("log[1] (original query) error is nil")
+	}
+
+	// Check if it has the original error
+	originalErr := "replica failure"
+	if logObs1.Err.Error() != originalErr {
+		t.Fatalf("BUG FOUND: log[1] (original query) has error %q, expected %q", logObs1.Err.Error(), originalErr)
+	} else {
+		t.Log("Original query correctly logged with original error")
+	}
+}
