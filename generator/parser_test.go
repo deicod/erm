@@ -229,7 +229,11 @@ type Tenant struct{ dsl.Schema }
 
 type Order struct{ dsl.Schema }
 
-func (User) Fields() []dsl.Field { return nil }
+func (User) Fields() []dsl.Field {
+        return []dsl.Field{
+                dsl.UUIDv7("id").Primary(),
+        }
+}
 func (User) Edges() []dsl.Edge {
         return []dsl.Edge{
                 dsl.ToMany("orders", "Order").Ref("customer_fk").Inverse("customer"),

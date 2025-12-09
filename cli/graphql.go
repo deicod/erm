@@ -106,6 +106,10 @@ type Query {
 type Mutation {
   _noop: Boolean
 }
+
+type Subscription {
+  _noop: Boolean
+}
 `
 
 func renderGraphQLRuntimeTemplates(modulePath string) (map[string][]byte, error) {

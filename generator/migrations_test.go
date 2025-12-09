@@ -11,6 +11,17 @@ import (
 	"github.com/deicod/erm/orm/dsl"
 )
 
+func combinedSQL(res MigrationResult) string {
+	var b strings.Builder
+	for _, file := range res.Files {
+		b.WriteString(file.SQL)
+		if !strings.HasSuffix(file.SQL, "\n") {
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
 func TestGenerateMigrations_TableAddition(t *testing.T) {
 	root := t.TempDir()
 	base := []Entity{{
@@ -32,16 +43,75 @@ func TestGenerateMigrations_TableAddition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("table addition: %v", err)
 	}
-	if res.FilePath == "" {
+	if len(res.Files) == 0 {
 		t.Fatalf("expected migration file to be written")
 	}
-	sql := readSQL(t, res.FilePath)
+	sql := readSQL(t, res.Files[0].Path)
 	if !strings.Contains(sql, "CREATE TABLE posts") {
 		t.Fatalf("expected migration to create posts table, got:\n%s", sql)
 	}
 	snap := mustLoadSnapshot(t, root)
 	if !snapshotHasTable(snap, "posts") {
 		t.Fatalf("expected snapshot to contain posts table, got %#v", snap.Tables)
+	}
+}
+
+func TestGenerateMigrations_SplitsOperationsByTarget(t *testing.T) {
+	root := t.TempDir()
+	base := []Entity{{
+		Name:   "User",
+		Fields: []dsl.Field{dsl.UUIDv7("id").Primary()},
+	}}
+	if _, err := generateMigrations(root, base, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 1, 5, 0, 0, 0)}); err != nil {
+		t.Fatalf("initial migration: %v", err)
+	}
+
+	updated := []Entity{
+		{
+			Name: "User",
+			Fields: []dsl.Field{
+				dsl.UUIDv7("id").Primary(),
+				dsl.Text("bio").Optional(),
+			},
+		},
+		{
+			Name: "Post",
+			Fields: []dsl.Field{
+				dsl.UUIDv7("id").Primary(),
+				dsl.UUIDv7("author_id"),
+			},
+			Edges: []dsl.Edge{
+				dsl.ToOne("author", "User").Field("author_id"),
+			},
+		},
+	}
+
+	res, err := generateMigrations(root, updated, generatorOptions{GenerateOptions: GenerateOptions{}, Now: fixedClock(2024, 1, 5, 1, 0, 0)})
+	if err != nil {
+		t.Fatalf("multi-target migration: %v", err)
+	}
+	if len(res.Files) < 2 {
+		t.Fatalf("expected multiple migration files, got %d", len(res.Files))
+	}
+
+	var userSQL, postSQL string
+	for _, file := range res.Files {
+		sql := file.SQL
+		if strings.Contains(sql, "ALTER TABLE users") {
+			userSQL = sql
+		}
+		if strings.Contains(sql, "CREATE TABLE posts") {
+			postSQL = sql
+		}
+	}
+	if userSQL == "" {
+		t.Fatalf("expected a users migration segment, got files: %#v", res.Files)
+	}
+	if postSQL == "" {
+		t.Fatalf("expected a posts migration segment, got files: %#v", res.Files)
+	}
+	if strings.Contains(postSQL, "ALTER TABLE users") {
+		t.Fatalf("expected post migration segment to exclude user operations:\n%s", postSQL)
 	}
 }
 
@@ -78,7 +148,7 @@ func TestGenerateMigrations_DefersForeignKeysUntilTablesExist(t *testing.T) {
 		t.Fatalf("follow-up migration: %v", err)
 	}
 
-	sql := res.SQL
+	sql := combinedSQL(res)
 	postCreate := strings.Index(sql, "CREATE TABLE posts")
 	if postCreate == -1 {
 		t.Fatalf("expected SQL to create posts table, got:\n%s", sql)
@@ -110,8 +180,8 @@ func TestGenerateMigrations_ColumnDiffs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add column: %v", err)
 	}
-	if !strings.Contains(addRes.SQL, "ALTER TABLE users ADD COLUMN email text") {
-		t.Fatalf("expected add column SQL, got:\n%s", addRes.SQL)
+	if !strings.Contains(combinedSQL(addRes), "ALTER TABLE users ADD COLUMN email text") {
+		t.Fatalf("expected add column SQL, got:\n%s", combinedSQL(addRes))
 	}
 	snap := mustLoadSnapshot(t, root)
 	user := mustFindTable(t, snap, "users")
@@ -127,11 +197,11 @@ func TestGenerateMigrations_ColumnDiffs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("modify column: %v", err)
 	}
-	if !strings.Contains(modRes.SQL, "ALTER TABLE users ALTER COLUMN email TYPE varchar(128);") {
-		t.Fatalf("expected type alteration SQL, got:\n%s", modRes.SQL)
+	if !strings.Contains(combinedSQL(modRes), "ALTER TABLE users ALTER COLUMN email TYPE varchar(128);") {
+		t.Fatalf("expected type alteration SQL, got:\n%s", combinedSQL(modRes))
 	}
-	if !strings.Contains(modRes.SQL, "ALTER TABLE users ALTER COLUMN email SET NOT NULL;") {
-		t.Fatalf("expected not-null alteration SQL, got:\n%s", modRes.SQL)
+	if !strings.Contains(combinedSQL(modRes), "ALTER TABLE users ALTER COLUMN email SET NOT NULL;") {
+		t.Fatalf("expected not-null alteration SQL, got:\n%s", combinedSQL(modRes))
 	}
 	snap = mustLoadSnapshot(t, root)
 	user = mustFindTable(t, snap, "users")
@@ -151,8 +221,8 @@ func TestGenerateMigrations_ColumnDiffs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("drop column: %v", err)
 	}
-	if !strings.Contains(dropRes.SQL, "ALTER TABLE users DROP COLUMN IF EXISTS email CASCADE;") {
-		t.Fatalf("expected drop column SQL, got:\n%s", dropRes.SQL)
+	if !strings.Contains(combinedSQL(dropRes), "ALTER TABLE users DROP COLUMN IF EXISTS email CASCADE;") {
+		t.Fatalf("expected drop column SQL, got:\n%s", combinedSQL(dropRes))
 	}
 	snap = mustLoadSnapshot(t, root)
 	user = mustFindTable(t, snap, "users")
@@ -188,8 +258,8 @@ func TestGenerateMigrations_IndexDiffs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add index: %v", err)
 	}
-	if !strings.Contains(addRes.SQL, "CREATE INDEX IF NOT EXISTS users_email_idx ON users (email);") {
-		t.Fatalf("expected create index SQL, got:\n%s", addRes.SQL)
+	if !strings.Contains(combinedSQL(addRes), "CREATE INDEX IF NOT EXISTS users_email_idx ON users (email);") {
+		t.Fatalf("expected create index SQL, got:\n%s", combinedSQL(addRes))
 	}
 	snap := mustLoadSnapshot(t, root)
 	user := mustFindTable(t, snap, "users")
@@ -211,11 +281,11 @@ func TestGenerateMigrations_IndexDiffs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("modify index: %v", err)
 	}
-	if !strings.Contains(modRes.SQL, "DROP INDEX IF EXISTS users_email_idx;") {
-		t.Fatalf("expected drop index SQL, got:\n%s", modRes.SQL)
+	if !strings.Contains(combinedSQL(modRes), "DROP INDEX IF EXISTS users_email_idx;") {
+		t.Fatalf("expected drop index SQL, got:\n%s", combinedSQL(modRes))
 	}
-	if !strings.Contains(modRes.SQL, "CREATE UNIQUE INDEX IF NOT EXISTS users_email_idx ON users (email);") {
-		t.Fatalf("expected recreate unique index SQL, got:\n%s", modRes.SQL)
+	if !strings.Contains(combinedSQL(modRes), "CREATE UNIQUE INDEX IF NOT EXISTS users_email_idx ON users (email);") {
+		t.Fatalf("expected recreate unique index SQL, got:\n%s", combinedSQL(modRes))
 	}
 	snap = mustLoadSnapshot(t, root)
 	user = mustFindTable(t, snap, "users")
@@ -229,8 +299,8 @@ func TestGenerateMigrations_IndexDiffs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("drop index: %v", err)
 	}
-	if !strings.Contains(dropRes.SQL, "DROP INDEX IF EXISTS users_email_idx;") {
-		t.Fatalf("expected drop index SQL, got:\n%s", dropRes.SQL)
+	if !strings.Contains(combinedSQL(dropRes), "DROP INDEX IF EXISTS users_email_idx;") {
+		t.Fatalf("expected drop index SQL, got:\n%s", combinedSQL(dropRes))
 	}
 	snap = mustLoadSnapshot(t, root)
 	user = mustFindTable(t, snap, "users")
@@ -269,8 +339,8 @@ func TestGenerateMigrations_JoinTableDiffs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("add join table: %v", err)
 	}
-	if !strings.Contains(addRes.SQL, "CREATE TABLE groups_users") {
-		t.Fatalf("expected join table creation, got:\n%s", addRes.SQL)
+	if !strings.Contains(combinedSQL(addRes), "CREATE TABLE groups_users") {
+		t.Fatalf("expected join table creation, got:\n%s", combinedSQL(addRes))
 	}
 	snap := mustLoadSnapshot(t, root)
 	if !snapshotHasJoinTable(snap, "groups_users") {
@@ -281,8 +351,8 @@ func TestGenerateMigrations_JoinTableDiffs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("drop join table: %v", err)
 	}
-	if !strings.Contains(dropRes.SQL, "DROP TABLE IF EXISTS groups_users CASCADE;") {
-		t.Fatalf("expected join table drop SQL, got:\n%s", dropRes.SQL)
+	if !strings.Contains(combinedSQL(dropRes), "DROP TABLE IF EXISTS groups_users CASCADE;") {
+		t.Fatalf("expected join table drop SQL, got:\n%s", combinedSQL(dropRes))
 	}
 	snap = mustLoadSnapshot(t, root)
 	if snapshotHasJoinTable(snap, "groups_users") {
@@ -311,8 +381,8 @@ func TestGenerateMigrations_ExtensionToggles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("enable postgis: %v", err)
 	}
-	if !strings.Contains(addRes.SQL, "CREATE EXTENSION IF NOT EXISTS postgis;") {
-		t.Fatalf("expected extension enable SQL, got:\n%s", addRes.SQL)
+	if !strings.Contains(combinedSQL(addRes), "CREATE EXTENSION IF NOT EXISTS postgis;") {
+		t.Fatalf("expected extension enable SQL, got:\n%s", combinedSQL(addRes))
 	}
 	snap := mustLoadSnapshot(t, root)
 	if !sliceContains(snap.Extensions, "postgis") {
@@ -324,8 +394,8 @@ func TestGenerateMigrations_ExtensionToggles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("disable postgis: %v", err)
 	}
-	if !strings.Contains(dropRes.SQL, "DROP EXTENSION IF EXISTS postgis;") {
-		t.Fatalf("expected extension drop SQL, got:\n%s", dropRes.SQL)
+	if !strings.Contains(combinedSQL(dropRes), "DROP EXTENSION IF EXISTS postgis;") {
+		t.Fatalf("expected extension drop SQL, got:\n%s", combinedSQL(dropRes))
 	}
 	snap = mustLoadSnapshot(t, root)
 	if sliceContains(snap.Extensions, "postgis") {
@@ -692,14 +762,14 @@ func TestGenerateMigrations_EnumAndDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generateMigrations: %v", err)
 	}
-	if !strings.Contains(res.SQL, "CONSTRAINT tasks_status_enum_check CHECK (status IN ('BACKLOG', 'ACTIVE', 'DONE'))") {
-		t.Fatalf("expected enum check constraint in SQL, got:\n%s", res.SQL)
+	if !strings.Contains(combinedSQL(res), "CONSTRAINT tasks_status_enum_check CHECK (status IN ('BACKLOG', 'ACTIVE', 'DONE'))") {
+		t.Fatalf("expected enum check constraint in SQL, got:\n%s", combinedSQL(res))
 	}
-	if !strings.Contains(res.SQL, "DEFAULT 'BACKLOG'") {
-		t.Fatalf("expected string default in SQL, got:\n%s", res.SQL)
+	if !strings.Contains(combinedSQL(res), "DEFAULT 'BACKLOG'") {
+		t.Fatalf("expected string default in SQL, got:\n%s", combinedSQL(res))
 	}
-	if !strings.Contains(res.SQL, "DEFAULT FALSE") {
-		t.Fatalf("expected boolean default in SQL, got:\n%s", res.SQL)
+	if !strings.Contains(combinedSQL(res), "DEFAULT FALSE") {
+		t.Fatalf("expected boolean default in SQL, got:\n%s", combinedSQL(res))
 	}
 
 	snap := mustLoadSnapshot(t, root)

@@ -89,8 +89,11 @@ func TestGenCmdDryRunPrintsSQL(t *testing.T) {
 	runGenerator = func(root string, opts generator.GenerateOptions) (generator.RunResult, error) {
 		return generator.RunResult{
 			Migration: generator.MigrationResult{
-				Operations: []generator.Operation{{Kind: generator.OpCreateTable, SQL: "CREATE TABLE users (...)"}},
-				SQL:        "-- migration preview\nCREATE TABLE users (...);",
+				Operations: []generator.Operation{{Kind: generator.OpCreateTable, SQL: "CREATE TABLE users (...);"}},
+				Files: []generator.MigrationFile{{
+					Name: "20240101000000_create_users.sql",
+					SQL:  "-- preview\nCREATE TABLE users (...);\n",
+				}},
 			},
 		}, nil
 	}
@@ -116,6 +119,9 @@ func TestGenCmdDryRunPrintsSQL(t *testing.T) {
 	}
 	if !strings.Contains(output, "generator: migration dry-run preview") {
 		t.Fatalf("expected preview header, got:\n%s", output)
+	}
+	if !strings.Contains(output, "-- file: 20240101000000_create_users.sql") {
+		t.Fatalf("expected file header, got:\n%s", output)
 	}
 	if !strings.Contains(output, "CREATE TABLE users (...);") {
 		t.Fatalf("expected SQL preview, got:\n%s", output)
@@ -163,7 +169,10 @@ func TestGenCmdDryRunDiffSummary(t *testing.T) {
 		return generator.RunResult{
 			Migration: generator.MigrationResult{
 				Operations: []generator.Operation{{Kind: generator.OpCreateTable, Target: "users", SQL: "CREATE TABLE users (...);"}},
-				SQL:        "-- preview\nCREATE TABLE users (...);",
+				Files: []generator.MigrationFile{{
+					Name: "20240101010101_create_users.sql",
+					SQL:  "-- preview\nCREATE TABLE users (...);\n",
+				}},
 			},
 		}, nil
 	}
@@ -189,6 +198,42 @@ func TestGenCmdDryRunDiffSummary(t *testing.T) {
 	}
 	if !strings.Contains(output, "+ create_table users") {
 		t.Fatalf("expected diff entry, got:\n%s", output)
+	}
+}
+
+func TestGenCmdPrintsMigrationGroups(t *testing.T) {
+	original := runGenerator
+	defer func() { runGenerator = original }()
+
+	runGenerator = func(root string, opts generator.GenerateOptions) (generator.RunResult, error) {
+		return generator.RunResult{
+			Migration: generator.MigrationResult{
+				Files: []generator.MigrationFile{
+					{Name: "20240101000000_post_01.sql"},
+					{Name: "20240101000000_post_02.sql"},
+					{Name: "20240101000000_comment.sql"},
+				},
+			},
+		}, nil
+	}
+
+	cmd := newGenCmd()
+	buf := &bytes.Buffer{}
+	cmd.SetOut(buf)
+
+	if err := cmd.RunE(cmd, []string{}); err != nil {
+		t.Fatalf("run gen: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "generator: migration groups:") {
+		t.Fatalf("expected migration group summary, got:\n%s", output)
+	}
+	if !strings.Contains(output, "  - post (2): post_01.sql, post_02.sql") {
+		t.Fatalf("expected post group summary, got:\n%s", output)
+	}
+	if !strings.Contains(output, "  - comment (1): comment.sql") {
+		t.Fatalf("expected comment group summary, got:\n%s", output)
 	}
 }
 

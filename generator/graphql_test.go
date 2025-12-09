@@ -119,12 +119,18 @@ func TestGraphQLAuthorizationDirectives(t *testing.T) {
 	schema := buildGraphQLGeneratedSection(entities)
 	mustContain(t, schema, "post(id: ID!): Post @auth")
 	mustContain(t, schema, "posts(first: Int, after: String, last: Int, before: String): PostConnection! @auth")
+	mustContain(t, schema, "type Query {\n  node(id: ID!): Node\n  health: String!\n  post(")
+	mustNotContain(t, schema, "extend type Query")
 	mustContain(t, schema, "createPost(input: CreatePostInput!): CreatePostPayload! @auth(roles: [\"editor\"])\n")
 	mustContain(t, schema, "updatePost(input: UpdatePostInput!): UpdatePostPayload! @auth(roles: [\"admin\", \"editor\"])\n")
 	mustContain(t, schema, "deletePost(input: DeletePostInput!): DeletePostPayload! @auth(roles: [\"admin\"])\n")
+	mustContain(t, schema, "type Mutation {\n  _noop: Boolean\n  createPost(")
+	mustNotContain(t, schema, "extend type Mutation")
 	mustContain(t, schema, "postCreated: Post! @auth(roles: [\"editor\"])\n")
 	mustContain(t, schema, "postUpdated: Post! @auth(roles: [\"admin\", \"editor\"])\n")
 	mustContain(t, schema, "postDeleted: ID! @auth(roles: [\"admin\"])\n")
+	mustContain(t, schema, "type Subscription {\n  _noop: Boolean\n  postCreated:")
+	mustNotContain(t, schema, "extend type Subscription")
 }
 
 func TestGraphQLResolverGeneration(t *testing.T) {
