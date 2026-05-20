@@ -2,6 +2,7 @@ package dsl
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -437,12 +438,7 @@ func quoteStringLiteral(val string) string {
 }
 
 func containsString(values []string, candidate string) bool {
-	for _, v := range values {
-		if v == candidate {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, candidate)
 }
 
 func formatFloat(f float64) string {

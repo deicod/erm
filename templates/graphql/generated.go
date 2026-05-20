@@ -6,13 +6,13 @@ import (
 	gql "github.com/99designs/gqlgen/graphql"
 )
 
-type ResolverRoot interface{}
+type ResolverRoot any
 
-type MutationResolver interface{}
+type MutationResolver any
 
-type QueryResolver interface{}
+type QueryResolver any
 
-type SubscriptionResolver interface{}
+type SubscriptionResolver any
 
 type DirectiveRoot struct {
 	Auth func(ctx context.Context, obj any, next gql.Resolver, roles []string) (any, error)

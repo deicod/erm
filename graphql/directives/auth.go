@@ -9,8 +9,8 @@ import (
 	"github.com/deicod/erm/oidc"
 )
 
-func RequireRoles(roles []string) func(ctx context.Context, obj interface{}, next func(ctx context.Context) (res interface{}, err error)) (interface{}, error) {
-	return func(ctx context.Context, obj interface{}, next func(ctx context.Context) (res interface{}, err error)) (interface{}, error) {
+func RequireRoles(roles []string) func(ctx context.Context, obj any, next func(ctx context.Context) (res any, err error)) (any, error) {
+	return func(ctx context.Context, obj any, next func(ctx context.Context) (res any, err error)) (any, error) {
 		claims, ok := oidc.FromContext(ctx)
 		if !ok {
 			return nil, gqlerror.Errorf("unauthorized")
@@ -28,8 +28,8 @@ func RequireRoles(roles []string) func(ctx context.Context, obj interface{}, nex
 	}
 }
 
-func RequireAuth() func(ctx context.Context, obj interface{}, next func(ctx context.Context) (res interface{}, err error)) (interface{}, error) {
-	return func(ctx context.Context, obj interface{}, next func(ctx context.Context) (res interface{}, err error)) (interface{}, error) {
+func RequireAuth() func(ctx context.Context, obj any, next func(ctx context.Context) (res any, err error)) (any, error) {
+	return func(ctx context.Context, obj any, next func(ctx context.Context) (res any, err error)) (any, error) {
 		if _, ok := oidc.FromContext(ctx); !ok {
 			return nil, fmt.Errorf("unauthorized")
 		}

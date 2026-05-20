@@ -45,7 +45,7 @@ func NewExecutableSchema(opts Options) gql.ExecutableSchema {
 				if len(roles) > 0 {
 					handler = directives.RequireRoles(roles)
 				}
-				return handler(ctx, obj, func(ctx context.Context) (interface{}, error) {
+				return handler(ctx, obj, func(ctx context.Context) (any, error) {
 					return next(ctx)
 				})
 			},

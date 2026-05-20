@@ -17,7 +17,7 @@ func (r *queryResolver) Health(ctx context.Context) (string, error) {
 }
 
 func encodeCursor(offset int) string {
-	payload := []byte(fmt.Sprintf("%s%d", cursorPrefix, offset))
+	payload := fmt.Appendf(nil, "%s%d", cursorPrefix, offset)
 	return base64.StdEncoding.EncodeToString(payload)
 }
 

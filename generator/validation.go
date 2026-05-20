@@ -118,24 +118,24 @@ func validateEntities(entities []Entity) error {
 				})
 				continue
 			}
-			targetPrimary, ok := findPrimaryField(target)
+			targetPrimary, ok := findPrimaryField(targetMeta.entity)
 			if !ok {
 				continue
 			}
 			column := edgeColumn(edge)
-			field, exists := fieldsByColumn[column]
+			field, exists := targetMeta.fields[column]
 			if !exists {
 				if edge.Column == "" || isGeneratedInverse(edge) {
 					continue
 				}
 				detail := fmt.Sprintf("foreign key column %q referenced by edge %s.%s is missing from %s.Fields()", column, ent.Name, edge.Name, ent.Name)
-				suggestion := fmt.Sprintf("Add %q to %s.Fields() using the same type as %s.%s.", column, ent.Name, target.Name, targetPrimary.Name)
+				suggestion := fmt.Sprintf("Add %q to %s.Fields() using the same type as %s.%s.", column, ent.Name, targetMeta.entity.Name, targetPrimary.Name)
 				problems = append(problems, SchemaValidationError{
 					Entity:     ent.Name,
 					Edge:       edge.Name,
 					Field:      column,
 					Column:     column,
-					Target:     target.Name,
+					Target:     targetMeta.entity.Name,
 					Detail:     detail,
 					Suggestion: suggestion,
 				})

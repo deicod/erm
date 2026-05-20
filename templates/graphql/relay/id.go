@@ -7,7 +7,7 @@ import (
 )
 
 func ToGlobalID(typ, id string) string {
-	return base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", typ, id)))
+	return base64.StdEncoding.EncodeToString(fmt.Appendf(nil, "%s:%s", typ, id))
 }
 
 func FromGlobalID(gid string) (typ, id string, err error) {
